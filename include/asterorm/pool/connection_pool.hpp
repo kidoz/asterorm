@@ -85,6 +85,8 @@ template <typename Driver> class connection_pool {
 
     ~connection_pool() {
         std::unique_lock lock(mutex_);
+        closed_ = true;
+        cv_.notify_all();
         cv_.wait(lock, [this] { return current_size_ == idle_connections_.size(); });
         idle_connections_.clear();
     }
@@ -96,6 +98,13 @@ template <typename Driver> class connection_pool {
         auto timeout_time = now + config_.acquire_timeout;
 
         while (idle_connections_.empty()) {
+            if (closed_) {
+                db_error err;
+                err.kind = db_error_kind::connection_failed;
+                err.message = "Connection pool is closed";
+                return std::unexpected(err);
+            }
+
             if (current_size_ < config_.max_size) {
                 ++current_size_;
                 lock.unlock();
@@ -104,6 +113,7 @@ template <typename Driver> class connection_pool {
                 if (!conn_res) {
                     lock.lock();
                     --current_size_;
+                    cv_.notify_all(); // Notify destructor if it's waiting
                     return std::unexpected(conn_res.error());
                 }
 
@@ -111,7 +121,7 @@ template <typename Driver> class connection_pool {
             }
 
             if (cv_.wait_until(lock, timeout_time) == std::cv_status::timeout) {
-                if (idle_connections_.empty()) {
+                if (idle_connections_.empty() && !closed_) {
                     db_error err;
                     err.kind = db_error_kind::connection_failed;
                     err.message = "Connection pool acquire timeout";
@@ -120,11 +130,19 @@ template <typename Driver> class connection_pool {
             }
         }
 
+        if (closed_) {
+            db_error err;
+            err.kind = db_error_kind::connection_failed;
+            err.message = "Connection pool is closed";
+            return std::unexpected(err);
+        }
+
         auto conn = std::move(idle_connections_.back());
         idle_connections_.pop_back();
 
         if (!conn.is_open()) {
             --current_size_;
+            cv_.notify_all();
             lock.unlock();
             return acquire();
         }
@@ -134,7 +152,7 @@ template <typename Driver> class connection_pool {
 
     void release(connection_type&& conn) {
         std::lock_guard lock(mutex_);
-        if (conn.is_open()) {
+        if (conn.is_open() && !closed_) {
             idle_connections_.push_back(std::move(conn));
         } else {
             --current_size_;
@@ -150,6 +168,7 @@ template <typename Driver> class connection_pool {
     std::condition_variable cv_;
     std::vector<connection_type> idle_connections_;
     size_t current_size_{0};
+    bool closed_{false};
 };
 
 } // namespace asterorm

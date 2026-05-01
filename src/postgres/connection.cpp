@@ -179,6 +179,7 @@ asterorm::result<void> connection::copy_in(std::string_view sql,
     if (PQresultStatus(res) != PGRES_COPY_IN) {
         auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
         PQclear(res);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
     PQclear(res);
@@ -190,6 +191,7 @@ asterorm::result<void> connection::copy_in(std::string_view sql,
             db_error err;
             err.kind = db_error_kind::query_failed;
             err.message = PQerrorMessage(conn_);
+            close(); // Poisoned state, close connection
             return std::unexpected(err);
         }
     }
@@ -198,6 +200,7 @@ asterorm::result<void> connection::copy_in(std::string_view sql,
         db_error err;
         err.kind = db_error_kind::query_failed;
         err.message = PQerrorMessage(conn_);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
 
@@ -205,6 +208,7 @@ asterorm::result<void> connection::copy_in(std::string_view sql,
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
         PQclear(res);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
     PQclear(res);
@@ -218,6 +222,7 @@ asterorm::result<std::vector<std::string>> connection::copy_out(std::string_view
     if (PQresultStatus(res) != PGRES_COPY_OUT) {
         auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
         PQclear(res);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
     PQclear(res);
@@ -236,6 +241,7 @@ asterorm::result<std::vector<std::string>> connection::copy_out(std::string_view
         db_error err;
         err.kind = db_error_kind::query_failed;
         err.message = PQerrorMessage(conn_);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
 
@@ -243,6 +249,7 @@ asterorm::result<std::vector<std::string>> connection::copy_out(std::string_view
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
         PQclear(res);
+        close(); // Poisoned state, close connection
         return std::unexpected(err);
     }
     PQclear(res);
