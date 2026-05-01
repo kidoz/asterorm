@@ -24,15 +24,16 @@ interpolate_params(std::string_view sql, const std::vector<std::optional<std::st
         for (char c : in) {
             const auto uc = static_cast<unsigned char>(c);
             if (uc == '\0') {
-                return std::unexpected(db_error{
-                    db_error_kind::parse_failed, "", "", "ClickHouse parameter contains NUL byte",
-                    std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+                db_error err;
+                err.kind = db_error_kind::parse_failed;
+                err.message = "ClickHouse parameter contains NUL byte";
+                return std::unexpected(err);
             }
             if (uc < 0x20 && uc != '\t' && uc != '\n' && uc != '\r') {
-                return std::unexpected(db_error{db_error_kind::parse_failed, "", "",
-                                                "ClickHouse parameter contains control byte",
-                                                std::nullopt, std::nullopt, std::nullopt,
-                                                std::nullopt});
+                db_error err;
+                err.kind = db_error_kind::parse_failed;
+                err.message = "ClickHouse parameter contains control byte";
+                return std::unexpected(err);
             }
             if (c == '\'') {
                 out += "''";
@@ -95,8 +96,10 @@ void connection::close() {
 
 asterorm::result<ch::result> connection::execute(std::string_view sql) {
     if (!client_) {
-        return std::unexpected(db_error{db_error_kind::connection_failed, "Connection is closed",
-                                        "", "", "", "", "", ""});
+        db_error err;
+        err.kind = db_error_kind::connection_failed;
+        err.message = "Connection is closed";
+        return std::unexpected(err);
     }
 
     ch::result res;
@@ -104,8 +107,10 @@ asterorm::result<ch::result> connection::execute(std::string_view sql) {
         client_->Select(std::string(sql),
                         [&res](const clickhouse::Block& block) { res.add_block(block); });
     } catch (const std::exception& e) {
-        return std::unexpected(
-            db_error{db_error_kind::query_failed, e.what(), "", "", "", "", "", ""});
+        db_error err;
+        err.kind = db_error_kind::query_failed;
+        err.message = e.what();
+        return std::unexpected(err);
     }
     return res;
 }
