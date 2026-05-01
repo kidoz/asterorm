@@ -34,10 +34,11 @@ class connection {
 
     asterorm::result<ch::result> execute(std::string_view sql);
     asterorm::result<ch::result>
-    execute_params(std::string_view sql, const std::vector<std::optional<std::string>>& params);
+    execute_params(std::string_view sql, const std::vector<std::optional<std::string>>& parameters);
 
     asterorm::result<ch::result>
-    execute_prepared(std::string_view sql, const std::vector<std::optional<std::string>>& params);
+    execute_prepared(std::string_view sql,
+                     const std::vector<std::optional<std::string>>& parameters);
 };
 
 } // namespace asterorm::ch

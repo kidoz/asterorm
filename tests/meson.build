@@ -13,6 +13,18 @@ core_tests = executable(
 
 test('core unit tests', core_tests)
 
+if clickhouse_feature.allowed()
+  clickhouse_tests = executable(
+    'clickhouse_tests',
+    [
+      'unit/test_clickhouse.cpp',
+    ],
+    dependencies : [asterorm_ch_dep, catch2_dep],
+  )
+
+  test('clickhouse unit tests', clickhouse_tests)
+endif
+
 if postgres_enabled
   pg_tests = executable(
     'pg_integration',

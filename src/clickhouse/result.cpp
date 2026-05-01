@@ -4,16 +4,29 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <clickhouse/block.h>
 #include <clickhouse/client.h>
+#include <clickhouse/columns/nullable.h>
+#include <clickhouse/columns/numeric.h>
 #pragma GCC diagnostic pop
 
+#include <algorithm>
 #include <charconv>
+#include <limits>
+#include <string>
 #include <utility>
 
 namespace asterorm::ch {
 
+namespace {
+int to_public_count(std::size_t count) {
+    constexpr auto max_public_count = static_cast<std::size_t>(std::numeric_limits<int>::max());
+    return static_cast<int>(std::min(count, max_public_count));
+}
+} // namespace
+
 struct result::Impl {
     std::vector<clickhouse::Block> blocks;
-    int total_rows = 0;
+    std::size_t total_rows = 0;
+    mutable std::string value_cache;
 };
 
 result::result() : impl_(std::make_unique<Impl>()) {}
@@ -37,7 +50,7 @@ void result::add_block(const clickhouse::Block& block) {
 }
 
 int result::rows() const {
-    return impl_ ? impl_->total_rows : 0;
+    return impl_ ? to_public_count(impl_->total_rows) : 0;
 }
 
 int result::affected_rows() const {
@@ -45,33 +58,44 @@ int result::affected_rows() const {
 }
 
 int result::columns() const {
-    if (!impl_ || impl_->blocks.empty())
+    if (!impl_ || impl_->blocks.empty()) {
         return 0;
-    return impl_->blocks.front().GetColumnCount();
+    }
+    return to_public_count(impl_->blocks.front().GetColumnCount());
 }
 
 std::string_view result::column_name(int col) const {
-    if (!impl_ || impl_->blocks.empty())
+    if (!impl_ || impl_->blocks.empty() || col < 0) {
         return "";
-    return impl_->blocks.front().GetColumnName(col);
+    }
+    const auto column_index = static_cast<std::size_t>(col);
+    if (column_index >= impl_->blocks.front().GetColumnCount()) {
+        return "";
+    }
+    return impl_->blocks.front().GetColumnName(column_index);
 }
 
 bool result::is_null(int row, int col) const {
-    if (!impl_ || impl_->blocks.empty())
+    if (!impl_ || impl_->blocks.empty() || row < 0 || col < 0) {
         return true;
+    }
 
-    int row_in_block = row;
+    auto row_in_block = static_cast<std::size_t>(row);
+    const auto column_index = static_cast<std::size_t>(col);
     for (const auto& block : impl_->blocks) {
-        int r = block.GetRowCount();
-        if (row_in_block < r) {
-            auto column = block[col];
+        const auto block_row_count = block.GetRowCount();
+        if (column_index >= block.GetColumnCount()) {
+            return true;
+        }
+        if (row_in_block < block_row_count) {
+            auto column = block[column_index];
             if (column->Type()->GetCode() == clickhouse::Type::Nullable) {
                 auto nullable_col = column->As<clickhouse::ColumnNullable>();
                 return nullable_col && nullable_col->IsNull(row_in_block);
             }
             return false;
         }
-        row_in_block -= r;
+        row_in_block -= block_row_count;
     }
     return true;
 }
@@ -81,28 +105,69 @@ std::string_view result::get_value(int row, int col) const {
         return "";
     }
 
-    int row_in_block = row;
+    auto row_in_block = static_cast<std::size_t>(row);
+    const auto column_index = static_cast<std::size_t>(col);
     for (const auto& block : impl_->blocks) {
-        int r = block.GetRowCount();
-        if (row_in_block < r) {
-            auto column = block[col];
+        const auto block_row_count = block.GetRowCount();
+        if (row_in_block < block_row_count) {
+            auto column = block[column_index];
             if (column->Type()->GetCode() == clickhouse::Type::Nullable) {
                 column = column->As<clickhouse::ColumnNullable>()->Nested();
             }
 
-            // To provide a string_view, we need a stable string storage or use string-based columns
-            // directly. ClickHouse returns strong types. We'll decode to string on the fly and
-            // store it somewhere, but string_view requires it to outlive the call. For now, as a
-            // simple implementation, if it's a string column we can return view:
             if (column->Type()->GetCode() == clickhouse::Type::String) {
                 return column->As<clickhouse::ColumnString>()->At(row_in_block);
-            } else if (column->Type()->GetCode() == clickhouse::Type::FixedString) {
+            }
+            if (column->Type()->GetCode() == clickhouse::Type::FixedString) {
                 return column->As<clickhouse::ColumnFixedString>()->At(row_in_block);
             }
-            return ""; // For other types, clickhouse-cpp requires explicit casting which is complex
-                       // here.
+
+            switch (column->Type()->GetCode()) {
+            case clickhouse::Type::Int8:
+                impl_->value_cache = std::to_string(
+                    static_cast<int>(column->As<clickhouse::ColumnInt8>()->At(row_in_block)));
+                return impl_->value_cache;
+            case clickhouse::Type::Int16:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnInt16>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::Int32:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnInt32>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::Int64:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnInt64>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::UInt8:
+                impl_->value_cache = std::to_string(static_cast<unsigned int>(
+                    column->As<clickhouse::ColumnUInt8>()->At(row_in_block)));
+                return impl_->value_cache;
+            case clickhouse::Type::UInt16:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnUInt16>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::UInt32:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnUInt32>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::UInt64:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnUInt64>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::Float32:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnFloat32>()->At(row_in_block));
+                return impl_->value_cache;
+            case clickhouse::Type::Float64:
+                impl_->value_cache =
+                    std::to_string(column->As<clickhouse::ColumnFloat64>()->At(row_in_block));
+                return impl_->value_cache;
+            default:
+                return "";
+            }
         }
-        row_in_block -= r;
+        row_in_block -= block_row_count;
     }
     return "";
 }
