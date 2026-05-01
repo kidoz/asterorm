@@ -14,11 +14,30 @@ add_project_arguments('-Werror', language: 'cpp')
 
 python = import('python').find_installation('python3')
 pkgconfig = import('pkgconfig')
+fs = import('fs')
+cpp = meson.get_compiler('cpp')
 
 postgres_opt = get_option('postgres')
-libpq_dep = dependency('libpq', required : postgres_opt, fallback: ['postgresql', 'libpq'])
+libpq_dep = dependency('libpq', required : false)
+if not libpq_dep.found() and postgres_opt.allowed()
+  foreach prefix : ['/opt/homebrew/opt/libpq', '/usr/local/opt/libpq']
+    if not libpq_dep.found() and fs.exists(prefix / 'include' / 'libpq-fe.h')
+      libpq_lib = cpp.find_library('pq', dirs : prefix / 'lib', required : false)
+      if libpq_lib.found()
+        libpq_dep = declare_dependency(
+          dependencies : libpq_lib,
+          compile_args : ['-I' + (prefix / 'include')],
+        )
+      endif
+    endif
+  endforeach
+endif
+if postgres_opt.enabled() and not libpq_dep.found()
+  error('libpq dependency not found. Install libpq development headers or set PKG_CONFIG_PATH.')
+endif
+postgres_enabled = postgres_opt.allowed() and libpq_dep.found()
 asterorm_pkg_requires_private = []
-if postgres_opt.allowed()
+if postgres_enabled
   asterorm_pkg_requires_private += ['libpq']
 endif
 

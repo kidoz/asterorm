@@ -13,7 +13,7 @@ core_tests = executable(
 
 test('core unit tests', core_tests)
 
-if get_option('postgres').enabled()
+if postgres_enabled
   pg_tests = executable(
     'pg_integration',
     [

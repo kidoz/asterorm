@@ -22,7 +22,7 @@ asterorm_core_dep = declare_dependency(
 
 asterorm_libraries = [asterorm_core]
 
-if postgres_opt.allowed()
+if postgres_enabled
   asterorm_pg = library(
     'asterorm_pg',
     [

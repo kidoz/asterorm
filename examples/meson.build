@@ -1,4 +1,4 @@
-if postgres_opt.allowed()
+if postgres_enabled
   executable(
     'quickstart',
     'quickstart.cpp',
