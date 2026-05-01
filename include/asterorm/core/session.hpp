@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -70,6 +71,7 @@ template <typename Pool> class session {
     explicit session(Pool& pool) : pool_(&pool) {}
 
     asterorm::result<transaction_guard<session>> begin() {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (in_transaction_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -94,6 +96,7 @@ template <typename Pool> class session {
     }
 
     asterorm::result<void> commit_transaction() {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -113,6 +116,7 @@ template <typename Pool> class session {
     }
 
     asterorm::result<void> rollback_transaction() {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -138,6 +142,7 @@ template <typename Pool> class session {
     // or an ephemeral connection lease if no transaction is active.
     template <typename F>
     auto with_connection(F&& func) -> decltype(func(std::declval<connection_type&>())) {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (in_transaction_ && active_lease_) {
             return func(**active_lease_);
         } else {
@@ -196,16 +201,9 @@ template <typename Pool> class session {
         return result_list;
     }
 
-    asterorm::result<void> copy_in(std::string_view sql, const std::vector<std::string>& lines) {
-        return with_connection([&](auto& conn) { return conn.copy_in(sql, lines); });
-    }
-
-    asterorm::result<std::vector<std::string>> copy_out(std::string_view sql) {
-        return with_connection([&](auto& conn) { return conn.copy_out(sql); });
-    }
-
   private:
     Pool* pool_;
+    std::mutex mutex_;
     std::optional<lease_type> active_lease_;
     bool in_transaction_{false};
 };
