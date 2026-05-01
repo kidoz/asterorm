@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace asterorm::pg {
+namespace asterorm {
 
 struct jsonb {
     std::string value;
@@ -11,4 +11,4 @@ struct jsonb {
     }
 };
 
-} // namespace asterorm::pg
+} // namespace asterorm

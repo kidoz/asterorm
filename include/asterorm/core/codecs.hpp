@@ -8,7 +8,7 @@
 
 #include "asterorm/core/error.hpp"
 #include "asterorm/core/result.hpp"
-#include "asterorm/postgres/types.hpp"
+#include "asterorm/core/types.hpp"
 
 namespace asterorm {
 
@@ -32,7 +32,7 @@ template <typename T> std::optional<std::string> encode(const T& val) {
         return val ? "t" : "f";
     } else if constexpr (std::is_integral_v<DecayedT>) {
         return std::to_string(val);
-    } else if constexpr (std::is_same_v<DecayedT, asterorm::pg::jsonb>) {
+    } else if constexpr (std::is_same_v<DecayedT, asterorm::jsonb>) {
         return val.value;
     } else if constexpr (is_vector_v<DecayedT>) {
         std::string res = "{";
@@ -93,7 +93,7 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
             return std::unexpected(err);
         }
         return {};
-    } else if constexpr (std::is_same_v<T, asterorm::pg::jsonb>) {
+    } else if constexpr (std::is_same_v<T, asterorm::jsonb>) {
         val.value = *str;
         return {};
     } else if constexpr (is_vector_v<T>) {

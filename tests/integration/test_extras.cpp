@@ -9,7 +9,7 @@
 struct extra_model {
     std::optional<int> id;
     std::string key;
-    asterorm::pg::jsonb data;
+    asterorm::jsonb data;
 };
 
 template <> struct asterorm::entity_traits<extra_model> {
@@ -53,7 +53,7 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
 
     SECTION("JSONB Mapping") {
         extra_model m{.key = "config",
-                      .data = asterorm::pg::jsonb{R"({"theme": "dark", "version": 2})"}};
+                      .data = asterorm::jsonb{R"({"theme": "dark", "version": 2})"}};
         auto insert_res = repo.insert(m);
         REQUIRE(insert_res.has_value());
         REQUIRE(m.id.has_value());
@@ -70,14 +70,13 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
     SECTION("Upsert (ON CONFLICT DO UPDATE)") {
         // First insert with ID provided explicitly
         extra_model m1{
-            .id = 42, .key = "static", .data = asterorm::pg::jsonb{R"({"status": "initial"})"}};
+            .id = 42, .key = "static", .data = asterorm::jsonb{R"({"status": "initial"})"}};
         auto insert_res = repo.insert(m1);
         REQUIRE(insert_res.has_value());
 
         // Attempt upsert with SAME ID, but different data
-        extra_model m2{.id = 42,
-                       .key = "static_changed",
-                       .data = asterorm::pg::jsonb{R"({"status": "updated"})"}};
+        extra_model m2{
+            .id = 42, .key = "static_changed", .data = asterorm::jsonb{R"({"status": "updated"})"}};
         auto upsert_res = repo.upsert(m2);
         REQUIRE(upsert_res.has_value());
 
