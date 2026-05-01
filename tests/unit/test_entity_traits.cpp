@@ -263,3 +263,70 @@ TEST_CASE("Repository: projection queries decode scalar, tuple, and mapped rows"
         REQUIRE(projected_names.error().message.find("missing_column") != std::string::npos);
     }
 }
+
+TEST_CASE("Repository: relationship loading uses explicit follow-up selects",
+          "[core][relationships]") {
+    fake_repository_session session;
+    asterorm::repository repository{session};
+
+    SECTION("Load one-to-many relationship") {
+        relationship_user user{.id = 7, .email = "owner@example.com"};
+        session.conn.query_result.rows_data = {
+            {{"10"}, {"7"}, {"first"}},
+            {{"11"}, {"7"}, {"second"}},
+        };
+
+        asterorm::query_options options;
+        options.order_by.push_back({.column = "id", .ascending = true});
+
+        auto posts = repository.load_related_many<1>(user, std::move(options));
+
+        REQUIRE(posts.has_value());
+        REQUIRE(posts->size() == 2);
+        REQUIRE((*posts)[0].id == 10);
+        REQUIRE((*posts)[0].author_id == 7);
+        REQUIRE((*posts)[0].title == "first");
+        REQUIRE((*posts)[1].id == 11);
+        REQUIRE((*posts)[1].author_id == 7);
+        REQUIRE((*posts)[1].title == "second");
+        REQUIRE(
+            session.conn.sql ==
+            R"(SELECT "id", "author_id", "title" FROM "posts" WHERE "author_id" = $1 ORDER BY "id" ASC)");
+        REQUIRE(session.conn.params.size() == 1);
+        REQUIRE(session.conn.params[0] == "7");
+    }
+
+    SECTION("Load one-to-one relationship") {
+        relationship_user user{.id = 7, .email = "owner@example.com"};
+        session.conn.query_result.rows_data = {{{"20"}, {"7"}, {"Owner"}}};
+
+        auto profile = repository.load_related_one<0>(user);
+
+        REQUIRE(profile.has_value());
+        REQUIRE(profile->has_value());
+        REQUIRE((*profile)->id == 20);
+        REQUIRE((*profile)->user_id == 7);
+        REQUIRE((*profile)->display_name == "Owner");
+        REQUIRE(
+            session.conn.sql ==
+            R"(SELECT "id", "user_id", "display_name" FROM "profiles" WHERE "user_id" = $1 LIMIT 1)");
+        REQUIRE(session.conn.params.size() == 1);
+        REQUIRE(session.conn.params[0] == "7");
+    }
+
+    SECTION("Load many-to-one relationship") {
+        relationship_profile profile{.id = 20, .user_id = 7, .display_name = "Owner"};
+        session.conn.query_result.rows_data = {{{"7"}, {"owner@example.com"}}};
+
+        auto user = repository.load_related_one<0>(profile);
+
+        REQUIRE(user.has_value());
+        REQUIRE(user->has_value());
+        REQUIRE((*user)->id == 7);
+        REQUIRE((*user)->email == "owner@example.com");
+        REQUIRE(session.conn.sql ==
+                R"(SELECT "id", "email" FROM "relationship_users" WHERE "id" = $1 LIMIT 1)");
+        REQUIRE(session.conn.params.size() == 1);
+        REQUIRE(session.conn.params[0] == "7");
+    }
+}

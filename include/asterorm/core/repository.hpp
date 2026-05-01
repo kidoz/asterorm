@@ -125,6 +125,31 @@ template <typename T> bool mapped_column_exists(std::string_view column_name) {
     return column_was_found;
 }
 
+template <typename T, auto MemberPointer> asterorm::result<std::string> column_name_for_member() {
+    std::optional<std::string> resolved_column_name;
+    using traits = entity_traits<T>;
+    auto inspect_columns =
+        [&]<std::size_t... ColumnIndexes>(std::index_sequence<ColumnIndexes...>) {
+            (..., [&]() {
+                const auto column_metadata = std::get<ColumnIndexes>(traits::columns);
+                if constexpr (std::is_same_v<std::decay_t<decltype(column_metadata.member_ptr)>,
+                                             std::decay_t<decltype(MemberPointer)>>) {
+                    if (column_metadata.member_ptr == MemberPointer) {
+                        resolved_column_name = std::string(column_metadata.name);
+                    }
+                }
+            }());
+        };
+    inspect_columns(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+    if (!resolved_column_name) {
+        db_error error;
+        error.kind = db_error_kind::parse_failed;
+        error.message = "No mapped column for relationship member";
+        return std::unexpected(error);
+    }
+    return *resolved_column_name;
+}
+
 inline db_error projection_error(std::string message) {
     db_error error;
     error.kind = db_error_kind::parse_failed;
@@ -775,7 +800,9 @@ template <typename Session> class repository {
         };
         collect(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
-        auto builder = sql::select(col_names).from(traits::table).where(std::move(pred));
+        auto builder = sql::select(col_names);
+        builder.from(traits::table);
+        builder.where(std::move(pred));
         for (const auto& order : options.order_by) {
             builder.order_by(order.column, order.ascending);
         }
@@ -827,7 +854,8 @@ template <typename Session> class repository {
         };
         collect(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
-        auto builder = sql::select(col_names).from(traits::table);
+        auto builder = sql::select(col_names);
+        builder.from(traits::table);
         for (const auto& order : options.order_by) {
             builder.order_by(order.column, order.ascending);
         }
@@ -899,6 +927,57 @@ template <typename Session> class repository {
         }
         return execute_projection_map(*compiled_query_result, selected_columns.size(),
                                       std::forward<Mapper>(mapper));
+    }
+
+    template <std::size_t RelationshipIndex, typename T>
+    auto load_related_many(const T& entity, query_options options = {}) {
+        static_assert(has_relationships_v<T>,
+                      "load_related_many() requires entity_traits<T>::relationships");
+        static_assert(RelationshipIndex < relationship_count_v<T>,
+                      "Relationship index is out of range for entity_traits<T>::relationships");
+
+        using relationship_type =
+            std::decay_t<decltype(std::get<RelationshipIndex>(entity_traits<T>::relationships))>;
+        using related_entity_type = typename relationship_type::related_entity;
+
+        auto related_column_name =
+            detail::column_name_for_member<related_entity_type,
+                                           relationship_type::related_member_ptr>();
+        if (!related_column_name) {
+            return asterorm::result<std::vector<related_entity_type>>{
+                std::unexpected(related_column_name.error())};
+        }
+
+        auto relationship_predicate = sql::col(*related_column_name) ==
+                                      sql::val(entity.*(relationship_type::local_member_ptr));
+        return find_by<related_entity_type>(std::move(relationship_predicate), std::move(options));
+    }
+
+    template <std::size_t RelationshipIndex, typename T> auto load_related_one(const T& entity) {
+        static_assert(has_relationships_v<T>,
+                      "load_related_one() requires entity_traits<T>::relationships");
+        static_assert(RelationshipIndex < relationship_count_v<T>,
+                      "Relationship index is out of range for entity_traits<T>::relationships");
+
+        using relationship_type =
+            std::decay_t<decltype(std::get<RelationshipIndex>(entity_traits<T>::relationships))>;
+        static_assert(relationship_type::kind != relationship_kind::one_to_many,
+                      "load_related_one() requires a one-to-one or many-to-one relationship");
+        using related_entity_type = typename relationship_type::related_entity;
+
+        query_options options;
+        options.limit = 1;
+        auto related_rows = load_related_many<RelationshipIndex>(entity, std::move(options));
+        if (!related_rows) {
+            return asterorm::result<std::optional<related_entity_type>>{
+                std::unexpected(related_rows.error())};
+        }
+        if (related_rows->empty()) {
+            return asterorm::result<std::optional<related_entity_type>>{
+                std::optional<related_entity_type>{}};
+        }
+        return asterorm::result<std::optional<related_entity_type>>{
+            std::optional<related_entity_type>{std::move((*related_rows)[0])}};
     }
 
     template <typename T> asterorm::result<void> update(T& entity) {
