@@ -103,7 +103,6 @@ template <typename Session> class schema_migrator {
             if (!rolled_back)
                 return std::unexpected(rolled_back.error());
 
-            status.current_version = target_version;
             ++status.applied_count;
         }
 
