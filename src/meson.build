@@ -45,7 +45,7 @@ if postgres_enabled
   asterorm_libraries += [asterorm_pg]
 endif
 
-if clickhouse_opt.allowed()
+if clickhouse_feature.allowed()
   asterorm_ch = library(
     'asterorm_ch',
     [

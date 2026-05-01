@@ -12,37 +12,37 @@ project(
 
 add_project_arguments('-Werror', language: 'cpp')
 
-python = import('python').find_installation('python3')
+python_program = import('python').find_installation('python3')
 pkgconfig = import('pkgconfig')
-fs = import('fs')
-cpp = meson.get_compiler('cpp')
+filesystem_module = import('fs')
+cpp_compiler = meson.get_compiler('cpp')
 
-postgres_opt = get_option('postgres')
+postgres_feature = get_option('postgres')
 libpq_dep = dependency('libpq', required : false)
-if not libpq_dep.found() and postgres_opt.allowed()
-  foreach prefix : ['/opt/homebrew/opt/libpq', '/usr/local/opt/libpq']
-    if not libpq_dep.found() and fs.exists(prefix / 'include' / 'libpq-fe.h')
-      libpq_lib = cpp.find_library('pq', dirs : prefix / 'lib', required : false)
-      if libpq_lib.found()
+if not libpq_dep.found() and postgres_feature.allowed()
+  foreach libpq_prefix : ['/opt/homebrew/opt/libpq', '/usr/local/opt/libpq']
+    if not libpq_dep.found() and filesystem_module.exists(libpq_prefix / 'include' / 'libpq-fe.h')
+      libpq_library = cpp_compiler.find_library('pq', dirs : libpq_prefix / 'lib', required : false)
+      if libpq_library.found()
         libpq_dep = declare_dependency(
-          dependencies : libpq_lib,
-          compile_args : ['-I' + (prefix / 'include')],
+          dependencies : libpq_library,
+          compile_args : ['-I' + (libpq_prefix / 'include')],
         )
       endif
     endif
   endforeach
 endif
-if postgres_opt.enabled() and not libpq_dep.found()
+if postgres_feature.enabled() and not libpq_dep.found()
   error('libpq dependency not found. Install libpq development headers or set PKG_CONFIG_PATH.')
 endif
-postgres_enabled = postgres_opt.allowed() and libpq_dep.found()
+postgres_enabled = postgres_feature.allowed() and libpq_dep.found()
 asterorm_pkg_requires_private = []
 if postgres_enabled
   asterorm_pkg_requires_private += ['libpq']
 endif
 
-clickhouse_opt = get_option('clickhouse')
-clickhouse_dep = dependency('clickhouse-cpp', required : clickhouse_opt, fallback: ['clickhouse-cpp', 'clickhouse_cpp_lib_dep'], default_options: ['werror=false', 'warning_level=0'])
+clickhouse_feature = get_option('clickhouse')
+clickhouse_dep = dependency('clickhouse-cpp', required : clickhouse_feature, fallback: ['clickhouse-cpp', 'clickhouse_cpp_lib_dep'], default_options: ['werror=false', 'warning_level=0'])
 
 subdir('src')
 
@@ -75,7 +75,7 @@ endif
 run_target(
   'clang-format',
   command : [
-    python,
+    python_program,
     files('tools/run_clang_format.py'),
     '--source-root',
     meson.project_source_root(),
@@ -85,7 +85,7 @@ run_target(
 run_target(
   'clang-format-check',
   command : [
-    python,
+    python_program,
     files('tools/run_clang_format.py'),
     '--source-root',
     meson.project_source_root(),
@@ -96,7 +96,7 @@ run_target(
 run_target(
   'clang-tidy',
   command : [
-    python,
+    python_program,
     files('tools/run_clang_tidy.py'),
     '--source-root',
     meson.project_source_root(),
