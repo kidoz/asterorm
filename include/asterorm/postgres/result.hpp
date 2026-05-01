@@ -21,6 +21,7 @@ class result {
 
     int rows() const;
     int columns() const;
+    int affected_rows() const;
     std::string_view column_name(int col) const;
     bool is_null(int row, int col) const;
     std::string_view get_value(int row, int col) const;

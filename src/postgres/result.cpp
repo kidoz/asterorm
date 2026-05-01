@@ -29,6 +29,15 @@ int result::rows() const {
     return res_ ? PQntuples(res_) : 0;
 }
 
+int result::affected_rows() const {
+    if (!res_)
+        return 0;
+    const char* tuples = PQcmdTuples(res_);
+    if (!tuples || *tuples == '\0')
+        return 0;
+    return std::atoi(tuples);
+}
+
 int result::columns() const {
     return res_ ? PQnfields(res_) : 0;
 }

@@ -241,6 +241,13 @@ template <typename Session> class repository {
 
         if (!res)
             return std::unexpected(res.error());
+
+        if (res->affected_rows() == 0) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "No rows affected";
+            return std::unexpected(err);
+        }
         return {};
     }
 
@@ -260,6 +267,13 @@ template <typename Session> class repository {
 
         if (!res)
             return std::unexpected(res.error());
+
+        if (res->affected_rows() == 0) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "No rows affected";
+            return std::unexpected(err);
+        }
         return {};
     }
 
