@@ -1,6 +1,8 @@
 #pragma once
+#include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -24,6 +26,8 @@ struct query_options {
     std::optional<std::size_t> limit;
     std::optional<std::size_t> offset;
 };
+
+using projection_row = std::vector<std::optional<std::string>>;
 
 namespace detail {
 template <typename T, typename = void> struct has_version_column : std::false_type {};
@@ -103,6 +107,104 @@ template <typename T> std::vector<std::string> column_names() {
     using traits = entity_traits<T>;
     return column_names<T>(
         std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+}
+
+template <typename T> bool mapped_column_exists(std::string_view column_name) {
+    bool column_was_found = false;
+    using traits = entity_traits<T>;
+    auto inspect_columns =
+        [&]<std::size_t... ColumnIndexes>(std::index_sequence<ColumnIndexes...>) {
+            (..., [&]() {
+                const auto column_metadata = std::get<ColumnIndexes>(traits::columns);
+                if (std::string_view(column_metadata.name) == column_name) {
+                    column_was_found = true;
+                }
+            }());
+        };
+    inspect_columns(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+    return column_was_found;
+}
+
+inline db_error projection_error(std::string message) {
+    db_error error;
+    error.kind = db_error_kind::parse_failed;
+    error.message = std::move(message);
+    return error;
+}
+
+template <typename T>
+asterorm::result<void>
+validate_projection_columns(const std::vector<std::string>& selected_columns) {
+    if (selected_columns.empty()) {
+        return std::unexpected(projection_error("projection requires at least one column"));
+    }
+    for (const auto& selected_column : selected_columns) {
+        if (!mapped_column_exists<T>(selected_column)) {
+            return std::unexpected(
+                projection_error("Unknown column in projection: " + selected_column));
+        }
+    }
+    return {};
+}
+
+template <typename Projection>
+asterorm::result<void> validate_projection_shape(std::size_t selected_column_count) {
+    if constexpr (is_tuple_like_v<Projection>) {
+        constexpr std::size_t projection_field_count = std::tuple_size_v<std::decay_t<Projection>>;
+        if (selected_column_count != projection_field_count) {
+            return std::unexpected(
+                projection_error("tuple projection field count must match selected column count"));
+        }
+    } else {
+        if (selected_column_count != 1) {
+            return std::unexpected(
+                projection_error("scalar projection requires exactly one selected column"));
+        }
+    }
+    return {};
+}
+
+template <typename Value, typename Result>
+asterorm::result<Value> decode_scalar_projection(const Result& query_result, int row_index) {
+    Value decoded_value{};
+    auto decode_result = asterorm::decode(query_result.get_string(row_index, 0), decoded_value);
+    if (!decode_result) {
+        return std::unexpected(decode_result.error());
+    }
+    return decoded_value;
+}
+
+template <typename Tuple, typename Result, std::size_t... FieldIndexes>
+asterorm::result<Tuple> decode_tuple_projection(const Result& query_result, int row_index,
+                                                std::index_sequence<FieldIndexes...>) {
+    Tuple decoded_tuple{};
+    asterorm::result<void> decode_result;
+    (..., [&]() {
+        if (!decode_result) {
+            return;
+        }
+        auto field_decode_result =
+            asterorm::decode(query_result.get_string(row_index, static_cast<int>(FieldIndexes)),
+                             std::get<FieldIndexes>(decoded_tuple));
+        if (!field_decode_result) {
+            decode_result = std::move(field_decode_result);
+        }
+    }());
+    if (!decode_result) {
+        return std::unexpected(decode_result.error());
+    }
+    return decoded_tuple;
+}
+
+template <typename Projection, typename Result>
+asterorm::result<Projection> decode_projection(const Result& query_result, int row_index) {
+    if constexpr (is_tuple_like_v<Projection>) {
+        return decode_tuple_projection<Projection>(
+            query_result, row_index,
+            std::make_index_sequence<std::tuple_size_v<std::decay_t<Projection>>>{});
+    } else {
+        return decode_scalar_projection<Projection>(query_result, row_index);
+    }
 }
 
 inline void append_csv(std::string& sql, const std::vector<std::string>& names) {
@@ -748,6 +850,57 @@ template <typename Session> class repository {
         return std::optional<T>{std::move((*res)[0])};
     }
 
+    template <typename T, typename Projection>
+    asterorm::result<std::vector<Projection>>
+    select_projection(std::vector<std::string> selected_columns, query_options options = {}) {
+        auto compiled_query_result =
+            compile_projection_query<T>(selected_columns, std::move(options));
+        if (!compiled_query_result) {
+            return std::unexpected(compiled_query_result.error());
+        }
+        return execute_projection_query<Projection>(*compiled_query_result,
+                                                    selected_columns.size());
+    }
+
+    template <typename T, typename Projection>
+    asterorm::result<std::vector<Projection>>
+    select_projection_by(sql::predicate_ast predicate, std::vector<std::string> selected_columns,
+                         query_options options = {}) {
+        auto compiled_query_result = compile_projection_query_by<T>(
+            std::move(predicate), selected_columns, std::move(options));
+        if (!compiled_query_result) {
+            return std::unexpected(compiled_query_result.error());
+        }
+        return execute_projection_query<Projection>(*compiled_query_result,
+                                                    selected_columns.size());
+    }
+
+    template <typename T, typename Mapper>
+    auto select_map(std::vector<std::string> selected_columns, Mapper&& mapper,
+                    query_options options = {})
+        -> asterorm::result<std::vector<std::invoke_result_t<Mapper&, const projection_row&>>> {
+        auto compiled_query_result =
+            compile_projection_query<T>(selected_columns, std::move(options));
+        if (!compiled_query_result) {
+            return std::unexpected(compiled_query_result.error());
+        }
+        return execute_projection_map(*compiled_query_result, selected_columns.size(),
+                                      std::forward<Mapper>(mapper));
+    }
+
+    template <typename T, typename Mapper>
+    auto select_map_by(sql::predicate_ast predicate, std::vector<std::string> selected_columns,
+                       Mapper&& mapper, query_options options = {})
+        -> asterorm::result<std::vector<std::invoke_result_t<Mapper&, const projection_row&>>> {
+        auto compiled_query_result = compile_projection_query_by<T>(
+            std::move(predicate), selected_columns, std::move(options));
+        if (!compiled_query_result) {
+            return std::unexpected(compiled_query_result.error());
+        }
+        return execute_projection_map(*compiled_query_result, selected_columns.size(),
+                                      std::forward<Mapper>(mapper));
+    }
+
     template <typename T> asterorm::result<void> update(T& entity) {
         if constexpr (detail::has_version_column<T>::value) {
             return update_versioned(entity);
@@ -782,6 +935,119 @@ template <typename Session> class repository {
     }
 
   private:
+    template <typename T>
+    asterorm::result<sql::compiled_query>
+    compile_projection_query(const std::vector<std::string>& selected_columns,
+                             query_options options) {
+        auto validation_result = detail::validate_projection_columns<T>(selected_columns);
+        if (!validation_result) {
+            return std::unexpected(validation_result.error());
+        }
+
+        using traits = entity_traits<T>;
+        auto query_builder = sql::select(selected_columns);
+        query_builder.from(traits::table);
+        for (const auto& requested_order : options.order_by) {
+            query_builder.order_by(requested_order.column, requested_order.ascending);
+        }
+        if (options.limit) {
+            query_builder.limit(*options.limit);
+        }
+        if (options.offset) {
+            query_builder.offset(*options.offset);
+        }
+
+        sql::compiler query_compiler;
+        return query_compiler.compile(query_builder.build());
+    }
+
+    template <typename T>
+    asterorm::result<sql::compiled_query>
+    compile_projection_query_by(sql::predicate_ast predicate,
+                                const std::vector<std::string>& selected_columns,
+                                query_options options) {
+        auto validation_result = detail::validate_projection_columns<T>(selected_columns);
+        if (!validation_result) {
+            return std::unexpected(validation_result.error());
+        }
+
+        using traits = entity_traits<T>;
+        auto query_builder = sql::select(selected_columns);
+        query_builder.from(traits::table);
+        query_builder.where(std::move(predicate));
+        for (const auto& requested_order : options.order_by) {
+            query_builder.order_by(requested_order.column, requested_order.ascending);
+        }
+        if (options.limit) {
+            query_builder.limit(*options.limit);
+        }
+        if (options.offset) {
+            query_builder.offset(*options.offset);
+        }
+
+        sql::compiler query_compiler;
+        return query_compiler.compile(query_builder.build());
+    }
+
+    template <typename Projection>
+    asterorm::result<std::vector<Projection>>
+    execute_projection_query(const sql::compiled_query& compiled_query,
+                             std::size_t selected_column_count) {
+        auto shape_validation_result =
+            detail::validate_projection_shape<Projection>(selected_column_count);
+        if (!shape_validation_result) {
+            return std::unexpected(shape_validation_result.error());
+        }
+
+        auto query_result = session_->with_connection([&](auto& connection) {
+            return session_->observed_execute(connection, compiled_query.sql,
+                                              compiled_query.params);
+        });
+        if (!query_result) {
+            return std::unexpected(query_result.error());
+        }
+
+        std::vector<Projection> projected_rows;
+        projected_rows.reserve(static_cast<std::size_t>(query_result->rows()));
+        for (int row_index = 0; row_index < query_result->rows(); ++row_index) {
+            auto decoded_projection =
+                detail::decode_projection<Projection>(*query_result, row_index);
+            if (!decoded_projection) {
+                return std::unexpected(decoded_projection.error());
+            }
+            projected_rows.push_back(std::move(*decoded_projection));
+        }
+        return projected_rows;
+    }
+
+    template <typename Mapper>
+    auto execute_projection_map(const sql::compiled_query& compiled_query,
+                                std::size_t selected_column_count, Mapper&& mapper)
+        -> asterorm::result<std::vector<std::invoke_result_t<Mapper&, const projection_row&>>> {
+        auto query_result = session_->with_connection([&](auto& connection) {
+            return session_->observed_execute(connection, compiled_query.sql,
+                                              compiled_query.params);
+        });
+        using mapped_type = std::invoke_result_t<Mapper&, const projection_row&>;
+        if (!query_result) {
+            return std::unexpected(query_result.error());
+        }
+
+        std::vector<mapped_type> projected_rows;
+        projected_rows.reserve(static_cast<std::size_t>(query_result->rows()));
+        for (int row_index = 0; row_index < query_result->rows(); ++row_index) {
+            projection_row row_values;
+            row_values.reserve(selected_column_count);
+            for (std::size_t column_index = 0; column_index < selected_column_count;
+                 ++column_index) {
+                row_values.push_back(
+                    query_result->get_string(row_index, static_cast<int>(column_index)));
+            }
+            projected_rows.push_back(std::invoke(mapper, row_values));
+        }
+        return projected_rows;
+    }
+
     template <typename T> asterorm::result<void> update_const(const T& entity) {
         using traits = entity_traits<T>;
         std::string sql = "UPDATE ";
