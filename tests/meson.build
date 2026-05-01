@@ -22,6 +22,7 @@ if get_option('postgres').enabled()
       'integration/test_sql.cpp',
       'integration/test_extras.cpp',
       'integration/test_arrays_copy.cpp',
+      'integration/test_migrations.cpp',
     ],
     dependencies : [asterorm_pg_dep, catch2_dep],
   )
