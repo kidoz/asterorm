@@ -5,11 +5,23 @@
 #include "asterorm/postgres/types.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
+#include <optional>
+#include <string_view>
 
 struct extra_model {
     std::optional<int> id;
     std::string key;
     asterorm::jsonb data;
+};
+
+enum class extra_status { active, archived };
+
+struct typed_extra_model {
+    std::optional<int> id;
+    asterorm::date due_on;
+    asterorm::time_of_day starts_at;
+    asterorm::numeric amount;
+    extra_status status{extra_status::active};
 };
 
 template <> struct asterorm::entity_traits<extra_model> {
@@ -19,6 +31,38 @@ template <> struct asterorm::entity_traits<extra_model> {
     static constexpr auto columns = std::make_tuple(
         asterorm::column<&extra_model::id>("id", asterorm::generated::by_default),
         asterorm::column<&extra_model::key>("key"), asterorm::column<&extra_model::data>("data"));
+};
+
+template <> struct asterorm::enum_traits<extra_status> {
+    static std::string_view to_db(extra_status status) {
+        switch (status) {
+        case extra_status::active:
+            return "active";
+        case extra_status::archived:
+            return "archived";
+        }
+        return "active";
+    }
+
+    static std::optional<extra_status> from_db(std::string_view s) {
+        if (s == "active")
+            return extra_status::active;
+        if (s == "archived")
+            return extra_status::archived;
+        return std::nullopt;
+    }
+};
+
+template <> struct asterorm::entity_traits<typed_extra_model> {
+    static constexpr const char* table = "typed_extras_table";
+    static constexpr auto primary_key = asterorm::pk<&typed_extra_model::id>("id");
+
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&typed_extra_model::id>("id", asterorm::generated::by_default),
+        asterorm::column<&typed_extra_model::due_on>("due_on"),
+        asterorm::column<&typed_extra_model::starts_at>("starts_at"),
+        asterorm::column<&typed_extra_model::amount>("amount"),
+        asterorm::column<&typed_extra_model::status>("status"));
 };
 
 TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
@@ -44,9 +88,16 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
 
     // Set up table with JSONB column
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS extras_table;");
+    (void)(*test_lease)->execute("DROP TABLE IF EXISTS typed_extras_table;");
+    (void)(*test_lease)->execute("DROP TYPE IF EXISTS extra_status;");
+    (void)(*test_lease)->execute("CREATE TYPE extra_status AS ENUM ('active', 'archived');");
     (void)(*test_lease)
         ->execute(
             "CREATE TABLE extras_table (id SERIAL PRIMARY KEY, key TEXT UNIQUE, data JSONB);");
+    (void)(*test_lease)
+        ->execute("CREATE TABLE typed_extras_table (id SERIAL PRIMARY KEY, due_on DATE NOT NULL, "
+                  "starts_at TIME NOT NULL, amount NUMERIC(20,4) NOT NULL, status extra_status "
+                  "NOT NULL);");
     test_lease.value().release_to_pool();
 
     asterorm::repository repo{db};
@@ -86,7 +137,29 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
         REQUIRE(find_res.value().key == "static_changed");
         REQUIRE(find_res.value().data.value.contains("\"status\": \"updated\""));
     }
+
+    SECTION("Date, time, numeric, and enum mappings") {
+        typed_extra_model row{
+            .due_on = asterorm::date{.year = 2026, .month = 4, .day = 24},
+            .starts_at =
+                asterorm::time_of_day{.hour = 13, .minute = 45, .second = 9, .microsecond = 123456},
+            .amount = asterorm::numeric{.value = "123456789.1200"},
+            .status = extra_status::archived};
+
+        auto insert_res = repo.insert(row);
+        REQUIRE(insert_res.has_value());
+        REQUIRE(row.id.has_value());
+
+        auto find_res = repo.find<typed_extra_model>(*row.id);
+        REQUIRE(find_res.has_value());
+        REQUIRE(find_res->due_on == row.due_on);
+        REQUIRE(find_res->starts_at == row.starts_at);
+        REQUIRE(find_res->amount.value == "123456789.1200");
+        REQUIRE(find_res->status == extra_status::archived);
+    }
     // Cleanup
     auto cleanup_lease = pool.acquire();
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS extras_table;");
+    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS typed_extras_table;");
+    (void)(*cleanup_lease)->execute("DROP TYPE IF EXISTS extra_status;");
 }
