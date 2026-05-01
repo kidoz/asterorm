@@ -32,6 +32,23 @@ struct order_line {
     int qty{};
 };
 
+struct relationship_author {
+    std::optional<int> id;
+    std::string email;
+};
+
+struct relationship_profile {
+    std::optional<int> id;
+    int author_id{};
+    std::string display_name;
+};
+
+struct relationship_post {
+    std::optional<int> id;
+    int author_id{};
+    std::string title;
+};
+
 template <> struct asterorm::entity_traits<crud_user> {
     static constexpr const char* table = "crud_users";
     static constexpr auto primary_key = asterorm::pk<&crud_user::id>("id");
@@ -76,6 +93,45 @@ template <> struct asterorm::entity_traits<order_line> {
         asterorm::column<&order_line::sku>("sku"), asterorm::column<&order_line::qty>("qty"));
 };
 
+template <> struct asterorm::entity_traits<relationship_author> {
+    static constexpr const char* table = "relationship_authors";
+    static constexpr auto primary_key = asterorm::pk<&relationship_author::id>("id");
+
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&relationship_author::id>("id", asterorm::generated::by_default),
+        asterorm::column<&relationship_author::email>("email"));
+
+    static constexpr auto relationships =
+        std::make_tuple(asterorm::one_to_one<relationship_profile, &relationship_author::id,
+                                             &relationship_profile::author_id>("profile"),
+                        asterorm::one_to_many<relationship_post, &relationship_author::id,
+                                              &relationship_post::author_id>("posts"));
+};
+
+template <> struct asterorm::entity_traits<relationship_profile> {
+    static constexpr const char* table = "relationship_profiles";
+    static constexpr auto primary_key = asterorm::pk<&relationship_profile::id>("id");
+
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&relationship_profile::id>("id", asterorm::generated::by_default),
+        asterorm::column<&relationship_profile::author_id>("author_id"),
+        asterorm::column<&relationship_profile::display_name>("display_name"));
+
+    static constexpr auto relationships =
+        std::make_tuple(asterorm::many_to_one<relationship_author, &relationship_profile::author_id,
+                                              &relationship_author::id>("author"));
+};
+
+template <> struct asterorm::entity_traits<relationship_post> {
+    static constexpr const char* table = "relationship_posts";
+    static constexpr auto primary_key = asterorm::pk<&relationship_post::id>("id");
+
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&relationship_post::id>("id", asterorm::generated::by_default),
+        asterorm::column<&relationship_post::author_id>("author_id"),
+        asterorm::column<&relationship_post::title>("title"));
+};
+
 TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
     std::string conninfo = env_conninfo ? env_conninfo
@@ -100,6 +156,9 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS generated_users;");
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS locked_users;");
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS order_lines;");
+    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_posts;");
+    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_profiles;");
+    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_authors;");
     (void)(*test_lease)
         ->execute("CREATE TABLE crud_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active "
                   "BOOLEAN);");
@@ -112,6 +171,15 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     (void)(*test_lease)
         ->execute("CREATE TABLE order_lines (order_id INT NOT NULL, line_no INT NOT NULL, sku TEXT "
                   "NOT NULL, qty INT NOT NULL, PRIMARY KEY (order_id, line_no));");
+    (void)(*test_lease)
+        ->execute("CREATE TABLE relationship_authors (id SERIAL PRIMARY KEY, email TEXT NOT "
+                  "NULL);");
+    (void)(*test_lease)
+        ->execute("CREATE TABLE relationship_profiles (id SERIAL PRIMARY KEY, author_id INT NOT "
+                  "NULL, display_name TEXT NOT NULL);");
+    (void)(*test_lease)
+        ->execute("CREATE TABLE relationship_posts (id SERIAL PRIMARY KEY, author_id INT NOT "
+                  "NULL, title TEXT NOT NULL);");
     test_lease.value().release_to_pool();
 
     asterorm::repository repo{db};
@@ -252,10 +320,57 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
         REQUIRE_FALSE(erased_find.has_value());
     }
 
+    SECTION("Relationship follow-up loads work against PostgreSQL") {
+        relationship_author author{.email = "relationship@example.com"};
+        auto insert_author_result = repo.insert(author);
+        REQUIRE(insert_author_result.has_value());
+        REQUIRE(author.id.has_value());
+
+        relationship_profile profile{
+            .author_id = *author.id,
+            .display_name = "Relationship Author",
+        };
+        auto insert_profile_result = repo.insert(profile);
+        REQUIRE(insert_profile_result.has_value());
+        REQUIRE(profile.id.has_value());
+
+        relationship_post first_post{.author_id = *author.id, .title = "First"};
+        relationship_post second_post{.author_id = *author.id, .title = "Second"};
+        REQUIRE(repo.insert(first_post).has_value());
+        REQUIRE(repo.insert(second_post).has_value());
+
+        asterorm::query_options post_options;
+        post_options.order_by.push_back({.column = "title", .ascending = true});
+        auto posts_result = repo.load_related_many<1>(author, std::move(post_options));
+
+        REQUIRE(posts_result.has_value());
+        REQUIRE(posts_result->size() == 2);
+        REQUIRE((*posts_result)[0].title == "First");
+        REQUIRE((*posts_result)[0].author_id == *author.id);
+        REQUIRE((*posts_result)[1].title == "Second");
+        REQUIRE((*posts_result)[1].author_id == *author.id);
+
+        auto profile_result = repo.load_related_one<0>(author);
+        REQUIRE(profile_result.has_value());
+        REQUIRE(profile_result->has_value());
+        REQUIRE((*profile_result)->display_name == "Relationship Author");
+        REQUIRE((*profile_result)->author_id == *author.id);
+
+        const auto loaded_profile = **profile_result;
+        auto author_result = repo.load_related_one<0>(loaded_profile);
+        REQUIRE(author_result.has_value());
+        REQUIRE(author_result->has_value());
+        REQUIRE((*author_result)->id == author.id);
+        REQUIRE((*author_result)->email == author.email);
+    }
+
     // Cleanup
     auto cleanup_lease = pool.acquire();
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS crud_users;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS generated_users;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS locked_users;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS order_lines;");
+    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_posts;");
+    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_profiles;");
+    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_authors;");
 }
