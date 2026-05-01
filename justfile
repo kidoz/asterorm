@@ -22,13 +22,13 @@ test: setup
     meson test -C {{build_dir}} --print-errorlogs
 
 format: setup
-    find src include tests examples -type f \( -name "*.cpp" -o -name "*.hpp" \) -print0 | xargs -0 clang-format -i
+    meson compile -C {{build_dir}} clang-format
 
 format-check: setup
-    find src include tests examples -type f \( -name "*.cpp" -o -name "*.hpp" \) -print0 | xargs -0 clang-format --dry-run --Werror
+    meson compile -C {{build_dir}} clang-format-check
 
 lint: setup
-    find src tests examples -type f -name "*.cpp" -print0 | xargs -0 clang-tidy -p {{build_dir}} --extra-arg="-isysroot" --extra-arg="$(xcrun --show-sdk-path)"
+    meson compile -C {{build_dir}} clang-tidy
 
 check: format-check test
 
