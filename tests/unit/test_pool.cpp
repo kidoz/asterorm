@@ -1,4 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
+
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <thread>
 
 #include "asterorm/pool/connection_pool.hpp"
@@ -28,8 +33,29 @@ struct mock_connection {
 
 struct mock_driver {
     mutable int next_id{1};
+    [[nodiscard]]
     asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
         return mock_connection{next_id++};
+    }
+};
+
+struct blocking_driver_state {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool connect_started{false};
+    bool allow_connect{false};
+};
+
+struct blocking_driver {
+    std::shared_ptr<blocking_driver_state> state;
+
+    [[nodiscard]]
+    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
+        std::unique_lock lock(state->mutex);
+        state->connect_started = true;
+        state->condition.notify_all();
+        state->condition.wait(lock, [&] { return state->allow_connect; });
+        return mock_connection{1};
     }
 };
 
@@ -94,4 +120,45 @@ TEST_CASE("Core: Connection Pool Stats and Close", "[pool]") {
 
     auto after_close = pool.acquire();
     REQUIRE_FALSE(after_close.has_value());
+}
+
+TEST_CASE("Core: Connection Pool acquire fails if close wins connect race", "[pool]") {
+    asterorm::pool_config config;
+    config.min_size = 0;
+    config.max_size = 1;
+    config.acquire_timeout = std::chrono::milliseconds(500);
+
+    auto driver_state = std::make_shared<blocking_driver_state>();
+    asterorm::connection_pool<blocking_driver> pool{blocking_driver{driver_state}, config};
+
+    std::optional<std::string> acquire_error_message;
+    std::thread acquire_thread([&] {
+        auto acquire_result = pool.acquire();
+        if (!acquire_result) {
+            acquire_error_message = acquire_result.error().message;
+        }
+    });
+
+    {
+        std::unique_lock lock(driver_state->mutex);
+        REQUIRE(driver_state->condition.wait_for(lock, std::chrono::seconds(1),
+                                                 [&] { return driver_state->connect_started; }));
+    }
+
+    std::thread close_thread([&] { pool.close(); });
+    while (!pool.stats().closed) {
+        std::this_thread::yield();
+    }
+
+    {
+        std::scoped_lock lock(driver_state->mutex);
+        driver_state->allow_connect = true;
+    }
+    driver_state->condition.notify_all();
+
+    acquire_thread.join();
+    close_thread.join();
+
+    REQUIRE(acquire_error_message.has_value());
+    REQUIRE(*acquire_error_message == "Connection pool is closed");
 }

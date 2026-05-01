@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <type_traits>
@@ -24,6 +26,7 @@ struct pool_stats {
     size_t total{0};
     size_t idle{0};
     size_t in_use{0};
+    size_t leaked_at_close{0};
     bool closed{false};
 };
 
@@ -48,14 +51,15 @@ template <typename Pool> class connection_lease {
   public:
     using connection_type = typename Pool::connection_type;
 
-    connection_lease(connection_type&& conn, Pool* pool) : conn_(std::move(conn)), pool_(pool) {}
+    connection_lease(connection_type&& conn, Pool* pool, std::shared_ptr<std::atomic<bool>> alive)
+        : conn_(std::move(conn)), pool_(pool), alive_(std::move(alive)) {}
 
     ~connection_lease() {
         release_to_pool();
     }
 
     connection_lease(connection_lease&& other) noexcept
-        : conn_(std::move(other.conn_)), pool_(other.pool_) {
+        : conn_(std::move(other.conn_)), pool_(other.pool_), alive_(std::move(other.alive_)) {
         other.pool_ = nullptr;
     }
 
@@ -64,6 +68,7 @@ template <typename Pool> class connection_lease {
             release_to_pool();
             conn_ = std::move(other.conn_);
             pool_ = other.pool_;
+            alive_ = std::move(other.alive_);
             other.pool_ = nullptr;
         }
         return *this;
@@ -77,15 +82,21 @@ template <typename Pool> class connection_lease {
     }
 
     void release_to_pool() {
-        if (pool_) {
-            pool_->release(std::move(conn_));
-            pool_ = nullptr;
+        if (!pool_) {
+            return;
         }
+        if (alive_ && alive_->load(std::memory_order_acquire)) {
+            pool_->release(std::move(conn_));
+        }
+        // If the pool has been torn down, drop the connection here; its
+        // destructor will close the underlying client.
+        pool_ = nullptr;
     }
 
   private:
     connection_type conn_;
     Pool* pool_;
+    std::shared_ptr<std::atomic<bool>> alive_;
 };
 
 template <typename Driver> class connection_pool {
@@ -115,7 +126,16 @@ template <typename Driver> class connection_pool {
         std::unique_lock lock(mutex_);
         closed_ = true;
         cv_.notify_all();
-        cv_.wait(lock, [this] { return current_size_ == idle_connections_.size(); });
+        // Wait up to close_timeout for outstanding leases to return. After the
+        // deadline we mark the pool dead anyway; any leaked lease will drop its
+        // connection from release_to_pool() rather than touch the pool.
+        auto deadline = std::chrono::steady_clock::now() + close_timeout_;
+        bool returned = cv_.wait_until(
+            lock, deadline, [this] { return current_size_ == idle_connections_.size(); });
+        if (!returned) {
+            leaked_at_close_ = current_size_ - idle_connections_.size();
+        }
+        alive_flag_->store(false, std::memory_order_release);
         idle_connections_.clear();
         current_size_ = 0;
     }
@@ -125,6 +145,7 @@ template <typename Driver> class connection_pool {
         return pool_stats{.total = current_size_,
                           .idle = idle_connections_.size(),
                           .in_use = current_size_ - idle_connections_.size(),
+                          .leaked_at_close = leaked_at_close_,
                           .closed = closed_};
     }
 
@@ -155,7 +176,16 @@ template <typename Driver> class connection_pool {
                 }
 
                 detail::configure_connection(*conn_res, config_);
-                return lease_type(std::move(*conn_res), this);
+                lock.lock();
+                if (closed_) {
+                    --current_size_;
+                    cv_.notify_all();
+                    db_error err;
+                    err.kind = db_error_kind::connection_failed;
+                    err.message = "Connection pool is closed";
+                    return std::unexpected(err);
+                }
+                return lease_type{std::move(*conn_res), this, alive_flag_};
             }
 
             if (cv_.wait_until(lock, timeout_time) == std::cv_status::timeout) {
@@ -185,12 +215,22 @@ template <typename Driver> class connection_pool {
             return acquire();
         }
 
-        return lease_type(std::move(conn), this);
+        return lease_type{std::move(conn), this, alive_flag_};
     }
 
     void release(connection_type&& conn) {
         std::lock_guard lock(mutex_);
-        if (conn.is_open() && !closed_) {
+        if (closed_) {
+            // Pool was closed; drop the connection. Decrement so close()'s wait
+            // predicate can make progress as leases return. Guard against the
+            // post-timeout path where current_size_ was already reset to 0.
+            if (current_size_ > 0) {
+                --current_size_;
+            }
+            cv_.notify_all();
+            return;
+        }
+        if (conn.is_open()) {
             idle_connections_.push_back(std::move(conn));
         } else {
             --current_size_;
@@ -206,7 +246,10 @@ template <typename Driver> class connection_pool {
     std::condition_variable cv_;
     std::vector<connection_type> idle_connections_;
     size_t current_size_{0};
+    size_t leaked_at_close_{0};
     bool closed_{false};
+    std::shared_ptr<std::atomic<bool>> alive_flag_{std::make_shared<std::atomic<bool>>(true)};
+    std::chrono::milliseconds close_timeout_{std::chrono::seconds(10)};
 };
 
 } // namespace asterorm
