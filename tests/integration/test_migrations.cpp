@@ -20,10 +20,9 @@ TEST_CASE("PG Integration: Schema migrations", "[pg][migrations]") {
     asterorm::session<decltype(pool)> db{pool};
 
     auto test_lease = pool.acquire();
-    if (!test_lease.has_value()) {
-        WARN("Could not connect to PostgreSQL. Is it running? Skipping test.");
-        return;
-    }
+    INFO("PostgreSQL integration tests require ASTERORM_TEST_CONNINFO or the default local test "
+         "database");
+    REQUIRE(test_lease.has_value());
 
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS migration_users;");
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS test_schema_migrations;");

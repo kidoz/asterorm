@@ -90,12 +90,10 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
     asterorm::session<decltype(pool)> db{pool};
 
-    // Fail fast if no DB
     auto test_lease = pool.acquire();
-    if (!test_lease.has_value()) {
-        WARN("Could not connect to PostgreSQL. Is it running? Skipping test.");
-        return;
-    }
+    INFO("PostgreSQL integration tests require ASTERORM_TEST_CONNINFO or the default local test "
+         "database");
+    REQUIRE(test_lease.has_value());
 
     // Set up table
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS crud_users;");

@@ -18,11 +18,8 @@ TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
 
     auto lease1 = pool.acquire();
-    if (!lease1.has_value()) {
-        WARN("Could not connect to PostgreSQL. Is it running? Skipping test.");
-        return; // Skip gracefully if DB is down locally
-    }
-
+    INFO("PostgreSQL integration tests require ASTERORM_TEST_CONNINFO or the default local test "
+         "database");
     REQUIRE(lease1.has_value());
     REQUIRE(lease1.value()->is_open());
 
