@@ -109,12 +109,10 @@ TEST_CASE("Core: Relationship trait metadata", "[core][traits][relationships]") 
     const auto profile_relationship = std::get<0>(user_relationships);
     const auto posts_relationship = std::get<1>(user_relationships);
 
-    static_assert(
-        std::is_same_v<typename std::decay_t<decltype(profile_relationship)>::related_entity,
-                       relationship_profile>);
-    static_assert(
-        std::is_same_v<typename std::decay_t<decltype(posts_relationship)>::related_entity,
-                       relationship_post>);
+    static_assert(std::is_same_v<std::decay_t<decltype(profile_relationship)>::related_entity,
+                                 relationship_profile>);
+    static_assert(std::is_same_v<std::decay_t<decltype(posts_relationship)>::related_entity,
+                                 relationship_post>);
 
     REQUIRE(profile_relationship.kind == asterorm::relationship_kind::one_to_one);
     REQUIRE(profile_relationship.name == "profile");
@@ -129,7 +127,7 @@ TEST_CASE("Core: Relationship trait metadata", "[core][traits][relationships]") 
     const auto profile_relationships = asterorm::entity_traits<relationship_profile>::relationships;
     const auto user_relationship = std::get<0>(profile_relationships);
 
-    static_assert(std::is_same_v<typename std::decay_t<decltype(user_relationship)>::related_entity,
+    static_assert(std::is_same_v<std::decay_t<decltype(user_relationship)>::related_entity,
                                  relationship_user>);
     REQUIRE(user_relationship.kind == asterorm::relationship_kind::many_to_one);
     REQUIRE(user_relationship.name == "user");
@@ -141,12 +139,13 @@ struct fake_query_result {
     int affected{0};
     std::vector<std::vector<std::optional<std::string>>> rows_data;
 
-    int affected_rows() const {
+    [[nodiscard]] int affected_rows() const {
         return affected;
     }
-    int rows() const {
+    [[nodiscard]] int rows() const {
         return static_cast<int>(rows_data.size());
     }
+    [[nodiscard]]
     std::optional<std::string> get_string(int row_index, int column_index) const {
         return rows_data.at(static_cast<std::size_t>(row_index))
             .at(static_cast<std::size_t>(column_index));
@@ -260,7 +259,19 @@ TEST_CASE("Repository: projection queries decode scalar, tuple, and mapped rows"
 
         REQUIRE_FALSE(projected_names.has_value());
         REQUIRE(projected_names.error().kind == asterorm::db_error_kind::parse_failed);
-        REQUIRE(projected_names.error().message.find("missing_column") != std::string::npos);
+        REQUIRE(projected_names.error().message.contains("missing_column"));
+    }
+
+    SECTION("Unknown order column reports the offending name") {
+        asterorm::query_options options;
+        options.order_by.push_back({.column = "missing_order_column", .ascending = true});
+
+        auto projected_names =
+            repository.select_projection<test_user, std::string>({"name"}, std::move(options));
+
+        REQUIRE_FALSE(projected_names.has_value());
+        REQUIRE(projected_names.error().kind == asterorm::db_error_kind::parse_failed);
+        REQUIRE(projected_names.error().message.contains("missing_order_column"));
     }
 }
 

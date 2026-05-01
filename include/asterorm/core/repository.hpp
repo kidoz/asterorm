@@ -172,6 +172,16 @@ validate_projection_columns(const std::vector<std::string>& selected_columns) {
     return {};
 }
 
+template <typename T> asterorm::result<void> validate_order_columns(const query_options& options) {
+    for (const auto& requested_order : options.order_by) {
+        if (!mapped_column_exists<T>(requested_order.column)) {
+            return std::unexpected(
+                projection_error("Unknown column in order_by: " + requested_order.column));
+        }
+    }
+    return {};
+}
+
 template <typename Projection>
 asterorm::result<void> validate_projection_shape(std::size_t selected_column_count) {
     if constexpr (is_tuple_like_v<Projection>) {
@@ -262,14 +272,14 @@ template <typename T, typename Key, std::size_t... Is>
 void append_tuple_key_predicate(std::string& sql, std::vector<std::optional<std::string>>& params,
                                 const Key& key, std::size_t& param_idx,
                                 std::index_sequence<Is...>) {
-    constexpr const auto& pk = entity_traits<T>::primary_key;
+    constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
     bool first = true;
     (..., [&]() {
         if (!first)
             sql += " AND ";
         first = false;
-        const auto& pk_part = std::get<Is>(pk);
-        sql += pk_part.name;
+        const auto& primary_key_part = std::get<Is>(primary_key_metadata);
+        sql += primary_key_part.name;
         sql += " = $" + std::to_string(param_idx++);
         params.push_back(asterorm::encode(std::get<Is>(key)));
     }());
@@ -278,18 +288,19 @@ void append_tuple_key_predicate(std::string& sql, std::vector<std::optional<std:
 template <typename T, typename Key>
 void append_key_predicate(std::string& sql, std::vector<std::optional<std::string>>& params,
                           const Key& key, std::size_t& param_idx) {
-    constexpr const auto& pk = entity_traits<T>::primary_key;
-    if constexpr (is_tuple_like_v<decltype(pk)>) {
+    constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
+    if constexpr (is_tuple_like_v<decltype(primary_key_metadata)>) {
         static_assert(is_tuple_like_v<Key>,
                       "Composite primary keys require a tuple-like key value");
         static_assert(std::tuple_size_v<std::decay_t<Key>> ==
-                          std::tuple_size_v<std::decay_t<decltype(pk)>>,
+                          std::tuple_size_v<std::decay_t<decltype(primary_key_metadata)>>,
                       "Composite key tuple size must match entity_traits<T>::primary_key");
         append_tuple_key_predicate<T>(
             sql, params, key, param_idx,
-            std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(pk)>>>{});
+            std::make_index_sequence<
+                std::tuple_size_v<std::decay_t<decltype(primary_key_metadata)>>>{});
     } else {
-        sql += pk.name;
+        sql += primary_key_metadata.name;
         sql += " = $" + std::to_string(param_idx++);
         params.push_back(asterorm::encode(key));
     }
@@ -793,6 +804,10 @@ template <typename Session> class repository {
     template <typename T>
     asterorm::result<std::vector<T>> find_by(sql::predicate_ast pred, query_options options) {
         using traits = entity_traits<T>;
+        auto order_validation_result = detail::validate_order_columns<T>(options);
+        if (!order_validation_result) {
+            return std::unexpected(order_validation_result.error());
+        }
 
         std::vector<std::string> col_names;
         auto collect = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -847,6 +862,10 @@ template <typename Session> class repository {
 
     template <typename T> asterorm::result<std::vector<T>> find_all(query_options options = {}) {
         using traits = entity_traits<T>;
+        auto order_validation_result = detail::validate_order_columns<T>(options);
+        if (!order_validation_result) {
+            return std::unexpected(order_validation_result.error());
+        }
 
         std::vector<std::string> col_names;
         auto collect = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -1022,6 +1041,10 @@ template <typename Session> class repository {
         if (!validation_result) {
             return std::unexpected(validation_result.error());
         }
+        auto order_validation_result = detail::validate_order_columns<T>(options);
+        if (!order_validation_result) {
+            return std::unexpected(order_validation_result.error());
+        }
 
         using traits = entity_traits<T>;
         auto query_builder = sql::select(selected_columns);
@@ -1048,6 +1071,10 @@ template <typename Session> class repository {
         auto validation_result = detail::validate_projection_columns<T>(selected_columns);
         if (!validation_result) {
             return std::unexpected(validation_result.error());
+        }
+        auto order_validation_result = detail::validate_order_columns<T>(options);
+        if (!order_validation_result) {
+            return std::unexpected(order_validation_result.error());
         }
 
         using traits = entity_traits<T>;
