@@ -12,6 +12,23 @@ struct test_user {
     bool active{true};
 };
 
+struct relationship_user {
+    int id{};
+    std::string email;
+};
+
+struct relationship_profile {
+    int id{};
+    int user_id{};
+    std::string display_name;
+};
+
+struct relationship_post {
+    int id{};
+    int author_id{};
+    std::string title;
+};
+
 template <> struct asterorm::entity_traits<test_user> {
     static constexpr const char* table = "users";
     static constexpr auto primary_key = asterorm::pk<&test_user::id>("id");
@@ -19,6 +36,45 @@ template <> struct asterorm::entity_traits<test_user> {
     static constexpr auto columns = std::make_tuple(
         asterorm::column<&test_user::id>("id", asterorm::generated::by_default),
         asterorm::column<&test_user::name>("name"), asterorm::column<&test_user::active>("active"));
+};
+
+template <> struct asterorm::entity_traits<relationship_user> {
+    static constexpr const char* table = "relationship_users";
+    static constexpr auto primary_key = asterorm::pk<&relationship_user::id>("id");
+
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&relationship_user::id>("id"),
+                        asterorm::column<&relationship_user::email>("email"));
+
+    static constexpr auto relationships =
+        std::make_tuple(asterorm::one_to_one<relationship_profile, &relationship_user::id,
+                                             &relationship_profile::user_id>("profile"),
+                        asterorm::one_to_many<relationship_post, &relationship_user::id,
+                                              &relationship_post::author_id>("posts"));
+};
+
+template <> struct asterorm::entity_traits<relationship_profile> {
+    static constexpr const char* table = "profiles";
+    static constexpr auto primary_key = asterorm::pk<&relationship_profile::id>("id");
+
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&relationship_profile::id>("id"),
+                        asterorm::column<&relationship_profile::user_id>("user_id"),
+                        asterorm::column<&relationship_profile::display_name>("display_name"));
+
+    static constexpr auto relationships =
+        std::make_tuple(asterorm::many_to_one<relationship_user, &relationship_profile::user_id,
+                                              &relationship_user::id>("user"));
+};
+
+template <> struct asterorm::entity_traits<relationship_post> {
+    static constexpr const char* table = "posts";
+    static constexpr auto primary_key = asterorm::pk<&relationship_post::id>("id");
+
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&relationship_post::id>("id"),
+                        asterorm::column<&relationship_post::author_id>("author_id"),
+                        asterorm::column<&relationship_post::title>("title"));
 };
 
 TEST_CASE("Core: Entity Traits Mapping", "[core][traits]") {
@@ -40,6 +96,45 @@ TEST_CASE("Core: Entity Traits Mapping", "[core][traits]") {
 
     // Verify we can access the member pointer value at compile time
     REQUIRE(col1.member_ptr == &test_user::name);
+}
+
+TEST_CASE("Core: Relationship trait metadata", "[core][traits][relationships]") {
+    static_assert(!asterorm::has_relationships_v<test_user>);
+    static_assert(asterorm::relationship_count_v<test_user> == 0);
+    static_assert(asterorm::has_relationships_v<relationship_user>);
+    static_assert(asterorm::relationship_count_v<relationship_user> == 2);
+    static_assert(asterorm::relationship_count_v<relationship_profile> == 1);
+
+    const auto user_relationships = asterorm::entity_traits<relationship_user>::relationships;
+    const auto profile_relationship = std::get<0>(user_relationships);
+    const auto posts_relationship = std::get<1>(user_relationships);
+
+    static_assert(
+        std::is_same_v<typename std::decay_t<decltype(profile_relationship)>::related_entity,
+                       relationship_profile>);
+    static_assert(
+        std::is_same_v<typename std::decay_t<decltype(posts_relationship)>::related_entity,
+                       relationship_post>);
+
+    REQUIRE(profile_relationship.kind == asterorm::relationship_kind::one_to_one);
+    REQUIRE(profile_relationship.name == "profile");
+    REQUIRE(profile_relationship.local_member_ptr == &relationship_user::id);
+    REQUIRE(profile_relationship.related_member_ptr == &relationship_profile::user_id);
+
+    REQUIRE(posts_relationship.kind == asterorm::relationship_kind::one_to_many);
+    REQUIRE(posts_relationship.name == "posts");
+    REQUIRE(posts_relationship.local_member_ptr == &relationship_user::id);
+    REQUIRE(posts_relationship.related_member_ptr == &relationship_post::author_id);
+
+    const auto profile_relationships = asterorm::entity_traits<relationship_profile>::relationships;
+    const auto user_relationship = std::get<0>(profile_relationships);
+
+    static_assert(std::is_same_v<typename std::decay_t<decltype(user_relationship)>::related_entity,
+                                 relationship_user>);
+    REQUIRE(user_relationship.kind == asterorm::relationship_kind::many_to_one);
+    REQUIRE(user_relationship.name == "user");
+    REQUIRE(user_relationship.local_member_ptr == &relationship_profile::user_id);
+    REQUIRE(user_relationship.related_member_ptr == &relationship_user::id);
 }
 
 struct fake_query_result {
