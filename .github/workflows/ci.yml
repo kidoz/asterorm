@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: orm_test
+          POSTGRES_USER: orm_test
+          POSTGRES_PASSWORD: orm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orm_test -d orm_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ASTERORM_TEST_CONNINFO: host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format clang-tidy libpq-dev meson ninja-build pkg-config
+
+      - name: Configure
+        run: meson setup buildDir -Dclickhouse=disabled
+
+      - name: Build
+        run: meson compile -C buildDir
+
+      - name: Format check
+        run: meson compile -C buildDir clang-format-check
+
+      - name: Test
+        run: meson test -C buildDir --print-errorlogs
+
+      - name: Lint
+        run: meson compile -C buildDir clang-tidy
