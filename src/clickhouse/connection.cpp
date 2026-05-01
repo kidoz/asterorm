@@ -9,8 +9,43 @@
 
 namespace asterorm::ch {
 
-static std::string interpolate_params(std::string_view sql,
-                                      const std::vector<std::optional<std::string>>& params) {
+// ClickHouse has no libpq-style native parameter protocol exposed through
+// clickhouse-cpp's Client::Select, so we interpolate. Rejection rules:
+//   - control characters (< 0x20) other than \t are refused outright
+//   - NUL bytes are refused
+//   - single quotes and backslashes are doubled/escaped
+// Any parameter that cannot be safely encoded causes execute_params() to fail
+// with parse_failed rather than silently producing malformed SQL.
+static asterorm::result<std::string>
+interpolate_params(std::string_view sql, const std::vector<std::optional<std::string>>& params) {
+    auto escape_literal = [](std::string_view in, std::string& out) -> asterorm::result<void> {
+        out.reserve(out.size() + in.size() + 2);
+        out += '\'';
+        for (char c : in) {
+            const auto uc = static_cast<unsigned char>(c);
+            if (uc == '\0') {
+                return std::unexpected(db_error{
+                    db_error_kind::parse_failed, "", "", "ClickHouse parameter contains NUL byte",
+                    std::nullopt, std::nullopt, std::nullopt, std::nullopt});
+            }
+            if (uc < 0x20 && uc != '\t' && uc != '\n' && uc != '\r') {
+                return std::unexpected(db_error{db_error_kind::parse_failed, "", "",
+                                                "ClickHouse parameter contains control byte",
+                                                std::nullopt, std::nullopt, std::nullopt,
+                                                std::nullopt});
+            }
+            if (c == '\'') {
+                out += "''";
+            } else if (c == '\\') {
+                out += "\\\\";
+            } else {
+                out += c;
+            }
+        }
+        out += '\'';
+        return {};
+    };
+
     std::string result;
     result.reserve(sql.size() + params.size() * 10);
     for (size_t i = 0; i < sql.size(); ++i) {
@@ -23,17 +58,9 @@ static std::string interpolate_params(std::string_view sql,
             }
             if (idx > 0 && idx <= static_cast<int>(params.size())) {
                 if (params[idx - 1].has_value()) {
-                    result += "'";
-                    for (char c : *params[idx - 1]) {
-                        if (c == '\'') {
-                            result += "''";
-                        } else if (c == '\\') {
-                            result += "\\\\";
-                        } else {
-                            result += c;
-                        }
-                    }
-                    result += "'";
+                    auto ok = escape_literal(*params[idx - 1], result);
+                    if (!ok)
+                        return std::unexpected(ok.error());
                 } else {
                     result += "NULL";
                 }
@@ -86,8 +113,10 @@ asterorm::result<ch::result> connection::execute(std::string_view sql) {
 asterorm::result<ch::result>
 connection::execute_params(std::string_view sql,
                            const std::vector<std::optional<std::string>>& params) {
-    std::string interpolated = interpolate_params(sql, params);
-    return execute(interpolated);
+    auto interpolated = interpolate_params(sql, params);
+    if (!interpolated)
+        return std::unexpected(interpolated.error());
+    return execute(*interpolated);
 }
 
 asterorm::result<ch::result>
