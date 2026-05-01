@@ -13,6 +13,22 @@ TEST_CASE("Core: db_error instantiation", "[core]") {
     REQUIRE(!err.detail.has_value());
 }
 
+TEST_CASE("Core: SQLSTATE classification", "[core][error]") {
+    using asterorm::classify_sqlstate;
+    using K = asterorm::db_error_kind;
+
+    REQUIRE(classify_sqlstate("") == K::unknown);
+    REQUIRE(classify_sqlstate("23505") == K::constraint_violation); // unique_violation
+    REQUIRE(classify_sqlstate("23503") == K::constraint_violation); // fk_violation
+    REQUIRE(classify_sqlstate("23502") == K::constraint_violation); // not_null_violation
+    REQUIRE(classify_sqlstate("08006") == K::connection_failed);
+    REQUIRE(classify_sqlstate("40001") == K::serialization_failure);
+    REQUIRE(classify_sqlstate("40P01") == K::deadlock_detected);
+    REQUIRE(classify_sqlstate("22P02") == K::parse_failed);      // invalid_text_representation
+    REQUIRE(classify_sqlstate("57014") == K::connection_failed); // query_canceled
+    REQUIRE(classify_sqlstate("42601") == K::query_failed);      // syntax error -> unclassified
+}
+
 TEST_CASE("Core: result type with expected semantics", "[core]") {
     asterorm::result<int> res = 42;
     REQUIRE(res.has_value());
