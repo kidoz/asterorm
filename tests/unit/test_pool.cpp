@@ -62,3 +62,36 @@ TEST_CASE("Core: Connection Pool Max Size and Timeout", "[pool]") { // NOLINT
     l3 = pool.acquire();
     REQUIRE(l3.has_value());
 }
+
+TEST_CASE("Core: Connection Pool Stats and Close", "[pool]") {
+    asterorm::pool_config cfg;
+    cfg.min_size = 1;
+    cfg.max_size = 2;
+
+    mock_driver drv;
+    asterorm::connection_pool<mock_driver> pool{drv, cfg};
+
+    auto initial = pool.stats();
+    REQUIRE(initial.total == 1);
+    REQUIRE(initial.idle == 1);
+    REQUIRE(initial.in_use == 0);
+    REQUIRE_FALSE(initial.closed);
+
+    auto lease = pool.acquire();
+    REQUIRE(lease.has_value());
+    auto leased = pool.stats();
+    REQUIRE(leased.total == 1);
+    REQUIRE(leased.idle == 0);
+    REQUIRE(leased.in_use == 1);
+
+    lease.value().release_to_pool();
+    pool.close();
+    auto closed = pool.stats();
+    REQUIRE(closed.total == 0);
+    REQUIRE(closed.idle == 0);
+    REQUIRE(closed.in_use == 0);
+    REQUIRE(closed.closed);
+
+    auto after_close = pool.acquire();
+    REQUIRE_FALSE(after_close.has_value());
+}

@@ -16,8 +16,31 @@ struct pool_config {
     size_t min_size{1};
     size_t max_size{10};
     std::chrono::milliseconds acquire_timeout{5000};
+    size_t prepared_statement_cache_size{128};
     std::string conninfo;
 };
+
+struct pool_stats {
+    size_t total{0};
+    size_t idle{0};
+    size_t in_use{0};
+    bool closed{false};
+};
+
+namespace detail {
+template <typename Conn, typename = void> struct has_prepared_cache_limit : std::false_type {};
+
+template <typename Conn>
+struct has_prepared_cache_limit<
+    Conn, std::void_t<decltype(std::declval<Conn&>().set_max_prepared_statements(std::size_t{}))>>
+    : std::true_type {};
+
+template <typename Conn> void configure_connection(Conn& conn, const pool_config& config) {
+    if constexpr (has_prepared_cache_limit<Conn>::value) {
+        conn.set_max_prepared_statements(config.prepared_statement_cache_size);
+    }
+}
+} // namespace detail
 
 template <typename Driver> class connection_pool;
 
@@ -77,6 +100,7 @@ template <typename Driver> class connection_pool {
         for (size_t i = 0; i < config_.min_size; ++i) {
             auto conn_res = driver_.connect(config_.conninfo);
             if (conn_res) {
+                detail::configure_connection(*conn_res, config_);
                 idle_connections_.push_back(std::move(*conn_res));
                 ++current_size_;
             }
@@ -84,11 +108,24 @@ template <typename Driver> class connection_pool {
     }
 
     ~connection_pool() {
+        close();
+    }
+
+    void close() {
         std::unique_lock lock(mutex_);
         closed_ = true;
         cv_.notify_all();
         cv_.wait(lock, [this] { return current_size_ == idle_connections_.size(); });
         idle_connections_.clear();
+        current_size_ = 0;
+    }
+
+    [[nodiscard]] pool_stats stats() const {
+        std::lock_guard lock(mutex_);
+        return pool_stats{.total = current_size_,
+                          .idle = idle_connections_.size(),
+                          .in_use = current_size_ - idle_connections_.size(),
+                          .closed = closed_};
     }
 
     asterorm::result<lease_type> acquire() {
@@ -117,6 +154,7 @@ template <typename Driver> class connection_pool {
                     return std::unexpected(conn_res.error());
                 }
 
+                detail::configure_connection(*conn_res, config_);
                 return lease_type(std::move(*conn_res), this);
             }
 
@@ -164,7 +202,7 @@ template <typename Driver> class connection_pool {
     Driver driver_;
     pool_config config_;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::vector<connection_type> idle_connections_;
     size_t current_size_{0};
