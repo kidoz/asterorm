@@ -1,8 +1,24 @@
 #include "asterorm/sql/compiler.hpp"
 
 #include <stdexcept>
+#include <string_view>
 
 namespace asterorm::sql {
+
+static std::string quote_ident(std::string_view ident) {
+    std::string res;
+    res.reserve(ident.size() + 2);
+    res += '"';
+    for (char c : ident) {
+        if (c == '"') {
+            res += "\"\"";
+        } else {
+            res += c;
+        }
+    }
+    res += '"';
+    return res;
+}
 
 std::string compiler::op_to_string(op_kind op) {
     switch (op) {
@@ -29,7 +45,7 @@ std::string compiler::op_to_string(op_kind op) {
 std::string compiler::compile_expr(const expr_ast& expr,
                                    std::vector<std::optional<std::string>>& params) { // NOLINT
     if (std::holds_alternative<column_expr>(expr)) {
-        return std::get<column_expr>(expr).name;
+        return quote_ident(std::get<column_expr>(expr).name);
     }
     params.push_back(std::get<param_expr>(expr).encoded_value);
     return "$" + std::to_string(params.size());
@@ -57,14 +73,14 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
         q.sql += "*";
     } else {
         for (size_t i = 0; i < ast.columns.size(); ++i) {
-            q.sql += ast.columns[i];
+            q.sql += quote_ident(ast.columns[i]);
             if (i < ast.columns.size() - 1) {
                 q.sql += ", ";
             }
         }
     }
 
-    q.sql += " FROM " + ast.table;
+    q.sql += " FROM " + quote_ident(ast.table);
 
     if (ast.where_clause) {
         q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
@@ -73,7 +89,8 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
     if (!ast.order_bys.empty()) {
         q.sql += " ORDER BY ";
         for (size_t i = 0; i < ast.order_bys.size(); ++i) {
-            q.sql += ast.order_bys[i].column + (ast.order_bys[i].ascending ? " ASC" : " DESC");
+            q.sql += quote_ident(ast.order_bys[i].column) +
+                     (ast.order_bys[i].ascending ? " ASC" : " DESC");
             if (i < ast.order_bys.size() - 1) {
                 q.sql += ", ";
             }
