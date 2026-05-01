@@ -1,4 +1,5 @@
 option('postgres', type : 'feature', value : 'enabled')
-option('clickhouse', type : 'feature', value : 'enabled')
+option('clickhouse', type : 'feature', value : 'disabled',
+  description : 'Experimental ClickHouse adapter (parameterization is emulated via string interpolation; not recommended for untrusted input)')
 option('tests', type : 'boolean', value : true)
 option('examples', type : 'boolean', value : true)

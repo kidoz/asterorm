@@ -13,12 +13,34 @@ AsterORM is a modern, data-mapper style Object Relational Mapper for C++23. By h
 
 * **Data Mapper Architecture:** Entities remain plain `C++` structs. No magic base classes.
 * **Compile-Time Traits:** Define mappings using simple pointer-to-member templates (`&User::id`). No macros required.
-* **PostgreSQL Native:** Built directly on top of `libpq`. Uses binary formats, prepared statement caching, and `RETURNING` clauses seamlessly.
-* **Smart Connection Pooling:** Built-in connection pool with transparent `std::condition_variable` timeout leasing, automatic health checks, and thread safety.
-* **RAII Transactions:** Simple, scoped `db.begin()` -> `transaction_guard` layer. Dropped guards automatically execute `ROLLBACK`.
-* **Fluent Query DSL:** `select({"id"}).from("users").where(col("active") == val(true))` style AST generation, completely immune to SQL injection.
-* **Native Escape Hatch:** `db.native<User>("SELECT * FROM users WHERE tags @> $1", "{c++}")` automatic struct hydration from raw SQL.
-* **PostgreSQL Extras:** Supports `JSONB` mappings, Arrays (`std::vector<T>`), and lightning-fast `COPY IN/OUT` data streaming.
+* **PostgreSQL Native:** Built directly on top of `libpq` using text parameters/results, per-connection prepared statement caching, and `RETURNING` for generated values.
+* **Connection Pooling:** Built-in connection pool with timeout leasing, explicit close, basic statistics, and open-connection checks.
+* **Transactions and Migrations:** Scoped `db.begin()` guards, callback-based transaction helpers, bounded transaction retries, and a small schema migration runner.
+* **CRUD:** Insert, find, update, erase, patch, single/bulk insert, single/bulk upsert, single/composite primary keys, generated-column refresh, and optional optimistic locking through version-column traits.
+* **SQL AST:** `select({"id"}).from("users").where(col("active") == val(true))` style SQL generation with parameterized values.
+* **Native Escape Hatch:** `db.native<User>("SELECT * FROM users WHERE active = $1", true)` hydrates mapped structs from raw SQL. Scalar and row-mapper helpers are also available.
+* **PostgreSQL Extras:** Supports `JSONB` text wrappers, simple arrays (`std::vector<T>`), nullable array elements, UUID/bytea/timestamp/date/time/numeric codecs, enum label traits, and raw or structured `COPY IN/OUT` helpers.
+
+> ClickHouse adapter is experimental and disabled by default (`-Dclickhouse=disabled`). It emulates parameterized queries via string interpolation; do not use with untrusted input without additional validation.
+
+## Current Scope
+
+AsterORM currently focuses on a small PostgreSQL-first v0.1 surface:
+
+* connection pooling with exclusive leases
+* explicit transactions and savepoints
+* entity traits for plain structs
+* basic CRUD (`insert`, `find`, `update`, `erase`, `patch`, `upsert`, `insert_many`, `upsert_many`)
+* single-column and tuple-based composite primary keys for repository CRUD/upsert paths
+* generated-value refresh through `RETURNING` on mutable insert/upsert/update paths
+* optimistic locking through an optional `version_column` entity trait
+* transaction helpers and schema migrations
+* PostgreSQL codecs for common scalars, optional values, arrays, nullable array elements, JSONB, UUID, bytea, timestamp, date, time, numeric, and enum labels
+* structured PostgreSQL errors with SQLSTATE and server diagnostics where libpq exposes them
+* raw SQL mapping through `native<T>()`, `native_scalar<T>()`, and `native_map()`
+* a small SQL AST/compiler for parameterized statements
+
+Not implemented yet: relationship mapping, lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, a complete typed query DSL, and a production-ready multi-database abstraction. PostgreSQL binary protocol support is also not implemented yet.
 
 ## Quick Example
 
@@ -90,6 +112,55 @@ meson compile -C buildDir
 
 # Run the test suite (requires a local PostgreSQL instance)
 meson test -C buildDir
+```
+
+### Installing
+
+```bash
+meson setup buildDir --prefix=/usr/local
+meson install -C buildDir
+```
+
+Installation provides headers, `libasterorm_core`, enabled adapter libraries, `pkg-config` metadata (`asterorm.pc`), and a CMake package config:
+
+```cmake
+find_package(AsterORM CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE AsterORM::asterorm)
+```
+
+## PostgreSQL Type Mapping Notes
+
+Use `asterorm::date`, `asterorm::time_of_day`, and `asterorm::numeric` for PostgreSQL `DATE`, `TIME`, and exact `NUMERIC`/`DECIMAL` values. `numeric` stores the database text representation so exact decimal scale is not rounded through binary floating point.
+
+PostgreSQL enum labels are mapped with `asterorm::enum_traits<T>`:
+
+```cpp
+template <> struct asterorm::enum_traits<UserStatus> {
+    static std::string_view to_db(UserStatus);
+    static std::optional<UserStatus> from_db(std::string_view);
+};
+```
+
+Arrays map to `std::vector<T>`. Nullable array elements map to `std::vector<std::optional<T>>`; SQL `NULL` elements decode to empty optionals. Multidimensional arrays are still out of scope.
+
+For PostgreSQL text `COPY`, `pg::copy_row` models a row as `std::vector<std::optional<std::string>>`. Use `connection::copy_in_rows()` and `connection::copy_out_rows()` when you want AsterORM to handle tab/newline/backslash escaping and SQL `NULL` fields. The lower-level `copy_in()` and `copy_out()` methods remain available for callers that already own raw COPY lines.
+
+## Composite Primary Keys
+
+Single-column keys use the original `primary_key = pk<&T::id>("id")` mapping. Composite keys use a tuple of key parts:
+
+```cpp
+static constexpr auto primary_key = std::make_tuple(
+    asterorm::pk<&OrderLine::order_id>("order_id"),
+    asterorm::pk<&OrderLine::line_no>("line_no")
+);
+```
+
+Use a tuple-like key when loading or deleting:
+
+```cpp
+auto line = repo.find<OrderLine>(std::make_tuple(100, 1)).value();
+repo.erase<OrderLine>(std::make_tuple(100, 1)).value();
 ```
 
 A `docker-compose.yaml` file is provided to quickly spin up a test database:

@@ -20,6 +20,8 @@ asterorm_core_dep = declare_dependency(
   link_with : asterorm_core,
 )
 
+asterorm_libraries = [asterorm_core]
+
 if postgres_opt.allowed()
   asterorm_pg = library(
     'asterorm_pg',
@@ -39,6 +41,8 @@ if postgres_opt.allowed()
     dependencies : [asterorm_core_dep, libpq_dep],
     link_with : asterorm_pg,
   )
+
+  asterorm_libraries += [asterorm_pg]
 endif
 
 if clickhouse_opt.allowed()
@@ -60,4 +64,6 @@ if clickhouse_opt.allowed()
     dependencies : [asterorm_core_dep, clickhouse_dep],
     link_with : asterorm_ch,
   )
+
+  asterorm_libraries += [asterorm_ch]
 endif
