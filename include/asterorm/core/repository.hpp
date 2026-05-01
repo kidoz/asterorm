@@ -10,8 +10,10 @@ namespace asterorm {
 
 namespace detail {
 template <typename T, typename Tuple, std::size_t... Is>
-void collect_insert_params(const T& entity, const Tuple& columns, std::vector<std::optional<std::string>>& params,
-                           std::vector<std::string>& col_names, std::vector<std::string>& placeholders,
+void collect_insert_params(const T& entity, const Tuple& columns,
+                           std::vector<std::optional<std::string>>& params,
+                           std::vector<std::string>& col_names,
+                           std::vector<std::string>& placeholders,
                            std::index_sequence<Is...> /*seq*/) {
     size_t param_idx = 1;
     (..., [&]() {
@@ -34,71 +36,79 @@ void collect_insert_params(const T& entity, const Tuple& columns, std::vector<st
         }
     }());
 }
-}  // namespace detail
+} // namespace detail
 
-template <typename Session>
-class repository {
-   public:
+template <typename Session> class repository {
+  public:
     explicit repository(Session& sess) : session_(&sess) {}
 
-    template <typename T>
-    asterorm::result<void> insert(T& entity) {
+    template <typename T> asterorm::result<void> insert(T& entity) {
         using traits = entity_traits<T>;
         std::vector<std::optional<std::string>> params;
         std::vector<std::string> col_names;
         std::vector<std::string> placeholders;
 
-        detail::collect_insert_params(entity, traits::columns, params, col_names, placeholders,
-                                      std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        detail::collect_insert_params(
+            entity, traits::columns, params, col_names, placeholders,
+            std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
         std::string sql = "INSERT INTO ";
         sql += traits::table;
         sql += " (";
         for (size_t i = 0; i < col_names.size(); ++i) {
             sql += col_names[i];
-            if (i < col_names.size() - 1) sql += ", ";
+            if (i < col_names.size() - 1)
+                sql += ", ";
         }
         sql += ") VALUES (";
         for (size_t i = 0; i < placeholders.size(); ++i) {
             sql += placeholders[i];
-            if (i < placeholders.size() - 1) sql += ", ";
+            if (i < placeholders.size() - 1)
+                sql += ", ";
         }
         sql += ") RETURNING ";
         sql += traits::primary_key.name;
 
-        auto res = session_->with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
+        auto res = session_->with_connection(
+            [&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
 
         if (res->rows() > 0) {
             auto pk_val_str = res->get_string(0, 0);
-            asterorm::decode(pk_val_str, entity.*(traits::primary_key.member_ptr));
+            auto decode_res =
+                asterorm::decode(pk_val_str, entity.*(traits::primary_key.member_ptr));
+            if (!decode_res)
+                return std::unexpected(decode_res.error());
         }
 
         return {};
     }
 
-    template <typename T>
-    asterorm::result<void> upsert(T& entity) {
+    template <typename T> asterorm::result<void> upsert(T& entity) {
         using traits = entity_traits<T>;
         std::vector<std::optional<std::string>> params;
         std::vector<std::string> col_names;
         std::vector<std::string> placeholders;
 
-        detail::collect_insert_params(entity, traits::columns, params, col_names, placeholders,
-                                      std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        detail::collect_insert_params(
+            entity, traits::columns, params, col_names, placeholders,
+            std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
         std::string sql = "INSERT INTO ";
         sql += traits::table;
         sql += " (";
         for (size_t i = 0; i < col_names.size(); ++i) {
             sql += col_names[i];
-            if (i < col_names.size() - 1) sql += ", ";
+            if (i < col_names.size() - 1)
+                sql += ", ";
         }
         sql += ") VALUES (";
         for (size_t i = 0; i < placeholders.size(); ++i) {
             sql += placeholders[i];
-            if (i < placeholders.size() - 1) sql += ", ";
+            if (i < placeholders.size() - 1)
+                sql += ", ";
         }
         sql += ") ON CONFLICT (";
         sql += traits::primary_key.name;
@@ -107,7 +117,8 @@ class repository {
         bool first_update_col = true;
         for (size_t i = 0; i < col_names.size(); ++i) {
             if (col_names[i] != traits::primary_key.name) {
-                if (!first_update_col) sql += ", ";
+                if (!first_update_col)
+                    sql += ", ";
                 sql += col_names[i];
                 sql += " = EXCLUDED.";
                 sql += col_names[i];
@@ -118,20 +129,24 @@ class repository {
         sql += " RETURNING ";
         sql += traits::primary_key.name;
 
-        auto res = session_->with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
+        auto res = session_->with_connection(
+            [&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
 
         if (res->rows() > 0) {
             auto pk_val_str = res->get_string(0, 0);
-            asterorm::decode(pk_val_str, entity.*(traits::primary_key.member_ptr));
+            auto decode_res =
+                asterorm::decode(pk_val_str, entity.*(traits::primary_key.member_ptr));
+            if (!decode_res)
+                return std::unexpected(decode_res.error());
         }
 
         return {};
     }
 
-    template <typename T, typename PkType>
-    asterorm::result<T> find(const PkType& pk_val) {
+    template <typename T, typename PkType> asterorm::result<T> find(const PkType& pk_val) {
         using traits = entity_traits<T>;
         std::string sql = "SELECT ";
 
@@ -146,7 +161,8 @@ class repository {
 
         for (size_t i = 0; i < col_names.size(); ++i) {
             sql += col_names[i];
-            if (i < col_names.size() - 1) sql += ", ";
+            if (i < col_names.size() - 1)
+                sql += ", ";
         }
 
         sql += " FROM ";
@@ -158,9 +174,11 @@ class repository {
         std::vector<std::optional<std::string>> params;
         params.push_back(asterorm::encode(pk_val));
 
-        auto res = session_->with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
+        auto res = session_->with_connection(
+            [&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
 
         if (res->rows() == 0) {
             db_error err;
@@ -170,20 +188,26 @@ class repository {
         }
 
         T entity;
+        asterorm::result<void> decode_err;
         auto populate = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             (..., [&]() {
+                if (!decode_err)
+                    return;
                 auto col = std::get<Is>(traits::columns);
                 auto val_str = res->get_string(0, static_cast<int>(Is));
-                asterorm::decode(val_str, entity.*(col.member_ptr));
+                auto err = asterorm::decode(val_str, entity.*(col.member_ptr));
+                if (!err)
+                    decode_err = std::move(err);
             }());
         };
         populate(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        if (!decode_err)
+            return std::unexpected(decode_err.error());
 
         return entity;
     }
 
-    template <typename T>
-    asterorm::result<void> update(const T& entity) {
+    template <typename T> asterorm::result<void> update(const T& entity) {
         using traits = entity_traits<T>;
         std::string sql = "UPDATE ";
         sql += traits::table;
@@ -197,7 +221,8 @@ class repository {
             (..., [&]() {
                 auto col = std::get<Is>(traits::columns);
                 if (col.name != traits::primary_key.name) {
-                    if (!first) sql += ", ";
+                    if (!first)
+                        sql += ", ";
                     sql += col.name;
                     sql += " = $" + std::to_string(param_idx++);
                     params.push_back(asterorm::encode(entity.*(col.member_ptr)));
@@ -211,14 +236,15 @@ class repository {
         };
         collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
-        auto res = session_->with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
+        auto res = session_->with_connection(
+            [&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
         return {};
     }
 
-    template <typename T, typename PkType>
-    asterorm::result<void> erase(const PkType& pk_val) {
+    template <typename T, typename PkType> asterorm::result<void> erase(const PkType& pk_val) {
         using traits = entity_traits<T>;
         std::string sql = "DELETE FROM ";
         sql += traits::table;
@@ -229,14 +255,16 @@ class repository {
         std::vector<std::optional<std::string>> params;
         params.push_back(asterorm::encode(pk_val));
 
-        auto res = session_->with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
+        auto res = session_->with_connection(
+            [&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
         return {};
     }
 
-   private:
+  private:
     Session* session_;
 };
 
-}  // namespace asterorm
+} // namespace asterorm

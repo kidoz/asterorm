@@ -19,19 +19,20 @@ struct pool_config {
     std::string conninfo;
 };
 
-template <typename Driver>
-class connection_pool;
+template <typename Driver> class connection_pool;
 
-template <typename Pool>
-class connection_lease {
-   public:
+template <typename Pool> class connection_lease {
+  public:
     using connection_type = typename Pool::connection_type;
 
     connection_lease(connection_type&& conn, Pool* pool) : conn_(std::move(conn)), pool_(pool) {}
 
-    ~connection_lease() { release_to_pool(); }
+    ~connection_lease() {
+        release_to_pool();
+    }
 
-    connection_lease(connection_lease&& other) noexcept : conn_(std::move(other.conn_)), pool_(other.pool_) {
+    connection_lease(connection_lease&& other) noexcept
+        : conn_(std::move(other.conn_)), pool_(other.pool_) {
         other.pool_ = nullptr;
     }
 
@@ -45,29 +46,34 @@ class connection_lease {
         return *this;
     }
 
-    connection_type* operator->() { return &conn_; }
-    connection_type& operator*() { return conn_; }
+    connection_type* operator->() {
+        return &conn_;
+    }
+    connection_type& operator*() {
+        return conn_;
+    }
 
     void release_to_pool() {
-        if (pool_ && conn_.is_open()) {
+        if (pool_) {
             pool_->release(std::move(conn_));
             pool_ = nullptr;
         }
     }
 
-   private:
+  private:
     connection_type conn_;
     Pool* pool_;
 };
 
-template <typename Driver>
-class connection_pool {
-   public:
-    using driver_connect_result = decltype(std::declval<Driver>().connect(std::declval<const std::string&>()));
+template <typename Driver> class connection_pool {
+  public:
+    using driver_connect_result =
+        decltype(std::declval<Driver>().connect(std::declval<const std::string&>()));
     using connection_type = typename driver_connect_result::value_type;
     using lease_type = connection_lease<connection_pool<Driver>>;
 
-    connection_pool(Driver driver, pool_config config) : driver_(std::move(driver)), config_(std::move(config)) {
+    connection_pool(Driver driver, pool_config config)
+        : driver_(std::move(driver)), config_(std::move(config)) {
         for (size_t i = 0; i < config_.min_size; ++i) {
             auto conn_res = driver_.connect(config_.conninfo);
             if (conn_res) {
@@ -78,7 +84,8 @@ class connection_pool {
     }
 
     ~connection_pool() {
-        std::lock_guard lock(mutex_);
+        std::unique_lock lock(mutex_);
+        cv_.wait(lock, [this] { return current_size_ == idle_connections_.size(); });
         idle_connections_.clear();
     }
 
@@ -132,10 +139,10 @@ class connection_pool {
         } else {
             --current_size_;
         }
-        cv_.notify_one();
+        cv_.notify_all();
     }
 
-   private:
+  private:
     Driver driver_;
     pool_config config_;
 
@@ -145,4 +152,4 @@ class connection_pool {
     size_t current_size_{0};
 };
 
-}  // namespace asterorm
+} // namespace asterorm

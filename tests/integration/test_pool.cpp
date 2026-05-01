@@ -6,9 +6,9 @@
 
 TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo =
-        env_conninfo ? env_conninfo
-                     : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable";
+    std::string conninfo = env_conninfo ? env_conninfo
+                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                          "password=orm_test sslmode=disable";
 
     asterorm::pool_config cfg;
     cfg.conninfo = conninfo;
@@ -20,7 +20,7 @@ TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     auto lease1 = pool.acquire();
     if (!lease1.has_value()) {
         WARN("Could not connect to PostgreSQL. Is it running? Skipping test.");
-        return;  // Skip gracefully if DB is down locally
+        return; // Skip gracefully if DB is down locally
     }
 
     REQUIRE(lease1.has_value());

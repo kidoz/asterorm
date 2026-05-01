@@ -8,7 +8,7 @@
 namespace asterorm::pg {
 
 class result {
-   public:
+  public:
     result(const result&) = delete;
     result& operator=(const result&) = delete;
 
@@ -29,8 +29,8 @@ class result {
     std::optional<std::string> get_string(int row, int col) const;
     std::optional<int64_t> get_int64(int row, int col) const;
 
-   private:
+  private:
     PGresult* res_{nullptr};
 };
 
-}  // namespace asterorm::pg
+} // namespace asterorm::pg

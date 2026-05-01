@@ -6,27 +6,28 @@ namespace asterorm::sql {
 
 std::string compiler::op_to_string(op_kind op) {
     switch (op) {
-        case op_kind::eq:
-            return "=";
-        case op_kind::neq:
-            return "!=";
-        case op_kind::lt:
-            return "<";
-        case op_kind::gt:
-            return ">";
-        case op_kind::le:
-            return "<=";
-        case op_kind::ge:
-            return ">=";
-        case op_kind::and_:
-            return "AND";
-        case op_kind::or_:
-            return "OR";
+    case op_kind::eq:
+        return "=";
+    case op_kind::neq:
+        return "!=";
+    case op_kind::lt:
+        return "<";
+    case op_kind::gt:
+        return ">";
+    case op_kind::le:
+        return "<=";
+    case op_kind::ge:
+        return ">=";
+    case op_kind::and_:
+        return "AND";
+    case op_kind::or_:
+        return "OR";
     }
     return "";
 }
 
-std::string compiler::compile_expr(const expr_ast& expr, std::vector<std::optional<std::string>>& params) { // NOLINT
+std::string compiler::compile_expr(const expr_ast& expr,
+                                   std::vector<std::optional<std::string>>& params) { // NOLINT
     if (std::holds_alternative<column_expr>(expr)) {
         return std::get<column_expr>(expr).name;
     }
@@ -34,7 +35,8 @@ std::string compiler::compile_expr(const expr_ast& expr, std::vector<std::option
     return "$" + std::to_string(params.size());
 }
 
-std::string compiler::compile_predicate(const predicate_ast& pred, std::vector<std::optional<std::string>>& params) { // NOLINT
+std::string compiler::compile_predicate(const predicate_ast& pred,
+                                        std::vector<std::optional<std::string>>& params) { // NOLINT
     if (std::holds_alternative<comparison_predicate>(pred.val)) {
         const auto& comp = std::get<comparison_predicate>(pred.val);
         std::string left = compile_expr(comp.left, params);
@@ -56,7 +58,9 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
     } else {
         for (size_t i = 0; i < ast.columns.size(); ++i) {
             q.sql += ast.columns[i];
-            if (i < ast.columns.size() - 1) { q.sql += ", "; }
+            if (i < ast.columns.size() - 1) {
+                q.sql += ", ";
+            }
         }
     }
 
@@ -70,7 +74,9 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
         q.sql += " ORDER BY ";
         for (size_t i = 0; i < ast.order_bys.size(); ++i) {
             q.sql += ast.order_bys[i].column + (ast.order_bys[i].ascending ? " ASC" : " DESC");
-            if (i < ast.order_bys.size() - 1) { q.sql += ", "; }
+            if (i < ast.order_bys.size() - 1) {
+                q.sql += ", ";
+            }
         }
     }
 
@@ -81,4 +87,4 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
     return q;
 }
 
-}  // namespace asterorm::sql
+} // namespace asterorm::sql

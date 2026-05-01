@@ -12,22 +12,21 @@ struct crud_user {
     bool active{true};
 };
 
-template <>
-struct asterorm::entity_traits<crud_user> {
+template <> struct asterorm::entity_traits<crud_user> {
     static constexpr const char* table = "crud_users";
     static constexpr auto primary_key = asterorm::pk<&crud_user::id>("id");
 
-    static constexpr auto columns =
-        std::make_tuple(asterorm::column<&crud_user::id>("id", asterorm::generated::by_default),
-                        asterorm::column<&crud_user::email>("email"), asterorm::column<&crud_user::name>("name"),
-                        asterorm::column<&crud_user::active>("active"));
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&crud_user::id>("id", asterorm::generated::by_default),
+        asterorm::column<&crud_user::email>("email"), asterorm::column<&crud_user::name>("name"),
+        asterorm::column<&crud_user::active>("active"));
 };
 
 TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo =
-        env_conninfo ? env_conninfo
-                     : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable";
+    std::string conninfo = env_conninfo ? env_conninfo
+                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                          "password=orm_test sslmode=disable";
 
     asterorm::pool_config cfg;
     cfg.conninfo = conninfo;
@@ -47,7 +46,8 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     // Set up table
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS crud_users;");
     (void)(*test_lease)
-        ->execute("CREATE TABLE crud_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active BOOLEAN);");
+        ->execute("CREATE TABLE crud_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active "
+                  "BOOLEAN);");
     test_lease.value().release_to_pool();
 
     asterorm::repository repo{db};
@@ -83,7 +83,7 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
         REQUIRE(erase_res.has_value());
 
         auto find_res3 = repo.find<crud_user>(*u.id);
-        REQUIRE(!find_res3.has_value());  // should fail
+        REQUIRE(!find_res3.has_value()); // should fail
     }
 
     // Cleanup

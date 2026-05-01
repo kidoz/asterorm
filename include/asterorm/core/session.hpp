@@ -10,15 +10,16 @@
 
 namespace asterorm {
 
-template <typename Session>
-class transaction_guard {
-   public:
+template <typename Session> class transaction_guard {
+  public:
     explicit transaction_guard(Session* s) : session_(s) {}
 
     transaction_guard(const transaction_guard&) = delete;
     transaction_guard& operator=(const transaction_guard&) = delete;
 
-    transaction_guard(transaction_guard&& other) noexcept : session_(other.session_) { other.session_ = nullptr; }
+    transaction_guard(transaction_guard&& other) noexcept : session_(other.session_) {
+        other.session_ = nullptr;
+    }
 
     transaction_guard& operator=(transaction_guard&& other) noexcept {
         if (this != &other) {
@@ -33,31 +34,36 @@ class transaction_guard {
 
     ~transaction_guard() {
         if (session_) {
-            auto _ = rollback();  // ignores error in dtor
+            auto _ = rollback(); // ignores error in dtor
         }
     }
 
     asterorm::result<void> commit() {
-        if (!session_) return {};
+        if (!session_)
+            return {};
         auto res = session_->commit_transaction();
-        session_ = nullptr;
+        if (res) {
+            session_ = nullptr;
+        }
         return res;
     }
 
     asterorm::result<void> rollback() {
-        if (!session_) return {};
+        if (!session_)
+            return {};
         auto res = session_->rollback_transaction();
-        session_ = nullptr;
+        if (res) {
+            session_ = nullptr;
+        }
         return res;
     }
 
-   private:
+  private:
     Session* session_;
 };
 
-template <typename Pool>
-class session {
-   public:
+template <typename Pool> class session {
+  public:
     using lease_type = typename Pool::lease_type;
     using connection_type = typename Pool::connection_type;
 
@@ -72,7 +78,8 @@ class session {
         }
 
         auto lease_res = pool_->acquire();
-        if (!lease_res) return std::unexpected(lease_res.error());
+        if (!lease_res)
+            return std::unexpected(lease_res.error());
 
         active_lease_ = std::move(lease_res.value());
 
@@ -95,10 +102,13 @@ class session {
         }
 
         auto res = (*active_lease_)->execute("COMMIT");
+        if (!res) {
+            return std::unexpected(res.error());
+        }
+
         in_transaction_ = false;
         active_lease_.reset();
 
-        if (!res) return std::unexpected(res.error());
         return {};
     }
 
@@ -111,10 +121,16 @@ class session {
         }
 
         auto res = (*active_lease_)->execute("ROLLBACK");
+        if (!res) {
+            (*active_lease_)->close(); // Force close on failed rollback so pool discards it
+            in_transaction_ = false;
+            active_lease_.reset();
+            return std::unexpected(res.error());
+        }
+
         in_transaction_ = false;
         active_lease_.reset();
 
-        if (!res) return std::unexpected(res.error());
         return {};
     }
 
@@ -141,15 +157,19 @@ class session {
 
         auto res = with_connection([&](auto& conn) { return conn.execute_prepared(sql, params); });
 
-        if (!res) return std::unexpected(res.error());
+        if (!res)
+            return std::unexpected(res.error());
 
         std::vector<T> result_list;
         using traits = entity_traits<T>;
 
         for (int r = 0; r < res->rows(); ++r) {
             T entity;
+            asterorm::result<void> decode_err;
             auto populate = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
+                    if (!decode_err)
+                        return;
                     auto col = std::get<Is>(traits::columns);
                     // Find column index by name in the result set
                     int col_idx = -1;
@@ -161,21 +181,33 @@ class session {
                     }
                     if (col_idx >= 0) {
                         auto val_str = res->get_string(r, col_idx);
-                        asterorm::decode(val_str, entity.*(col.member_ptr));
+                        auto err = asterorm::decode(val_str, entity.*(col.member_ptr));
+                        if (!err)
+                            decode_err = std::move(err);
                     }
                 }());
             };
             populate(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+            if (!decode_err)
+                return std::unexpected(decode_err.error());
             result_list.push_back(std::move(entity));
         }
 
         return result_list;
     }
 
-   private:
+    asterorm::result<void> copy_in(std::string_view sql, const std::vector<std::string>& lines) {
+        return with_connection([&](auto& conn) { return conn.copy_in(sql, lines); });
+    }
+
+    asterorm::result<std::vector<std::string>> copy_out(std::string_view sql) {
+        return with_connection([&](auto& conn) { return conn.copy_out(sql); });
+    }
+
+  private:
     Pool* pool_;
     std::optional<lease_type> active_lease_;
     bool in_transaction_{false};
 };
 
-}  // namespace asterorm
+} // namespace asterorm

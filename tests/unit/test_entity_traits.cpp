@@ -10,14 +10,13 @@ struct test_user {
     bool active{true};
 };
 
-template <>
-struct asterorm::entity_traits<test_user> {
+template <> struct asterorm::entity_traits<test_user> {
     static constexpr const char* table = "users";
     static constexpr auto primary_key = asterorm::pk<&test_user::id>("id");
 
-    static constexpr auto columns =
-        std::make_tuple(asterorm::column<&test_user::id>("id", asterorm::generated::by_default),
-                        asterorm::column<&test_user::name>("name"), asterorm::column<&test_user::active>("active"));
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&test_user::id>("id", asterorm::generated::by_default),
+        asterorm::column<&test_user::name>("name"), asterorm::column<&test_user::active>("active"));
 };
 
 TEST_CASE("Core: Entity Traits Mapping", "[core][traits]") {

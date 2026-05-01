@@ -5,7 +5,6 @@
 
 namespace asterorm {
 
-template <typename T>
-using result = std::expected<T, db_error>;
+template <typename T> using result = std::expected<T, db_error>;
 
-}  // namespace asterorm
+} // namespace asterorm

@@ -12,21 +12,20 @@ struct extra_model {
     asterorm::pg::jsonb data;
 };
 
-template <>
-struct asterorm::entity_traits<extra_model> {
+template <> struct asterorm::entity_traits<extra_model> {
     static constexpr const char* table = "extras_table";
     static constexpr auto primary_key = asterorm::pk<&extra_model::id>("id");
 
-    static constexpr auto columns =
-        std::make_tuple(asterorm::column<&extra_model::id>("id", asterorm::generated::by_default),
-                        asterorm::column<&extra_model::key>("key"), asterorm::column<&extra_model::data>("data"));
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&extra_model::id>("id", asterorm::generated::by_default),
+        asterorm::column<&extra_model::key>("key"), asterorm::column<&extra_model::data>("data"));
 };
 
 TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo =
-        env_conninfo ? env_conninfo
-                     : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable";
+    std::string conninfo = env_conninfo ? env_conninfo
+                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                          "password=orm_test sslmode=disable";
 
     asterorm::pool_config cfg;
     cfg.conninfo = conninfo;
@@ -45,13 +44,16 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
 
     // Set up table with JSONB column
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS extras_table;");
-    (void)(*test_lease)->execute("CREATE TABLE extras_table (id SERIAL PRIMARY KEY, key TEXT UNIQUE, data JSONB);");
+    (void)(*test_lease)
+        ->execute(
+            "CREATE TABLE extras_table (id SERIAL PRIMARY KEY, key TEXT UNIQUE, data JSONB);");
     test_lease.value().release_to_pool();
 
     asterorm::repository repo{db};
 
     SECTION("JSONB Mapping") {
-        extra_model m{.key = "config", .data = asterorm::pg::jsonb{R"({"theme": "dark", "version": 2})"}};
+        extra_model m{.key = "config",
+                      .data = asterorm::pg::jsonb{R"({"theme": "dark", "version": 2})"}};
         auto insert_res = repo.insert(m);
         REQUIRE(insert_res.has_value());
         REQUIRE(m.id.has_value());
@@ -63,16 +65,19 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
         std::string found_json = find_res.value().data.value;
         REQUIRE(found_json.contains("\"theme\": \"dark\""));
         REQUIRE(found_json.contains("\"version\": 2"));
-        }
+    }
 
-        SECTION("Upsert (ON CONFLICT DO UPDATE)") {
+    SECTION("Upsert (ON CONFLICT DO UPDATE)") {
         // First insert with ID provided explicitly
-        extra_model m1{.id = 42, .key = "static", .data = asterorm::pg::jsonb{R"({"status": "initial"})"}};
+        extra_model m1{
+            .id = 42, .key = "static", .data = asterorm::pg::jsonb{R"({"status": "initial"})"}};
         auto insert_res = repo.insert(m1);
         REQUIRE(insert_res.has_value());
 
         // Attempt upsert with SAME ID, but different data
-        extra_model m2{.id = 42, .key = "static_changed", .data = asterorm::pg::jsonb{R"({"status": "updated"})"}};
+        extra_model m2{.id = 42,
+                       .key = "static_changed",
+                       .data = asterorm::pg::jsonb{R"({"status": "updated"})"}};
         auto upsert_res = repo.upsert(m2);
         REQUIRE(upsert_res.has_value());
 
@@ -81,7 +86,7 @@ TEST_CASE("PG Integration: Extras (JSONB & Upsert)", "[pg][extras]") {
         REQUIRE(find_res.has_value());
         REQUIRE(find_res.value().key == "static_changed");
         REQUIRE(find_res.value().data.value.contains("\"status\": \"updated\""));
-        }
+    }
     // Cleanup
     auto cleanup_lease = pool.acquire();
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS extras_table;");

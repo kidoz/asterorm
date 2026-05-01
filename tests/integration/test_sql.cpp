@@ -15,22 +15,22 @@ struct native_user {
     bool active{true};
 };
 
-template <>
-struct asterorm::entity_traits<native_user> {
+template <> struct asterorm::entity_traits<native_user> {
     static constexpr const char* table = "native_users";
     static constexpr auto primary_key = asterorm::pk<&native_user::id>("id");
 
     static constexpr auto columns =
         std::make_tuple(asterorm::column<&native_user::id>("id", asterorm::generated::by_default),
-                        asterorm::column<&native_user::email>("email"), asterorm::column<&native_user::name>("name"),
+                        asterorm::column<&native_user::email>("email"),
+                        asterorm::column<&native_user::name>("name"),
                         asterorm::column<&native_user::active>("active"));
 };
 
 TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo =
-        env_conninfo ? env_conninfo
-                     : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable";
+    std::string conninfo = env_conninfo ? env_conninfo
+                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                          "password=orm_test sslmode=disable";
 
     asterorm::pool_config cfg;
     cfg.conninfo = conninfo;
@@ -50,11 +50,14 @@ TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
     // Set up table
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS native_users;");
     (void)(*test_lease)
-        ->execute("CREATE TABLE native_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active BOOLEAN);");
+        ->execute("CREATE TABLE native_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active "
+                  "BOOLEAN);");
     (void)(*test_lease)
-        ->execute("INSERT INTO native_users (email, name, active) VALUES ('alice@example.com', 'Alice', true);");
+        ->execute("INSERT INTO native_users (email, name, active) VALUES ('alice@example.com', "
+                  "'Alice', true);");
     (void)(*test_lease)
-        ->execute("INSERT INTO native_users (email, name, active) VALUES ('bob@example.com', 'Bob', false);");
+        ->execute("INSERT INTO native_users (email, name, active) VALUES ('bob@example.com', "
+                  "'Bob', false);");
     test_lease.value().release_to_pool();
 
     SECTION("Select mapped entities with parameters") {
@@ -69,7 +72,8 @@ TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
     }
 
     SECTION("Select multiple entities") {
-        auto rows_res = db.native<native_user>("SELECT id, email, name, active FROM native_users ORDER BY id");
+        auto rows_res =
+            db.native<native_user>("SELECT id, email, name, active FROM native_users ORDER BY id");
         REQUIRE(rows_res.has_value());
 
         auto& rows = rows_res.value();

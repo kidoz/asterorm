@@ -6,9 +6,9 @@
 
 TEST_CASE("PG Integration: Transactions", "[pg][transactions]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo =
-        env_conninfo ? env_conninfo
-                     : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable";
+    std::string conninfo = env_conninfo ? env_conninfo
+                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                          "password=orm_test sslmode=disable";
 
     asterorm::pool_config cfg;
     cfg.conninfo = conninfo;
@@ -36,16 +36,17 @@ TEST_CASE("PG Integration: Transactions", "[pg][transactions]") {
         REQUIRE(tx_res.has_value());
         auto tx = std::move(tx_res.value());
 
-        auto insert_res = db.with_connection(
-            [](auto& conn) { return conn.execute("INSERT INTO test_tx (id, val) VALUES (1, 'commit_test')"); });
+        auto insert_res = db.with_connection([](auto& conn) {
+            return conn.execute("INSERT INTO test_tx (id, val) VALUES (1, 'commit_test')");
+        });
         REQUIRE(insert_res.has_value());
 
         auto commit_res = tx.commit();
         REQUIRE(commit_res.has_value());
 
         // Verify the insert is visible outside the transaction
-        auto select_res =
-            db.with_connection([](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 1"); });
+        auto select_res = db.with_connection(
+            [](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 1"); });
         REQUIRE(select_res.has_value());
         REQUIRE(select_res.value().rows() == 1);
     }
@@ -55,16 +56,17 @@ TEST_CASE("PG Integration: Transactions", "[pg][transactions]") {
         REQUIRE(tx_res.has_value());
         auto tx = std::move(tx_res.value());
 
-        auto insert_res = db.with_connection(
-            [](auto& conn) { return conn.execute("INSERT INTO test_tx (id, val) VALUES (2, 'rollback_test')"); });
+        auto insert_res = db.with_connection([](auto& conn) {
+            return conn.execute("INSERT INTO test_tx (id, val) VALUES (2, 'rollback_test')");
+        });
         REQUIRE(insert_res.has_value());
 
         auto rollback_res = tx.rollback();
         REQUIRE(rollback_res.has_value());
 
         // Verify the insert is NOT visible
-        auto select_res =
-            db.with_connection([](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 2"); });
+        auto select_res = db.with_connection(
+            [](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 2"); });
         REQUIRE(select_res.has_value());
         REQUIRE(select_res.value().rows() == 0);
     }
@@ -75,15 +77,16 @@ TEST_CASE("PG Integration: Transactions", "[pg][transactions]") {
             REQUIRE(tx_res.has_value());
             auto tx = std::move(tx_res.value());
 
-            auto insert_res = db.with_connection(
-                [](auto& conn) { return conn.execute("INSERT INTO test_tx (id, val) VALUES (3, 'dtor_test')"); });
+            auto insert_res = db.with_connection([](auto& conn) {
+                return conn.execute("INSERT INTO test_tx (id, val) VALUES (3, 'dtor_test')");
+            });
             REQUIRE(insert_res.has_value());
             // tx goes out of scope here and should invoke rollback automatically
         }
 
         // Verify the insert is NOT visible
-        auto select_res =
-            db.with_connection([](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 3"); });
+        auto select_res = db.with_connection(
+            [](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 3"); });
         REQUIRE(select_res.has_value());
         REQUIRE(select_res.value().rows() == 0);
     }

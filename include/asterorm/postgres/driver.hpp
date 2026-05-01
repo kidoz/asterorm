@@ -7,8 +7,8 @@
 namespace asterorm::pg {
 
 class driver {
-   public:
+  public:
     asterorm::result<connection> connect(const std::string& conninfo) const;
 };
 
-}  // namespace asterorm::pg
+} // namespace asterorm::pg

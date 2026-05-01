@@ -24,4 +24,4 @@ struct db_error {
     std::optional<std::string> constraint;
 };
 
-}  // namespace asterorm
+} // namespace asterorm

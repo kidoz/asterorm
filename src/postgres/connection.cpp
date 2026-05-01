@@ -23,9 +23,13 @@ connection& connection::operator=(connection&& other) noexcept {
     return *this;
 }
 
-connection::~connection() { close(); }
+connection::~connection() {
+    close();
+}
 
-bool connection::is_open() const { return conn_ != nullptr && PQstatus(conn_) == CONNECTION_OK; }
+bool connection::is_open() const {
+    return conn_ != nullptr && PQstatus(conn_) == CONNECTION_OK;
+}
 
 void connection::close() {
     if (conn_) {
@@ -40,7 +44,9 @@ static db_error make_error_from_pgresult(PGconn* conn, PGresult* res, db_error_k
     db_error err;
     err.kind = kind;
     const char* sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-    if (sqlstate) { err.sqlstate = sqlstate; }
+    if (sqlstate) {
+        err.sqlstate = sqlstate;
+    }
 
     const char* msg = PQresultErrorField(res, PG_DIAG_MESSAGE_PRIMARY);
     if (msg) {
@@ -50,19 +56,29 @@ static db_error make_error_from_pgresult(PGconn* conn, PGresult* res, db_error_k
     }
 
     const char* detail = PQresultErrorField(res, PG_DIAG_MESSAGE_DETAIL);
-    if (detail) { err.detail = detail; }
+    if (detail) {
+        err.detail = detail;
+    }
 
     const char* hint = PQresultErrorField(res, PG_DIAG_MESSAGE_HINT);
-    if (hint) { err.hint = hint; }
+    if (hint) {
+        err.hint = hint;
+    }
 
     const char* table = PQresultErrorField(res, PG_DIAG_TABLE_NAME);
-    if (table) { err.table = table; }
+    if (table) {
+        err.table = table;
+    }
 
     const char* col = PQresultErrorField(res, PG_DIAG_COLUMN_NAME);
-    if (col) { err.column = col; }
+    if (col) {
+        err.column = col;
+    }
 
     const char* constraint = PQresultErrorField(res, PG_DIAG_CONSTRAINT_NAME);
-    if (constraint) { err.constraint = constraint; }
+    if (constraint) {
+        err.constraint = constraint;
+    }
 
     return err;
 }
@@ -81,8 +97,9 @@ asterorm::result<pg::result> connection::execute(std::string_view sql) {
     return pg::result{res};
 }
 
-asterorm::result<pg::result> connection::execute_params(std::string_view sql,
-                                                        const std::vector<std::optional<std::string>>& params) {
+asterorm::result<pg::result>
+connection::execute_params(std::string_view sql,
+                           const std::vector<std::optional<std::string>>& params) {
     std::string sql_str{sql};
 
     std::vector<const char*> param_values;
@@ -92,11 +109,11 @@ asterorm::result<pg::result> connection::execute_params(std::string_view sql,
     }
 
     PGresult* res = PQexecParams(conn_, sql_str.c_str(), static_cast<int>(params.size()),
-                                 nullptr,              // paramTypes (let db infer)
-                                 param_values.data(),  // paramValues
-                                 nullptr,              // paramLengths (text doesn't need it)
-                                 nullptr,              // paramFormats (text)
-                                 0);                   // resultFormat (text)
+                                 nullptr,             // paramTypes (let db infer)
+                                 param_values.data(), // paramValues
+                                 nullptr,             // paramLengths (text doesn't need it)
+                                 nullptr,             // paramFormats (text)
+                                 0);                  // resultFormat (text)
 
     ExecStatusType status = PQresultStatus(res);
     if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
@@ -108,8 +125,9 @@ asterorm::result<pg::result> connection::execute_params(std::string_view sql,
     return pg::result{res};
 }
 
-asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
-                                                          const std::vector<std::optional<std::string>>& params) {
+asterorm::result<pg::result>
+connection::execute_prepared(std::string_view sql,
+                             const std::vector<std::optional<std::string>>& params) {
     std::string sql_str{sql};
     std::string stmt_name;
 
@@ -117,8 +135,8 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
     if (it == prepared_statements_.end()) {
         stmt_name = "s_" + std::to_string(next_stmt_id_++);
 
-        PGresult* prep_res =
-            PQprepare(conn_, stmt_name.c_str(), sql_str.c_str(), static_cast<int>(params.size()), nullptr);
+        PGresult* prep_res = PQprepare(conn_, stmt_name.c_str(), sql_str.c_str(),
+                                       static_cast<int>(params.size()), nullptr);
         ExecStatusType prep_status = PQresultStatus(prep_res);
         if (prep_status != PGRES_COMMAND_OK) {
             auto err = make_error_from_pgresult(conn_, prep_res, db_error_kind::query_failed);
@@ -138,10 +156,11 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
         param_values.push_back(p ? p->c_str() : nullptr);
     }
 
-    PGresult* res = PQexecPrepared(conn_, stmt_name.c_str(), static_cast<int>(params.size()), param_values.data(),
-                                   nullptr,  // paramLengths
-                                   nullptr,  // paramFormats
-                                   0);       // resultFormat
+    PGresult* res = PQexecPrepared(conn_, stmt_name.c_str(), static_cast<int>(params.size()),
+                                   param_values.data(),
+                                   nullptr, // paramLengths
+                                   nullptr, // paramFormats
+                                   0);      // resultFormat
 
     ExecStatusType status = PQresultStatus(res);
     if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
@@ -153,4 +172,82 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
     return pg::result{res};
 }
 
-}  // namespace asterorm::pg
+asterorm::result<void> connection::copy_in(std::string_view sql,
+                                           const std::vector<std::string>& lines) {
+    std::string sql_str{sql};
+    PGresult* res = PQexec(conn_, sql_str.c_str());
+    if (PQresultStatus(res) != PGRES_COPY_IN) {
+        auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
+        PQclear(res);
+        return std::unexpected(err);
+    }
+    PQclear(res);
+
+    for (const auto& line : lines) {
+        std::string line_with_nl = line + "\n";
+        if (PQputCopyData(conn_, line_with_nl.c_str(), static_cast<int>(line_with_nl.size())) !=
+            1) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = PQerrorMessage(conn_);
+            return std::unexpected(err);
+        }
+    }
+
+    if (PQputCopyEnd(conn_, nullptr) != 1) {
+        db_error err;
+        err.kind = db_error_kind::query_failed;
+        err.message = PQerrorMessage(conn_);
+        return std::unexpected(err);
+    }
+
+    res = PQgetResult(conn_);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
+        PQclear(res);
+        return std::unexpected(err);
+    }
+    PQclear(res);
+
+    return {};
+}
+
+asterorm::result<std::vector<std::string>> connection::copy_out(std::string_view sql) {
+    std::string sql_str{sql};
+    PGresult* res = PQexec(conn_, sql_str.c_str());
+    if (PQresultStatus(res) != PGRES_COPY_OUT) {
+        auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
+        PQclear(res);
+        return std::unexpected(err);
+    }
+    PQclear(res);
+
+    std::vector<std::string> lines;
+    char* buffer = nullptr;
+    int bytes = 0;
+    while ((bytes = PQgetCopyData(conn_, &buffer, 0)) > 0) {
+        if (buffer) {
+            lines.emplace_back(buffer, bytes);
+            PQfreemem(buffer);
+        }
+    }
+
+    if (bytes == -2) {
+        db_error err;
+        err.kind = db_error_kind::query_failed;
+        err.message = PQerrorMessage(conn_);
+        return std::unexpected(err);
+    }
+
+    res = PQgetResult(conn_);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        auto err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
+        PQclear(res);
+        return std::unexpected(err);
+    }
+    PQclear(res);
+
+    return lines;
+}
+
+} // namespace asterorm::pg

@@ -9,20 +9,28 @@ struct mock_connection {
     mock_connection(int i) : id(i) {}
     mock_connection(const mock_connection&) = delete;
     mock_connection& operator=(const mock_connection&) = delete;
-    mock_connection(mock_connection&& other) noexcept : id(other.id), open(other.open) { other.open = false; }
+    mock_connection(mock_connection&& other) noexcept : id(other.id), open(other.open) {
+        other.open = false;
+    }
     mock_connection& operator=(mock_connection&& other) noexcept {
         id = other.id;
         open = other.open;
         other.open = false;
         return *this;
     }
-    [[nodiscard]] bool is_open() const { return open; }
-    void close() { open = false; }
+    [[nodiscard]] bool is_open() const {
+        return open;
+    }
+    void close() {
+        open = false;
+    }
 };
 
 struct mock_driver {
     mutable int next_id{1};
-    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const { return mock_connection{next_id++}; }
+    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
+        return mock_connection{next_id++};
+    }
 };
 
 TEST_CASE("Core: Connection Pool Max Size and Timeout", "[pool]") { // NOLINT
@@ -48,7 +56,7 @@ TEST_CASE("Core: Connection Pool Max Size and Timeout", "[pool]") { // NOLINT
     // Release l1 by dropping it
     {
         auto drop_it = std::move(l1.value());
-    }  // returns to pool
+    } // returns to pool
 
     // Now l3 should succeed
     l3 = pool.acquire();

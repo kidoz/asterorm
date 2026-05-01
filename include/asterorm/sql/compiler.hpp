@@ -13,13 +13,14 @@ struct compiled_query {
 };
 
 class compiler {
-   public:
+  public:
     compiled_query compile(const select_ast& ast);
 
-   private:
-    std::string compile_predicate(const predicate_ast& pred, std::vector<std::optional<std::string>>& params);
+  private:
+    std::string compile_predicate(const predicate_ast& pred,
+                                  std::vector<std::optional<std::string>>& params);
     std::string compile_expr(const expr_ast& expr, std::vector<std::optional<std::string>>& params);
     std::string op_to_string(op_kind op);
 };
 
-}  // namespace asterorm::sql
+} // namespace asterorm::sql

@@ -19,10 +19,11 @@ struct param_expr {
 
 using expr_ast = std::variant<column_expr, param_expr>;
 
-inline column_expr col(std::string name) { return {std::move(name)}; }
+inline column_expr col(std::string name) {
+    return {std::move(name)};
+}
 
-template <typename T>
-inline param_expr val(T&& v) {
+template <typename T> inline param_expr val(T&& v) {
     return {asterorm::encode(std::forward<T>(v))};
 }
 
@@ -66,11 +67,13 @@ inline predicate_ast operator>=(const expr_ast& lhs, const expr_ast& rhs) {
 }
 
 inline predicate_ast operator&&(predicate_ast lhs, predicate_ast rhs) {
-    return predicate_ast{binary_predicate{op_kind::and_, std::make_unique<predicate_ast>(std::move(lhs)),
+    return predicate_ast{binary_predicate{op_kind::and_,
+                                          std::make_unique<predicate_ast>(std::move(lhs)),
                                           std::make_unique<predicate_ast>(std::move(rhs))}};
 }
 inline predicate_ast operator||(predicate_ast lhs, predicate_ast rhs) {
-    return predicate_ast{binary_predicate{op_kind::or_, std::make_unique<predicate_ast>(std::move(lhs)),
+    return predicate_ast{binary_predicate{op_kind::or_,
+                                          std::make_unique<predicate_ast>(std::move(lhs)),
                                           std::make_unique<predicate_ast>(std::move(rhs))}};
 }
 
@@ -88,7 +91,7 @@ struct select_ast {
 };
 
 class select_builder {
-   public:
+  public:
     select_builder& select(std::vector<std::string> cols) {
         ast_.columns = std::move(cols);
         return *this;
@@ -114,9 +117,11 @@ class select_builder {
         return *this;
     }
 
-    select_ast build() { return std::move(ast_); }
+    select_ast build() {
+        return std::move(ast_);
+    }
 
-   private:
+  private:
     select_ast ast_;
 };
 
@@ -126,4 +131,4 @@ inline select_builder select(std::vector<std::string> cols) {
     return b;
 }
 
-}  // namespace asterorm::sql
+} // namespace asterorm::sql

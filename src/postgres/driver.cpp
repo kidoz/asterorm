@@ -18,4 +18,4 @@ asterorm::result<connection> driver::connect(const std::string& conninfo) const 
     return connection{conn};
 }
 
-}  // namespace asterorm::pg
+} // namespace asterorm::pg
