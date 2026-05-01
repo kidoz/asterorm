@@ -35,7 +35,9 @@ int result::affected_rows() const {
     const char* tuples = PQcmdTuples(res_);
     if (!tuples || *tuples == '\0')
         return 0;
-    return std::atoi(tuples);
+    int out = 0;
+    auto [ptr, ec] = std::from_chars(tuples, tuples + std::char_traits<char>::length(tuples), out);
+    return ec == std::errc{} ? out : 0;
 }
 
 int result::columns() const {
