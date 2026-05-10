@@ -130,3 +130,96 @@ TEST_CASE("Typed DSL: typed_col vs typed_col compares two columns of same entity
     REQUIRE(compiled.sql.find(R"(WHERE "email" != "name")") != std::string::npos);
     REQUIRE(compiled.params.empty());
 }
+
+namespace {
+struct typed_user_stats {
+    std::int64_t total;
+    std::int64_t active_count;
+};
+} // namespace
+
+TEST_CASE("Typed DSL: count_all and count(col) emit COUNT and have int64_t result",
+          "[typed][aggregate][count]") {
+    using namespace asterorm::sql::typed;
+
+    STATIC_REQUIRE(std::is_same_v<count_all_t::projected_type, std::int64_t>);
+    STATIC_REQUIRE(std::is_same_v<count_col_t<&typed_user::id>::projected_type, std::int64_t>);
+
+    auto query =
+        select_cols<typed_user_stats>(count_all(), count(col<&typed_user::active>)).build();
+    asterorm::sql::compiler compiler;
+    auto compiled = compiler.compile(query);
+
+    REQUIRE(compiled.sql.find(R"(SELECT count(*), count("active") FROM "typed_users")") !=
+            std::string::npos);
+    REQUIRE(compiled.params.empty());
+}
+
+namespace {
+struct order_row {
+    int order_id;
+    int qty;
+    double price;
+};
+
+struct order_stats {
+    std::int64_t row_count;
+    std::int64_t qty_sum;
+    double price_sum;
+    int qty_min;
+    int qty_max;
+    double price_avg;
+};
+} // namespace
+
+template <> struct asterorm::entity_traits<order_row> {
+    static constexpr const char* table = "typed_orders";
+    [[maybe_unused]] static constexpr auto primary_key = asterorm::pk<&order_row::order_id>("id");
+    static constexpr auto columns = std::make_tuple(asterorm::column<&order_row::order_id>("id"),
+                                                    asterorm::column<&order_row::qty>("qty"),
+                                                    asterorm::column<&order_row::price>("price"));
+};
+
+TEST_CASE("Typed DSL: sum/min/max/avg derive correct projected_type", "[typed][aggregate][types]") {
+    using namespace asterorm::sql::typed;
+
+    STATIC_REQUIRE(std::is_same_v<sum_col_t<&order_row::qty>::projected_type, std::int64_t>);
+    STATIC_REQUIRE(std::is_same_v<sum_col_t<&order_row::price>::projected_type, double>);
+    STATIC_REQUIRE(std::is_same_v<min_col_t<&order_row::qty>::projected_type, int>);
+    STATIC_REQUIRE(std::is_same_v<max_col_t<&order_row::price>::projected_type, double>);
+    STATIC_REQUIRE(std::is_same_v<avg_col_t<&order_row::qty>::projected_type, double>);
+}
+
+TEST_CASE("Typed DSL: mixed aggregate projection compiles to expected SQL",
+          "[typed][aggregate][projection]") {
+    using namespace asterorm::sql::typed;
+
+    auto query = select_cols<order_stats>(count_all(), sum(col<&order_row::qty>),
+                                          sum(col<&order_row::price>), min(col<&order_row::qty>),
+                                          max(col<&order_row::qty>), avg(col<&order_row::price>))
+                     .build();
+
+    asterorm::sql::compiler compiler;
+    auto compiled = compiler.compile(query);
+
+    REQUIRE(
+        compiled.sql ==
+        R"(SELECT count(*), sum("qty"), sum("price"), min("qty"), max("qty"), avg("price") FROM "typed_orders")");
+}
+
+TEST_CASE("Typed DSL: group_by and having emit GROUP BY / HAVING", "[typed][aggregate][group-by]") {
+    using namespace asterorm::sql::typed;
+
+    auto query = select_cols<order_stats>(count_all(), sum(col<&order_row::qty>),
+                                          sum(col<&order_row::price>), min(col<&order_row::qty>),
+                                          max(col<&order_row::qty>), avg(col<&order_row::price>))
+                     .group_by(col<&order_row::order_id>)
+                     .having(col<&order_row::qty> > val(0))
+                     .build();
+    asterorm::sql::compiler compiler;
+    auto compiled = compiler.compile(query);
+
+    REQUIRE(compiled.sql.find(R"(GROUP BY "id")") != std::string::npos);
+    REQUIRE(compiled.sql.find(R"(HAVING "qty" > $1)") != std::string::npos);
+    REQUIRE(compiled.params.size() == 1);
+}

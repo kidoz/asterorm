@@ -152,6 +152,23 @@ constexpr typed_predicate<Entity> operator||(typed_predicate<Entity> lhs,
 }
 
 // ---------------------------------------------------------------------------
+// Selectable concept
+// ---------------------------------------------------------------------------
+//
+// A "selectable" is anything that can appear in a select_cols(...) projection:
+// a typed_col, or one of the aggregate function nodes below. Every selectable
+// declares its projected C++ type, the entity it references (or `void` for
+// entity-agnostic forms like COUNT(*)), and how to lower itself to a
+// select_item AST node.
+
+template <typename T>
+concept selectable = requires {
+    typename T::projected_type;
+    typename T::entity_type;
+    { T::to_select_item() } -> std::convertible_to<select_item>;
+};
+
+// ---------------------------------------------------------------------------
 // Typed column reference
 // ---------------------------------------------------------------------------
 
@@ -163,9 +180,15 @@ template <auto MemberPtr> struct typed_col {
     using entity_type = detail::member_entity_t<MemberPtr>;
     using field_type = detail::member_field_t<MemberPtr>;
     using compare_type = detail::unwrap_optional_t<field_type>;
+    // Selectable: a bare column projects into its declared field type.
+    using projected_type = field_type;
 
     static constexpr std::string_view column_name() {
         return detail::column_name_for<MemberPtr>();
+    }
+
+    static select_item to_select_item() {
+        return select_item{std::string{column_name()}, nullptr, std::nullopt};
     }
 
     // -- typed_col vs typed_val ------------------------------------------------
@@ -239,6 +262,128 @@ constexpr typed_predicate<detail::member_entity_t<MemberPtr>> is_not_null(typed_
 }
 
 // ---------------------------------------------------------------------------
+// Typed aggregates
+// ---------------------------------------------------------------------------
+//
+// Aggregate result-type rules follow what PostgreSQL/SQLite return through
+// the text protocol:
+//   COUNT(*) / COUNT(col)  → bigint  (mapped to std::int64_t)
+//   SUM(int...)            → bigint  (mapped to std::int64_t)
+//   SUM(float/double)      → double precision
+//   SUM(numeric)           → numeric (preserved verbatim)
+//   AVG(arithmetic)        → double precision
+//   MIN/MAX(T)             → T
+//
+// PG actually returns AVG(int) as numeric; we project to double. For exact
+// decimal averages, project the column as `numeric` upstream.
+
+namespace detail {
+
+template <typename T>
+using sum_result_t = std::conditional_t<std::is_integral_v<T>, std::int64_t,
+                                        std::conditional_t<std::is_floating_point_v<T>, double, T>>;
+
+template <typename T> using avg_result_t = std::conditional_t<std::is_arithmetic_v<T>, double, T>;
+
+} // namespace detail
+
+struct count_all_t {
+    using projected_type = std::int64_t;
+    using entity_type = void;
+
+    static select_item to_select_item() {
+        return select_item{std::nullopt, ::asterorm::sql::count_all(), std::nullopt};
+    }
+};
+
+constexpr count_all_t count_all() {
+    return {};
+}
+
+template <auto MemberPtr> struct count_col_t {
+    using projected_type = std::int64_t;
+    using entity_type = detail::member_entity_t<MemberPtr>;
+
+    static select_item to_select_item() {
+        return select_item{
+            std::nullopt,
+            ::asterorm::sql::func("count",
+                                  {column_expr{std::string{typed_col<MemberPtr>::column_name()}}}),
+            std::nullopt};
+    }
+};
+
+template <auto MemberPtr> constexpr count_col_t<MemberPtr> count(typed_col<MemberPtr>) {
+    return {};
+}
+
+template <auto MemberPtr> struct sum_col_t {
+    using projected_type =
+        detail::sum_result_t<detail::unwrap_optional_t<detail::member_field_t<MemberPtr>>>;
+    using entity_type = detail::member_entity_t<MemberPtr>;
+
+    static select_item to_select_item() {
+        return select_item{
+            std::nullopt,
+            ::asterorm::sql::sum(column_expr{std::string{typed_col<MemberPtr>::column_name()}}),
+            std::nullopt};
+    }
+};
+
+template <auto MemberPtr> constexpr sum_col_t<MemberPtr> sum(typed_col<MemberPtr>) {
+    return {};
+}
+
+template <auto MemberPtr> struct avg_col_t {
+    using projected_type =
+        detail::avg_result_t<detail::unwrap_optional_t<detail::member_field_t<MemberPtr>>>;
+    using entity_type = detail::member_entity_t<MemberPtr>;
+
+    static select_item to_select_item() {
+        return select_item{
+            std::nullopt,
+            ::asterorm::sql::avg(column_expr{std::string{typed_col<MemberPtr>::column_name()}}),
+            std::nullopt};
+    }
+};
+
+template <auto MemberPtr> constexpr avg_col_t<MemberPtr> avg(typed_col<MemberPtr>) {
+    return {};
+}
+
+template <auto MemberPtr> struct min_col_t {
+    using projected_type = detail::unwrap_optional_t<detail::member_field_t<MemberPtr>>;
+    using entity_type = detail::member_entity_t<MemberPtr>;
+
+    static select_item to_select_item() {
+        return select_item{
+            std::nullopt,
+            ::asterorm::sql::min_(column_expr{std::string{typed_col<MemberPtr>::column_name()}}),
+            std::nullopt};
+    }
+};
+
+template <auto MemberPtr> constexpr min_col_t<MemberPtr> min(typed_col<MemberPtr>) {
+    return {};
+}
+
+template <auto MemberPtr> struct max_col_t {
+    using projected_type = detail::unwrap_optional_t<detail::member_field_t<MemberPtr>>;
+    using entity_type = detail::member_entity_t<MemberPtr>;
+
+    static select_item to_select_item() {
+        return select_item{
+            std::nullopt,
+            ::asterorm::sql::max_(column_expr{std::string{typed_col<MemberPtr>::column_name()}}),
+            std::nullopt};
+    }
+};
+
+template <auto MemberPtr> constexpr max_col_t<MemberPtr> max(typed_col<MemberPtr>) {
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // Typed select builder
 // ---------------------------------------------------------------------------
 
@@ -246,16 +391,48 @@ enum class order_dir : std::uint8_t { ascending, descending };
 inline constexpr order_dir asc = order_dir::ascending;
 inline constexpr order_dir desc = order_dir::descending;
 
-template <typename Entity, typename Result, auto... ProjectionPtrs> class typed_select_builder {
+namespace detail {
+
+// Pick the first non-void entity from a pack, used to derive the entity tag
+// for builders containing entity-agnostic items (count_all has no entity).
+template <typename...> struct pick_entity {
+    using type = void;
+};
+template <typename First, typename... Rest> struct pick_entity<First, Rest...> {
+    using type =
+        std::conditional_t<std::is_same_v<First, void>, typename pick_entity<Rest...>::type, First>;
+};
+template <typename... EntityTags> using pick_entity_t = typename pick_entity<EntityTags...>::type;
+
+template <typename A, typename B>
+inline constexpr bool entity_compatible_v =
+    std::is_same_v<A, B> || std::is_same_v<A, void> || std::is_same_v<B, void>;
+
+} // namespace detail
+
+template <typename Entity, typename Result, typename... Items> class typed_select_builder {
   public:
     using entity_type = Entity;
     using result_type = Result;
-    static constexpr std::size_t projection_size = sizeof...(ProjectionPtrs);
+    static constexpr std::size_t projection_size = sizeof...(Items);
 
     explicit typed_select_builder(select_ast initial_ast) : ast_(std::move(initial_ast)) {}
 
     typed_select_builder& where(typed_predicate<Entity> predicate) {
         ast_.where_clause = std::move(predicate.inner);
+        return *this;
+    }
+
+    typed_select_builder& having(typed_predicate<Entity> predicate) {
+        ast_.having_clause = std::move(predicate.inner);
+        return *this;
+    }
+
+    template <auto... MemberPtrs>
+        requires(sizeof...(MemberPtrs) > 0) &&
+                ((std::is_same_v<Entity, detail::member_entity_t<MemberPtrs>>) && ...)
+    typed_select_builder& group_by(typed_col<MemberPtrs>...) {
+        (ast_.group_bys.emplace_back(typed_col<MemberPtrs>::column_name()), ...);
         return *this;
     }
 
@@ -301,10 +478,10 @@ template <typename Entity> select_ast make_entity_select_ast() {
     return initial_ast;
 }
 
-template <typename Entity, auto... Ptrs> select_ast make_projection_select_ast() {
+template <typename Entity, typename... Items> select_ast make_projection_select_ast() {
     select_ast initial_ast;
     initial_ast.table = entity_traits<Entity>::table;
-    (initial_ast.columns.emplace_back(typed_col<Ptrs>::column_name()), ...);
+    (initial_ast.items.emplace_back(Items::to_select_item()), ...);
     return initial_ast;
 }
 
@@ -315,23 +492,27 @@ template <typename Entity> typed_select_builder<Entity, Entity> select() {
     return typed_select_builder<Entity, Entity>{detail::make_entity_select_ast<Entity>()};
 }
 
-// Tuple-of-columns SELECT into a user-declared DTO. The DTO must be
-// aggregate-initialisable from the projected column types in declared order.
-template <typename DTO, auto... MemberPtrs> auto select_cols(typed_col<MemberPtrs>...) {
-    static_assert(sizeof...(MemberPtrs) > 0, "asterorm: select_cols requires at least one column");
+// Mixed-projection SELECT into a user-declared DTO. Each Items must be a
+// `selectable` (typed_col or one of the aggregate nodes); the DTO must be
+// aggregate-initialisable from the projected types in declared order.
+template <typename DTO, selectable... Items> auto select_cols(Items...) {
+    static_assert(sizeof...(Items) > 0, "asterorm: select_cols requires at least one item");
 
-    using first_entity = detail::member_entity_t<detail::first_value_v<MemberPtrs...>>;
+    using entity = detail::pick_entity_t<typename Items::entity_type...>;
+    static_assert(
+        !std::is_same_v<entity, void>,
+        "asterorm: select_cols requires at least one entity-bound column. Add a typed_col.");
 
-    static_assert((std::is_same_v<detail::member_entity_t<MemberPtrs>, first_entity> && ...),
-                  "asterorm: select_cols requires every column to belong to the same entity");
+    static_assert(
+        ((detail::entity_compatible_v<typename Items::entity_type, entity>) && ...),
+        "asterorm: select_cols requires every entity-bound item to share the same entity");
 
-    static_assert(detail::aggregate_initable<DTO, detail::member_field_t<MemberPtrs>...>,
-                  "asterorm: DTO field types do not match the projected columns. "
-                  "Each projected column type must aggregate-initialize the DTO in "
-                  "declared order.");
+    static_assert(detail::aggregate_initable<DTO, typename Items::projected_type...>,
+                  "asterorm: DTO field types do not match the projected items. "
+                  "Each projected type must aggregate-initialize the DTO in declared order.");
 
-    return typed_select_builder<first_entity, DTO, MemberPtrs...>{
-        detail::make_projection_select_ast<first_entity, MemberPtrs...>()};
+    return typed_select_builder<entity, DTO, Items...>{
+        detail::make_projection_select_ast<entity, Items...>()};
 }
 
 } // namespace asterorm::sql::typed

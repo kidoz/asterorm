@@ -29,9 +29,9 @@ asterorm::result<void> hydrate_whole_entity(const Res& result_set, int row, Resu
         std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(traits::columns)>>>{});
 }
 
-template <typename DTO, auto... ProjectionPtrs, typename Res>
+template <typename DTO, typename... Items, typename Res>
 asterorm::result<DTO> hydrate_dto(const Res& result_set, int row) {
-    std::tuple<member_field_t<ProjectionPtrs>...> field_values{};
+    std::tuple<typename Items::projected_type...> field_values{};
     asterorm::result<void> first_decode_error;
 
     auto decode_at = [&]<std::size_t Index>(auto& destination) {
@@ -47,7 +47,7 @@ asterorm::result<DTO> hydrate_dto(const Res& result_set, int row) {
 
     [&]<std::size_t... Indices>(std::index_sequence<Indices...>) {
         (decode_at.template operator()<Indices>(std::get<Indices>(field_values)), ...);
-    }(std::make_index_sequence<sizeof...(ProjectionPtrs)>{});
+    }(std::make_index_sequence<sizeof...(Items)>{});
 
     if (!first_decode_error) {
         return std::unexpected(first_decode_error.error());
@@ -62,10 +62,20 @@ asterorm::result<DTO> hydrate_dto(const Res& result_set, int row) {
 // Execute a typed SELECT against the session and hydrate the rows into the
 // builder's Result type. Whole-entity builders (sql::typed::select<Entity>())
 // hydrate via entity_traits<Entity>; projection builders (select_cols<DTO>)
-// aggregate-initialise the DTO from each row positionally.
-template <typename Session, typename Entity, typename Result, auto... ProjectionPtrs>
+// aggregate-initialise the DTO from each row positionally using the typelist
+// of projected items.
+// Accept the builder by either rvalue (temporary chain) or lvalue (named).
+// The lvalue overload forwards to the rvalue one; both branch on the typelist
+// to pick whole-entity vs. DTO hydration.
+template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
-query(Session& session, typed_select_builder<Entity, Result, ProjectionPtrs...>& builder) {
+query(Session& session, typed_select_builder<Entity, Result, Items...>& builder) {
+    return query(session, std::move(builder));
+}
+
+template <typename Session, typename Entity, typename Result, typename... Items>
+asterorm::result<std::vector<Result>>
+query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder) {
     auto select_ast_value = builder.build();
     asterorm::sql::compiler statement_compiler;
     auto compiled_query = statement_compiler.compile(select_ast_value);
@@ -80,7 +90,7 @@ query(Session& session, typed_select_builder<Entity, Result, ProjectionPtrs...>&
     std::vector<Result> rows;
     rows.reserve(static_cast<std::size_t>(execution_result->rows()));
     for (int row_index = 0; row_index < execution_result->rows(); ++row_index) {
-        if constexpr (sizeof...(ProjectionPtrs) == 0) {
+        if constexpr (sizeof...(Items) == 0) {
             Result entity_row{};
             auto hydration_error =
                 detail::hydrate_whole_entity<Entity>(*execution_result, row_index, entity_row);
@@ -89,8 +99,7 @@ query(Session& session, typed_select_builder<Entity, Result, ProjectionPtrs...>&
             }
             rows.push_back(std::move(entity_row));
         } else {
-            auto dto_or_error =
-                detail::hydrate_dto<Result, ProjectionPtrs...>(*execution_result, row_index);
+            auto dto_or_error = detail::hydrate_dto<Result, Items...>(*execution_result, row_index);
             if (!dto_or_error) {
                 return std::unexpected(dto_or_error.error());
             }
