@@ -226,6 +226,46 @@ TEST_CASE("SQLite Integration: typed DSL query() round-trips entities and DTOs",
         REQUIRE(rows->front().name == "Bob");
     }
 
+    SECTION("Aggregate projection: count + max into a stats DTO") {
+        struct user_stats {
+            std::int64_t total;
+            std::int64_t active_count;
+            std::string max_email;
+        };
+
+        // Insert one more row so totals are interesting.
+        sqlite_user carol{.email = "carol@example.com", .name = "Carol", .active = true};
+        REQUIRE(repo.insert(carol).has_value());
+
+        auto stats =
+            tsql::query(db, tsql::select_cols<user_stats>(
+                                tsql::count_all(), tsql::count(tsql::col<&sqlite_user::active>),
+                                tsql::max(tsql::col<&sqlite_user::email>)));
+        REQUIRE(stats.has_value());
+        REQUIRE(stats->size() == 1);
+        REQUIRE(stats->front().total == 3);
+        REQUIRE(stats->front().active_count == 3);
+        REQUIRE(stats->front().max_email == "carol@example.com");
+    }
+
+    SECTION("group_by with aggregate emits expected counts per active value") {
+        struct active_count_row {
+            bool is_active;
+            std::int64_t count;
+        };
+
+        auto rows = tsql::query(db, tsql::select_cols<active_count_row>(
+                                        tsql::col<&sqlite_user::active>, tsql::count_all())
+                                        .group_by(tsql::col<&sqlite_user::active>)
+                                        .order_by(tsql::col<&sqlite_user::active>, tsql::asc));
+        REQUIRE(rows.has_value());
+        REQUIRE(rows->size() == 2);
+        REQUIRE(rows->at(0).is_active == false);
+        REQUIRE(rows->at(0).count == 1);
+        REQUIRE(rows->at(1).is_active == true);
+        REQUIRE(rows->at(1).count == 1);
+    }
+
     SECTION("is_not_null filters out the rows we expect") {
         // No row has deleted_at populated yet, so is_null returns both, is_not_null returns 0.
         auto null_rows = tsql::query(db, tsql::select<sqlite_user>().where(
