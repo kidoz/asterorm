@@ -110,6 +110,11 @@ std::string compiler::compile_predicate(const predicate_ast& pred,
         std::string right = compile_expr(comp.right, params);
         return left + " " + op_to_string(comp.op) + " " + right;
     }
+    if (std::holds_alternative<unary_predicate>(pred.val)) {
+        const auto& un = std::get<unary_predicate>(pred.val);
+        std::string operand = compile_expr(un.operand, params);
+        return operand + (un.op == unary_op_kind::is_null ? " IS NULL" : " IS NOT NULL");
+    }
     const auto& bin = std::get<binary_predicate>(pred.val);
     std::string left = compile_predicate(*bin.left, params);
     std::string right = compile_predicate(*bin.right, params);

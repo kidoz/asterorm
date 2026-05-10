@@ -77,12 +77,21 @@ inline std::shared_ptr<func_expr> as(std::shared_ptr<func_expr> f, std::string a
 
 enum class op_kind : std::uint8_t { eq, neq, lt, gt, le, ge, and_, or_ };
 
+// Unary postfix operators: IS NULL / IS NOT NULL. Kept separate from op_kind
+// because they take exactly one operand and never appear in binary contexts.
+enum class unary_op_kind : std::uint8_t { is_null, is_not_null };
+
 struct predicate_ast;
 
 struct comparison_predicate {
     op_kind op;
     expr_ast left;
     expr_ast right;
+};
+
+struct unary_predicate {
+    unary_op_kind op;
+    expr_ast operand;
 };
 
 struct binary_predicate {
@@ -92,8 +101,16 @@ struct binary_predicate {
 };
 
 struct predicate_ast {
-    std::variant<comparison_predicate, binary_predicate> val;
+    std::variant<comparison_predicate, unary_predicate, binary_predicate> val;
 };
+
+inline predicate_ast is_null(expr_ast operand) {
+    return predicate_ast{unary_predicate{unary_op_kind::is_null, std::move(operand)}};
+}
+
+inline predicate_ast is_not_null(expr_ast operand) {
+    return predicate_ast{unary_predicate{unary_op_kind::is_not_null, std::move(operand)}};
+}
 
 inline predicate_ast operator==(const expr_ast& lhs, const expr_ast& rhs) {
     return predicate_ast{comparison_predicate{op_kind::eq, lhs, rhs}};
