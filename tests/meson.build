@@ -7,6 +7,7 @@ core_tests = executable(
     'unit/test_ast.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
+    'unit/test_typed_dsl.cpp',
   ],
   dependencies : [asterorm_core_dep, catch2_dep],
 )
