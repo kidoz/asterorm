@@ -4,6 +4,7 @@
 
 #include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
+#include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
 
 namespace {
@@ -13,6 +14,7 @@ struct sqlite_user {
     std::string email;
     std::string name;
     bool active{true};
+    std::optional<std::string> deleted_at;
 };
 
 } // namespace
@@ -25,7 +27,8 @@ template <> struct asterorm::entity_traits<sqlite_user> {
         std::make_tuple(asterorm::column<&sqlite_user::id>("id", asterorm::generated::by_default),
                         asterorm::column<&sqlite_user::email>("email"),
                         asterorm::column<&sqlite_user::name>("name"),
-                        asterorm::column<&sqlite_user::active>("active"));
+                        asterorm::column<&sqlite_user::active>("active"),
+                        asterorm::column<&sqlite_user::deleted_at>("deleted_at"));
 };
 
 namespace {
@@ -50,7 +53,8 @@ void create_schema(asterorm::connection_pool<asterorm::sqlite::driver>& pool) {
                          "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                          "email TEXT NOT NULL, "
                          "name TEXT NOT NULL, "
-                         "active INTEGER NOT NULL)")
+                         "active INTEGER NOT NULL, "
+                         "deleted_at TEXT)")
                 .has_value());
 }
 
@@ -96,13 +100,15 @@ TEST_CASE("SQLite Integration: CRUD round-trip", "[sqlite][crud]") {
         REQUIRE(repo.insert(b).has_value());
 
         auto active_rows = db.native<sqlite_user>(
-            "SELECT id, email, name, active FROM asterorm_users WHERE active = $1", true);
+            "SELECT id, email, name, active, deleted_at FROM asterorm_users WHERE active = $1",
+            true);
         REQUIRE(active_rows.has_value());
         REQUIRE(active_rows->size() == 1);
         REQUIRE(active_rows->front().email == "a@x");
 
         auto inactive_rows = db.native<sqlite_user>(
-            "SELECT id, email, name, active FROM asterorm_users WHERE active = $1", false);
+            "SELECT id, email, name, active, deleted_at FROM asterorm_users WHERE active = $1",
+            false);
         REQUIRE(inactive_rows.has_value());
         REQUIRE(inactive_rows->size() == 1);
         REQUIRE(inactive_rows->front().email == "b@x");
@@ -175,6 +181,63 @@ TEST_CASE("SQLite Integration: COPY is not supported on the connection", "[sqlit
 
     auto out_res = (*lease)->copy_out("SELECT * FROM asterorm_users");
     REQUIRE_FALSE(out_res.has_value());
+}
+
+namespace {
+struct sqlite_user_summary {
+    std::string email;
+    std::string name;
+};
+} // namespace
+
+TEST_CASE("SQLite Integration: typed DSL query() round-trips entities and DTOs",
+          "[sqlite][typed]") {
+    namespace tsql = asterorm::sql::typed;
+
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    create_schema(pool);
+
+    asterorm::session<decltype(pool)> db{pool};
+    asterorm::repository repo{db};
+
+    sqlite_user alice{.email = "alice@example.com", .name = "Alice", .active = true};
+    sqlite_user bob{.email = "bob@example.com", .name = "Bob", .active = false};
+    REQUIRE(repo.insert(alice).has_value());
+    REQUIRE(repo.insert(bob).has_value());
+
+    SECTION("Whole-entity SELECT with typed where + order_by") {
+        auto users = tsql::query(db, tsql::select<sqlite_user>()
+                                         .where(tsql::col<&sqlite_user::active> == tsql::val(true))
+                                         .order_by(tsql::col<&sqlite_user::email>, tsql::asc));
+        REQUIRE(users.has_value());
+        REQUIRE(users->size() == 1);
+        REQUIRE(users->front().email == "alice@example.com");
+    }
+
+    SECTION("Struct projection via select_cols<DTO>") {
+        auto rows =
+            tsql::query(db, tsql::select_cols<sqlite_user_summary>(tsql::col<&sqlite_user::email>,
+                                                                   tsql::col<&sqlite_user::name>)
+                                .where(tsql::col<&sqlite_user::active> == tsql::val(false)));
+        REQUIRE(rows.has_value());
+        REQUIRE(rows->size() == 1);
+        REQUIRE(rows->front().email == "bob@example.com");
+        REQUIRE(rows->front().name == "Bob");
+    }
+
+    SECTION("is_not_null filters out the rows we expect") {
+        // No row has deleted_at populated yet, so is_null returns both, is_not_null returns 0.
+        auto null_rows = tsql::query(db, tsql::select<sqlite_user>().where(
+                                             tsql::is_null(tsql::col<&sqlite_user::deleted_at>)));
+        REQUIRE(null_rows.has_value());
+        REQUIRE(null_rows->size() == 2);
+
+        auto not_null_rows = tsql::query(db, tsql::select<sqlite_user>().where(tsql::is_not_null(
+                                                 tsql::col<&sqlite_user::deleted_at>)));
+        REQUIRE(not_null_rows.has_value());
+        REQUIRE(not_null_rows->empty());
+    }
 }
 
 TEST_CASE("SQLite Integration: bind rejects extra parameters", "[sqlite][bind]") {
