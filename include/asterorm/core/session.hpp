@@ -39,6 +39,12 @@ enum class native_hydration : std::uint8_t {
 };
 
 namespace detail {
+
+template <typename Conn>
+concept has_build_begin_sql = requires(const transaction_options& opts) {
+    { Conn::build_begin_sql(opts) } -> std::convertible_to<std::string>;
+};
+
 inline std::string build_begin_sql(const transaction_options& opts) {
     std::string sql = "BEGIN";
     switch (opts.isolation) {
@@ -60,6 +66,17 @@ inline std::string build_begin_sql(const transaction_options& opts) {
     sql += opts.read_only ? " READ ONLY" : "";
     sql += opts.deferrable ? " DEFERRABLE" : "";
     return sql;
+}
+
+// Dispatch to a connection-specific begin-SQL builder when the backend
+// declares one (SQLite has no ANSI isolation/READ ONLY/DEFERRABLE syntax).
+// Falls back to the PostgreSQL-style default otherwise.
+template <typename Conn> std::string build_begin_sql_for(const transaction_options& opts) {
+    if constexpr (has_build_begin_sql<Conn>) {
+        return Conn::build_begin_sql(opts);
+    } else {
+        return build_begin_sql(opts);
+    }
 }
 
 // Quote an unqualified savepoint identifier. Rejects empty input or embedded
@@ -188,7 +205,7 @@ template <typename Pool> class session {
 
         active_lease_ = std::move(lease_res.value());
 
-        const auto sql = detail::build_begin_sql(opts);
+        const auto sql = detail::build_begin_sql_for<connection_type>(opts);
         auto exec_res = (*active_lease_)->execute(sql);
         if (!exec_res) {
             active_lease_.reset();
