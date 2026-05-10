@@ -41,6 +41,29 @@ if postgres_enabled
   asterorm_pkg_requires_private += ['libpq']
 endif
 
+sqlite_feature = get_option('sqlite')
+sqlite_dep = dependency('sqlite3', required : false)
+if not sqlite_dep.found() and sqlite_feature.allowed()
+  foreach sqlite_prefix : ['/opt/homebrew/opt/sqlite', '/usr/local/opt/sqlite']
+    if not sqlite_dep.found() and filesystem_module.exists(sqlite_prefix / 'include' / 'sqlite3.h')
+      sqlite_library = cpp_compiler.find_library('sqlite3', dirs : sqlite_prefix / 'lib', required : false)
+      if sqlite_library.found()
+        sqlite_dep = declare_dependency(
+          dependencies : sqlite_library,
+          compile_args : ['-I' + (sqlite_prefix / 'include')],
+        )
+      endif
+    endif
+  endforeach
+endif
+if sqlite_feature.enabled() and not sqlite_dep.found()
+  error('sqlite3 dependency not found. Install sqlite3 development headers or set PKG_CONFIG_PATH.')
+endif
+sqlite_enabled = sqlite_feature.allowed() and sqlite_dep.found()
+if sqlite_enabled
+  asterorm_pkg_requires_private += ['sqlite3']
+endif
+
 clickhouse_feature = get_option('clickhouse')
 clickhouse_dep = dependency('clickhouse-cpp', required : clickhouse_feature, fallback: ['clickhouse-cpp', 'clickhouse_cpp_lib_dep'], default_options: ['werror=false', 'warning_level=0'])
 

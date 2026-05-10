@@ -45,6 +45,28 @@ if postgres_enabled
   asterorm_libraries += [asterorm_pg]
 endif
 
+if sqlite_enabled
+  asterorm_sqlite = library(
+    'asterorm_sqlite',
+    [
+      'sqlite/driver.cpp',
+      'sqlite/connection.cpp',
+      'sqlite/result.cpp',
+    ],
+    include_directories : inc,
+    dependencies : [asterorm_core_dep, sqlite_dep],
+    install : true,
+  )
+
+  asterorm_sqlite_dep = declare_dependency(
+    include_directories : inc,
+    dependencies : [asterorm_core_dep, sqlite_dep],
+    link_with : asterorm_sqlite,
+  )
+
+  asterorm_libraries += [asterorm_sqlite]
+endif
+
 if clickhouse_feature.allowed()
   asterorm_ch = library(
     'asterorm_ch',
