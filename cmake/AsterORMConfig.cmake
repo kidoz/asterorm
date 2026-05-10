@@ -24,6 +24,20 @@ if(EXISTS "${_asterorm_prefix}/lib/libasterorm_pg${CMAKE_SHARED_LIBRARY_SUFFIX}"
   endif()
 endif()
 
+if(EXISTS "${_asterorm_prefix}/lib/libasterorm_sqlite${CMAKE_SHARED_LIBRARY_SUFFIX}" AND NOT TARGET AsterORM::sqlite)
+  find_package(SQLite3 QUIET)
+  add_library(AsterORM::sqlite SHARED IMPORTED)
+  set_target_properties(AsterORM::sqlite PROPERTIES
+    IMPORTED_LOCATION "${_asterorm_prefix}/lib/libasterorm_sqlite${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_asterorm_prefix}/include"
+    INTERFACE_LINK_LIBRARIES "AsterORM::core"
+  )
+  if(TARGET SQLite::SQLite3)
+    set_property(TARGET AsterORM::sqlite APPEND PROPERTY
+      INTERFACE_LINK_LIBRARIES SQLite::SQLite3)
+  endif()
+endif()
+
 if(EXISTS "${_asterorm_prefix}/lib/libasterorm_ch${CMAKE_SHARED_LIBRARY_SUFFIX}" AND NOT TARGET AsterORM::clickhouse)
   add_library(AsterORM::clickhouse SHARED IMPORTED)
   set_target_properties(AsterORM::clickhouse PROPERTIES
@@ -38,6 +52,9 @@ if(NOT TARGET AsterORM::asterorm)
   set(_asterorm_components AsterORM::core)
   if(TARGET AsterORM::postgres)
     list(APPEND _asterorm_components AsterORM::postgres)
+  endif()
+  if(TARGET AsterORM::sqlite)
+    list(APPEND _asterorm_components AsterORM::sqlite)
   endif()
   if(TARGET AsterORM::clickhouse)
     list(APPEND _asterorm_components AsterORM::clickhouse)
