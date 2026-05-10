@@ -2,10 +2,11 @@
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg)](https://www.postgresql.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-3.35%2B-003B57.svg)](https://www.sqlite.org/)
 [![Meson Build](https://img.shields.io/badge/Meson-Build-green.svg)](https://mesonbuild.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**A PostgreSQL-first ORM for C++23 with connection pooling, CRUD, and composable SQL APIs.**
+**A modern C++23 ORM with connection pooling, CRUD, and composable SQL APIs. PostgreSQL is the primary backend; SQLite is supported for embedded use and zero-setup tests.**
 
 AsterORM is a modern, data-mapper style Object Relational Mapper for C++23. By heavily leveraging modern C++ features like `std::expected` and compile-time reflection via pointer-to-members, it keeps your domain entities as plain structs without any intrusive inheritance or persistence logic.
 
@@ -14,6 +15,7 @@ AsterORM is a modern, data-mapper style Object Relational Mapper for C++23. By h
 * **Data Mapper Architecture:** Entities remain plain `C++` structs. No magic base classes.
 * **Compile-Time Traits:** Define mappings using simple pointer-to-member templates (`&User::id`). No macros required.
 * **PostgreSQL Native:** Built directly on top of `libpq` using text parameters/results, per-connection prepared statement caching, and `RETURNING` for generated values.
+* **SQLite Backend:** First-class `sqlite::driver` over the `sqlite3` C API. Same pool/session/repository templates as PostgreSQL; supports file paths, `file:` URIs, and `:memory:` for tests. Bool parameters bind as `INTEGER 1/0`, `BEGIN`/`BEGIN IMMEDIATE` is selected from `transaction_options`, and the prepared-statement cache honors `pool_config::prepared_statement_cache_size`.
 * **Connection Pooling:** Built-in connection pool with timeout leasing, explicit close, basic statistics, and open-connection checks.
 * **Transactions and Migrations:** Scoped `db.begin()` guards, callback-based transaction helpers, bounded transaction retries, and a small schema migration runner.
 * **CRUD:** Insert, find, update, erase, patch, single/bulk insert, single/bulk upsert, single/composite primary keys, generated-column refresh, and optional optimistic locking through version-column traits.
@@ -25,7 +27,7 @@ AsterORM is a modern, data-mapper style Object Relational Mapper for C++23. By h
 
 ## Current Scope
 
-AsterORM currently focuses on a small PostgreSQL-first v0.1 surface:
+AsterORM v0.1 covers a small but production-shaped surface:
 
 * connection pooling with exclusive leases
 * explicit transactions and savepoints
@@ -35,12 +37,12 @@ AsterORM currently focuses on a small PostgreSQL-first v0.1 surface:
 * generated-value refresh through `RETURNING` on mutable insert/upsert/update paths
 * optimistic locking through an optional `version_column` entity trait
 * transaction helpers and schema migrations
-* PostgreSQL codecs for common scalars, optional values, arrays, nullable array elements, JSONB, UUID, bytea, timestamp, date, time, numeric, and enum labels
-* structured PostgreSQL errors with SQLSTATE and server diagnostics where libpq exposes them
+* PostgreSQL backend (`pg::driver`): codecs for common scalars, optional values, arrays, nullable array elements, JSONB, UUID, bytea, timestamp, date, time, numeric, and enum labels; structured errors with SQLSTATE and libpq diagnostics; raw or structured `COPY IN/OUT`
+* SQLite backend (`sqlite::driver`): file/URI/`:memory:` databases via `sqlite3_open_v2`, foreign keys on by default, 5s busy timeout, native bool binding (`INTEGER 1/0`), bounded LRU prepared-statement cache, `transaction_options`-aware `BEGIN`/`BEGIN IMMEDIATE`
 * raw SQL mapping through `native<T>()`, `native_scalar<T>()`, and `native_map()`
 * a small SQL AST/compiler for parameterized statements
 
-Not implemented yet: relationship mapping, lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, a complete typed query DSL, and a production-ready multi-database abstraction. PostgreSQL binary protocol support is also not implemented yet.
+Not implemented yet: relationship mapping, lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, a complete typed query DSL, streaming cursors for large result sets, and a production-ready identity map. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
 
 ## Quick Example
 
@@ -99,19 +101,26 @@ int main() {
 
 * C++23 compliant compiler (GCC 13+, Clang 16+, MSVC v19.38+)
 * [Meson Build System](https://mesonbuild.com/) (>= 1.1.0)
-* PostgreSQL development headers (`libpq`)
+* For the PostgreSQL backend: PostgreSQL development headers (`libpq`)
+* For the SQLite backend: SQLite 3.35+ development headers (`sqlite3`)
+
+Both backends are enabled by default and discovered via `pkg-config`. Either can be turned off with `-Dpostgres=disabled` / `-Dsqlite=disabled`.
 
 ### Building
 
 ```bash
-# Configure the build directory
+# Configure the build directory (both backends auto-detected)
 meson setup buildDir
 
 # Compile the library
 meson compile -C buildDir
 
-# Run the test suite (requires a local PostgreSQL instance)
+# Run the full test suite (PostgreSQL integration tests need a live database;
+# SQLite integration tests use :memory: and need no external services)
 meson test -C buildDir
+
+# Or run only the SQLite suite to skip the live database requirement
+meson test -C buildDir --suite asterorm sqlite\ integration
 ```
 
 ### Installing
@@ -163,10 +172,35 @@ auto line = repo.find<OrderLine>(std::make_tuple(100, 1)).value();
 repo.erase<OrderLine>(std::make_tuple(100, 1)).value();
 ```
 
-A `docker-compose.yaml` file is provided to quickly spin up a test database:
+A `compose.yaml` file is provided to quickly spin up a PostgreSQL test database. The justfile wraps it for one-shot integration runs:
 ```bash
-docker compose up -d
+# Bring the database up (waits for healthcheck), run the PG integration suite, leave it running
+just db-up
+just test-pg
+
+# Or run everything end-to-end (brings DB up, runs all tests, tears DB down on success)
+just test-all
 ```
+
+The SQLite integration tests run entirely against `:memory:` and require no external services.
+
+## Choosing a Backend
+
+```cpp
+// PostgreSQL
+asterorm::pool_config cfg{.conninfo = "host=127.0.0.1 user=app dbname=app"};
+asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
+
+// SQLite (file)
+asterorm::pool_config cfg{.conninfo = "app.db"};
+asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, cfg};
+
+// SQLite (in-memory, ideal for tests)
+asterorm::pool_config cfg{.conninfo = ":memory:", .min_size = 1, .max_size = 1};
+asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, cfg};
+```
+
+The `session<Pool>` and `repository<Session>` templates are identical across backends; only the driver type changes.
 
 ## Developer Tooling
 
