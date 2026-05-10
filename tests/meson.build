@@ -25,6 +25,18 @@ if clickhouse_feature.allowed()
   test('clickhouse unit tests', clickhouse_tests)
 endif
 
+if sqlite_enabled
+  sqlite_tests = executable(
+    'sqlite_integration',
+    [
+      'integration/test_sqlite_crud.cpp',
+    ],
+    dependencies : [asterorm_sqlite_dep, catch2_dep],
+  )
+
+  test('sqlite integration', sqlite_tests)
+endif
+
 if postgres_enabled
   pg_tests = executable(
     'pg_integration',
