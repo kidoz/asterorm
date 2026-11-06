@@ -3,12 +3,49 @@
 Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock and
 timeout feature is **not implemented**. Existing transactions, native SQL,
 prepared execution, and backend error diagnostics provide useful foundations.
-The first implementation slice should correct query-cancellation classification,
-followed by typed-query observer routing.
+The cancellation-classification follow-up below completes the first groundwork
+slice. Typed-query observer routing is next.
 
-This audit adds a reproducible probe and records implementation work. It changes
-no production API or runtime behavior. Previous staged migration-guide work and
-the separate documentation changes remain intact.
+The initial audit added a reproducible probe and changed no production behavior.
+The original findings and probe snapshot below describe that audited revision;
+follow-ups record later fixes.
+
+## Follow-up: cancellation classification (2026-11-07)
+
+PostgreSQL query cancellation (`57014`) now maps to `query_failed` before the
+class-57 fallback. SQLSTATE and server diagnostics are retained. Shutdown and
+connection errors still map to `connection_failed`; MySQL's native timeout
+mapping and pool acquisition behavior are unchanged.
+
+The unit suite updates its former `57014` expectation and adds shutdown controls
+(`57P01`, `57P02`, `57P03`) alongside existing connection, deadlock, serialization,
+constraint, parse, and ordinary query cases. A new PostgreSQL integration test
+runs with prepared caches disabled and enabled. It checks cancellation kind and
+SQLSTATE, one observer event with the same diagnostic message, successful
+rollback, timeout restoration, the same backend PID after returning to the pool,
+and successful reuse of the cancelled statement with a zero sleep parameter.
+
+Verification for this follow-up:
+
+- Before the implementation change,
+  `meson test -C buildDir 'core unit tests' 'pg integration' --test-args='[error]' --print-errorlogs`
+  printed `Ok: 0`, `Fail: 2`. Both suites failed on the cancellation kind, and
+  the integration test failed for both cache configurations.
+- After the fix, that command printed `Ok: 2`, `Fail: 0`.
+- `just test-pg`: `Ok: 1`, `Fail: 0` for the full PostgreSQL suite.
+- `just test`: `Ok: 10`, `Fail: 0`, including PostgreSQL, SQLite, MySQL, guide
+  checks, and all 18 typed compile cases.
+- `just format-check`: exit 0.
+- `just lint`: exit 0 across 39 translation units, with existing warnings.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-cancellation-standards.json`:
+  exit 1, with 53 unrelated errors and 12 warnings and no findings on the two
+  edited feature-expansion context files. The increase from 52 on November 6 is
+  the existing style profile crossing its verification TTL; that file is unchanged.
+
+The original [probe snapshot](evidence/locks-and-timeouts/README.md) remains
+unchanged. It records the pre-fix behavior and source hashes, not a result for the
+current implementation. The next task is item 2 in the ordered work below.
 
 ## Acceptance inventory
 
@@ -131,7 +168,7 @@ generic builder support; unsupported adapters must fail clearly.
 
 ## Ordered implementation work
 
-1. **Correct cancellation classification.** Special-case `57014` before the
+1. **Correct cancellation classification (implemented).** Special-case `57014` before the
    class-57 fallback. Update the existing unit expectation and add controls for
    connection failures/shutdown, deadlock, serialization, and ordinary query
    errors. Add live prepared-execution cancellation coverage proving SQLSTATE,
@@ -161,7 +198,7 @@ generic builder support; unsupported adapters must fail clearly.
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 1. Feature status stays planned until the original
+The immediate next task is item 2. Feature status stays planned until the original
 acceptance criteria and the cross-backend behavior have executable coverage.
 
 ## Verification

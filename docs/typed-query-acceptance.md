@@ -92,5 +92,5 @@ runtime/timeout design review, alongside the existing planned locks/timeouts wor
 
 The next planned feature is locks and timeouts. The
 [implementation audit](locking-and-timeout-audit.md) now records the existing
-paths, live probes, and ordered work. Start implementation with cancellation error
-classification, then typed-query observer routing.
+paths, live probes, and ordered work. Cancellation error classification is now
+corrected with regression coverage; typed-query observer routing is next.

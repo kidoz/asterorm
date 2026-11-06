@@ -35,6 +35,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Fixed
 
+- Classified PostgreSQL query cancellation (`57014`) as a query failure while
+  preserving SQLSTATE and diagnostics, rather than reporting a connection failure.
 - Prevented stale transaction guards and failed transactions from committing.
 - Corrected SQLite parameter binding and statement execution handling.
 - Ensured pending connection acquisitions fail when the pool closes.

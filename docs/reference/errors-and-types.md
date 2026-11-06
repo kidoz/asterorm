@@ -18,12 +18,19 @@ where available; do not assume every field is present.
 | `serialization_failure` | Transaction serialization conflict; retry helper can retry |
 | `deadlock_detected` | Deadlock; retry helper can retry |
 | `stale_write` | Optimistic-lock version mismatch |
-| `timeout` | Timed operation failed, such as waiting for a pool lease |
+| `timeout` | Backend timeout, such as MySQL lock-wait timeout (error 1205) |
 | `unknown` | Unclassified failure |
 
 `classify_sqlstate()` classifies known SQLSTATE codes, returns `query_failed`
 for unrecognized nonempty codes, and `unknown` for empty input. MySQL native
 error numbers appear in diagnostic detail alongside SQLSTATE.
+
+PostgreSQL query cancellation (`57014`) maps to `query_failed`, with SQLSTATE and
+server diagnostics preserved. Cancellation can result from a statement timeout
+or an explicit cancellation request; the code alone does not identify the cause
+or indicate that the connection was lost. Roll back an aborted transaction before
+reusing its connection. Pool acquisition expiry continues to return
+`connection_failed`.
 
 ## Shared codecs
 

@@ -22,11 +22,14 @@ TEST_CASE("Core: SQLSTATE classification", "[core][error]") {
     REQUIRE(classify_sqlstate("23503") == K::constraint_violation); // fk_violation
     REQUIRE(classify_sqlstate("23502") == K::constraint_violation); // not_null_violation
     REQUIRE(classify_sqlstate("08006") == K::connection_failed);
+    REQUIRE(classify_sqlstate("57P01") == K::connection_failed); // admin_shutdown
+    REQUIRE(classify_sqlstate("57P02") == K::connection_failed); // crash_shutdown
+    REQUIRE(classify_sqlstate("57P03") == K::connection_failed); // cannot_connect_now
     REQUIRE(classify_sqlstate("40001") == K::serialization_failure);
     REQUIRE(classify_sqlstate("40P01") == K::deadlock_detected);
-    REQUIRE(classify_sqlstate("22P02") == K::parse_failed);      // invalid_text_representation
-    REQUIRE(classify_sqlstate("57014") == K::connection_failed); // query_canceled
-    REQUIRE(classify_sqlstate("42601") == K::query_failed);      // syntax error -> unclassified
+    REQUIRE(classify_sqlstate("22P02") == K::parse_failed); // invalid_text_representation
+    REQUIRE(classify_sqlstate("57014") == K::query_failed); // query_canceled
+    REQUIRE(classify_sqlstate("42601") == K::query_failed); // syntax error -> unclassified
 }
 
 TEST_CASE("Core: result type with expected semantics", "[core]") {
