@@ -123,9 +123,7 @@ asterorm::result<connection> driver::connect(const std::string& conninfo) const 
             detail::error(mysql_error(handle.get()), db_error_kind::connection_failed));
     }
     connection connected{handle.release()};
-    auto initialized =
-        connected.execute("SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, "
-                          "'ANSI_QUOTES', 'NO_BACKSLASH_ESCAPES'), time_zone = '+00:00'");
+    auto initialized = connected.execute(connection::session_invariant_sql);
     if (!initialized) {
         return std::unexpected(initialized.error());
     }

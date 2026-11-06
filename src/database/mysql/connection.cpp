@@ -172,9 +172,11 @@ connection::~connection() {
 connection::connection(connection&& other) noexcept
     : handle_(std::exchange(other.handle_, nullptr)), statements_(std::move(other.statements_)),
       statement_order_(std::move(other.statement_order_)),
-      max_prepared_statements_(other.max_prepared_statements_) {
+      max_prepared_statements_(other.max_prepared_statements_),
+      session_invariants_current_(other.session_invariants_current_) {
     other.statements_.clear();
     other.statement_order_.clear();
+    other.session_invariants_current_ = true;
 }
 connection& connection::operator=(connection&& other) noexcept {
     if (this != &other) {
@@ -183,8 +185,10 @@ connection& connection::operator=(connection&& other) noexcept {
         statements_ = std::move(other.statements_);
         statement_order_ = std::move(other.statement_order_);
         max_prepared_statements_ = other.max_prepared_statements_;
+        session_invariants_current_ = other.session_invariants_current_;
         other.statements_.clear();
         other.statement_order_.clear();
+        other.session_invariants_current_ = true;
     }
     return *this;
 }
@@ -236,6 +240,8 @@ asterorm::result<mysql::result> connection::execute(std::string_view sql) {
         return std::unexpected(
             detail::error("MySQL connection is closed", db_error_kind::connection_failed));
     }
+    if (sql != session_invariant_sql)
+        session_invariants_current_ = false;
     if (mysql_real_query(handle_, sql.data(), static_cast<unsigned long>(sql.size())) != 0) {
         auto failure =
             make_error(mysql_errno(handle_), mysql_sqlstate(handle_), mysql_error(handle_));
@@ -302,6 +308,12 @@ asterorm::result<mysql::result> connection::run(std::string_view sql,
     if (!is_open()) {
         return std::unexpected(
             detail::error("MySQL connection is closed", db_error_kind::connection_failed));
+    }
+    if (!session_invariants_current_) {
+        auto restored = execute(session_invariant_sql);
+        if (!restored)
+            return std::unexpected(restored.error());
+        session_invariants_current_ = true;
     }
     auto prepared = detail::prepare_query(sql, params);
     if (!prepared) {

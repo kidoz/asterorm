@@ -44,6 +44,13 @@ class connection {
     asterorm::result<mysql::result> execute_prepared(std::string_view sql,
                                                      const query_parameters& params);
     asterorm::result<void> begin_transaction(const transaction_options& options);
+
+    // Reapplied after every simple-query execute. Parameter binding assumes
+    // ANSI_QUOTES and NO_BACKSLASH_ESCAPES, so a caller SET sql_mode cannot
+    // leave the scanner and the server on different rules.
+    static constexpr std::string_view session_invariant_sql =
+        "SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, "
+        "'ANSI_QUOTES', 'NO_BACKSLASH_ESCAPES'), time_zone = '+00:00'";
     asterorm::result<void> copy_in(std::string_view sql, const std::vector<std::string>& lines);
     asterorm::result<std::vector<std::string>> copy_out(std::string_view sql);
 
@@ -60,6 +67,7 @@ class connection {
     std::unordered_map<std::string, MYSQL_STMT*> statements_;
     std::deque<std::string> statement_order_;
     std::size_t max_prepared_statements_{128};
+    bool session_invariants_current_{true};
 };
 
 } // namespace asterorm::mysql
