@@ -33,6 +33,9 @@ TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
         REQUIRE(compiled.params.size() == 2);
         REQUIRE(compiled.params[0] == "100");
         REQUIRE(compiled.params[1] == "t");
+        REQUIRE(compiled.params[1].type == asterorm::parameter_type::boolean);
+        REQUIRE(asterorm::encode_parameter(std::string{"t"}).type ==
+                asterorm::parameter_type::text);
     }
 
     SECTION("Select with Complex Predicates") {

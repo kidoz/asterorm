@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <limits>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "asterorm/core/codecs.hpp"
 #include "asterorm/postgres/copy.hpp"
@@ -76,10 +78,14 @@ TEST_CASE("Codecs: timestamp round-trip", "[core][codec]") {
     auto tp = system_clock::time_point{seconds{1609459200} + microseconds{123456}}; // 2021-01-01
     auto enc = encode(tp);
     REQUIRE(enc.has_value());
+    REQUIRE(*enc == "2021-01-01 00:00:00.123456+00:00");
 
     system_clock::time_point out;
     REQUIRE(decode(enc, out).has_value());
     REQUIRE(duration_cast<microseconds>(out - tp).count() == 0);
+    system_clock::time_point mysql_tp;
+    REQUIRE(decode(std::optional<std::string>{"2021-01-01 00:00:00.123456"}, mysql_tp).has_value());
+    REQUIRE(mysql_tp == tp);
 
     // PG-style with -05 offset should normalize to the same instant.
     system_clock::time_point offset_tp;
@@ -117,6 +123,57 @@ TEST_CASE("Codecs: date, time, and numeric wrappers", "[core][codec]") {
     REQUIRE(nout == n);
     REQUIRE(decode(std::optional<std::string>{"1.25e3"}, nout).has_value());
     REQUIRE(!decode(std::optional<std::string>{"12.3.4"}, nout).has_value());
+}
+
+TEST_CASE("Codecs: reject out-of-range date and time fields", "[core][codec]") {
+    const date invalid_date{.year = std::numeric_limits<int>::max(),
+                            .month = std::numeric_limits<unsigned>::max(),
+                            .day = std::numeric_limits<unsigned>::max()};
+    REQUIRE_FALSE(encode(invalid_date).has_value());
+
+    const time_of_day invalid_time{.hour = std::numeric_limits<unsigned>::max(),
+                                   .minute = std::numeric_limits<unsigned>::max(),
+                                   .second = std::numeric_limits<unsigned>::max(),
+                                   .microsecond = std::numeric_limits<unsigned>::max()};
+    REQUIRE_FALSE(encode(invalid_time).has_value());
+}
+
+TEST_CASE("Codecs: encoding failures are distinct from intentional SQL NULL", "[core][codec]") {
+    const date invalid_calendar_date{.year = 2026, .month = 2, .day = 30};
+    auto invalid_parameter = encode_parameter(invalid_calendar_date);
+    REQUIRE_FALSE(invalid_parameter.value.has_value());
+    REQUIRE(invalid_parameter.error.has_value());
+    REQUIRE(invalid_parameter.error->kind == db_error_kind::parse_failed);
+
+    const date oversized_fields{.year = 2026, .month = 257, .day = 257};
+    REQUIRE_FALSE(encode(oversized_fields).has_value());
+    REQUIRE(encode_parameter(oversized_fields).error.has_value());
+
+    auto null_parameter = encode_parameter(std::optional<date>{std::nullopt});
+    REQUIRE_FALSE(null_parameter.value.has_value());
+    REQUIRE_FALSE(null_parameter.error.has_value());
+
+    const std::vector<std::optional<date>> dates{invalid_calendar_date};
+    REQUIRE(encode_parameter(dates).error.has_value());
+    const std::vector<std::optional<date>> null_dates{std::nullopt};
+    auto null_array = encode_parameter(null_dates);
+    REQUIRE(null_array.value.has_value());
+    REQUIRE_FALSE(null_array.error.has_value());
+}
+
+TEST_CASE("Codecs: nullable string arrays preserve escaping and NULL identity", "[core][codec]") {
+    const std::vector<std::optional<std::string>> values{std::string{"a,b"}, std::string{"NULL"},
+                                                         std::nullopt, std::string{"a\"b"},
+                                                         std::string{"a\\b"}};
+    auto encoded = encode(values);
+    REQUIRE(encoded.has_value());
+    REQUIRE(*encoded == R"({"a,b","NULL",NULL,"a\"b","a\\b"})");
+
+    std::vector<std::optional<std::string>> decoded;
+    REQUIRE(decode(encoded, decoded).has_value());
+    REQUIRE(decoded == values);
+
+    REQUIRE_FALSE(decode(std::optional<std::string>{R"({"unterminated})"}, decoded).has_value());
 }
 
 enum class codec_status { active, archived };

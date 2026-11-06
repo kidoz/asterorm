@@ -10,6 +10,7 @@
 struct array_model {
     std::optional<int> id;
     std::vector<std::string> tags;
+    std::vector<std::optional<std::string>> nullable_tags;
     std::vector<int> nums;
     std::vector<std::optional<int>> nullable_nums;
 };
@@ -18,10 +19,12 @@ template <> struct asterorm::entity_traits<array_model> {
     static constexpr const char* table = "extra_array_copy";
     static constexpr auto primary_key = asterorm::pk<&array_model::id>("id");
 
-    static constexpr auto columns = std::make_tuple(
-        asterorm::column<&array_model::id>("id", asterorm::generated::by_default),
-        asterorm::column<&array_model::tags>("tags"), asterorm::column<&array_model::nums>("nums"),
-        asterorm::column<&array_model::nullable_nums>("nullable_nums"));
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&array_model::id>("id", asterorm::generated::by_default),
+                        asterorm::column<&array_model::tags>("tags"),
+                        asterorm::column<&array_model::nullable_tags>("nullable_tags"),
+                        asterorm::column<&array_model::nums>("nums"),
+                        asterorm::column<&array_model::nullable_nums>("nullable_nums"));
 };
 
 TEST_CASE("PG Integration: Arrays and COPY", "[pg][extras]") { // NOLINT
@@ -46,7 +49,8 @@ TEST_CASE("PG Integration: Arrays and COPY", "[pg][extras]") { // NOLINT
     // Set up table
     (void)(*test_lease)->execute("DROP TABLE IF EXISTS extra_array_copy;");
     (void)(*test_lease)
-        ->execute("CREATE TABLE extra_array_copy (id SERIAL PRIMARY KEY, tags TEXT[], nums INT[], "
+        ->execute("CREATE TABLE extra_array_copy (id SERIAL PRIMARY KEY, tags TEXT[], "
+                  "nullable_tags TEXT[], nums INT[], "
                   "nullable_nums INT[]);");
     test_lease.value().release_to_pool();
 
@@ -55,6 +59,7 @@ TEST_CASE("PG Integration: Arrays and COPY", "[pg][extras]") { // NOLINT
     SECTION("Arrays encode and decode") {
         array_model m;
         m.tags = {"c++", "postgres", "orm, with comma", "\"quoted\""};
+        m.nullable_tags = {"a,b", "NULL", std::nullopt, "a\"b", "a\\b"};
         m.nums = {10, 20, 30};
         m.nullable_nums = {1, std::nullopt, 3};
 
@@ -71,6 +76,7 @@ TEST_CASE("PG Integration: Arrays and COPY", "[pg][extras]") { // NOLINT
         REQUIRE(loaded.tags[1] == "postgres");
         REQUIRE(loaded.tags[2] == "orm, with comma");
         REQUIRE(loaded.tags[3] == "\"quoted\"");
+        REQUIRE(loaded.nullable_tags == m.nullable_tags);
 
         REQUIRE(loaded.nums.size() == 3);
         REQUIRE(loaded.nums[0] == 10);

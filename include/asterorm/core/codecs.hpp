@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "asterorm/core/error.hpp"
+#include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/core/types.hpp"
 
@@ -54,6 +55,20 @@ struct has_enum_traits<
     T, std::void_t<decltype(enum_traits<T>::to_db(std::declval<T>())),
                    decltype(enum_traits<T>::from_db(std::declval<std::string_view>()))>>
     : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_string_array_element_v = std::is_convertible_v<T, std::string_view>;
+
+template <typename T>
+inline constexpr bool is_string_array_element_v<std::optional<T>> =
+    std::is_convertible_v<T, std::string_view>;
+
+template <std::size_t Size>
+std::optional<std::string> formatted_string(const char (&buffer)[Size], int length) {
+    if (length < 0 || static_cast<std::size_t>(length) >= Size)
+        return std::nullopt;
+    return std::string(buffer, static_cast<std::size_t>(length));
+}
 
 inline char nibble_to_hex(std::uint8_t n) {
     return static_cast<char>(n < 10 ? '0' + n : 'a' + (n - 10));
@@ -148,22 +163,24 @@ inline result<void> decode_uuid(std::string_view s, uuid& out) {
     return {};
 }
 
-inline std::string encode_timestamp(std::chrono::system_clock::time_point tp) {
+inline std::optional<std::string> encode_timestamp(std::chrono::system_clock::time_point tp) {
     using namespace std::chrono;
     const auto secs = time_point_cast<seconds>(tp);
     const auto us = duration_cast<microseconds>(tp - secs).count();
     const std::time_t t = system_clock::to_time_t(secs);
     std::tm tm{};
 #if defined(_WIN32)
-    gmtime_s(&tm, &t);
+    if (gmtime_s(&tm, &t) != 0)
+        return std::nullopt;
 #else
-    gmtime_r(&t, &tm);
+    if (gmtime_r(&t, &tm) == nullptr)
+        return std::nullopt;
 #endif
     char buf[64];
-    int n = std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%06lld+00",
+    int n = std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%06lld+00:00",
                           tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                           tm.tm_sec, static_cast<long long>(us));
-    return std::string(buf, buf + (n > 0 ? n : 0));
+    return formatted_string(buf, n);
 }
 
 inline result<void> decode_timestamp(std::string_view s,
@@ -381,7 +398,7 @@ template <typename T> std::optional<std::string> encode(const T& val) {
         char buf[64];
         int n = std::snprintf(buf, sizeof(buf), std::is_same_v<DecayedT, float> ? "%.9g" : "%.17g",
                               static_cast<double>(val));
-        return std::string(buf, buf + (n > 0 ? n : 0));
+        return detail::formatted_string(buf, n);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::jsonb>) {
         return val.value;
     } else if constexpr (std::is_same_v<DecayedT, asterorm::bytea>) {
@@ -389,14 +406,24 @@ template <typename T> std::optional<std::string> encode(const T& val) {
     } else if constexpr (std::is_same_v<DecayedT, asterorm::uuid>) {
         return detail::encode_uuid(val);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::date>) {
+        using namespace std::chrono;
+        if (val.year < static_cast<int>(year::min()) || val.year > static_cast<int>(year::max()))
+            return std::nullopt;
+        if (val.month < 1 || val.month > 12 || val.day < 1 || val.day > 31)
+            return std::nullopt;
+        const year_month_day calendar_date{year{val.year}, month{val.month}, day{val.day}};
+        if (!calendar_date.ok())
+            return std::nullopt;
         char buf[16];
         int n = std::snprintf(buf, sizeof(buf), "%04d-%02u-%02u", val.year, val.month, val.day);
-        return std::string(buf, buf + (n > 0 ? n : 0));
+        return detail::formatted_string(buf, n);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::time_of_day>) {
+        if (val.hour > 23 || val.minute > 59 || val.second > 59 || val.microsecond > 999999)
+            return std::nullopt;
         char buf[32];
         int n = std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u.%06u", val.hour, val.minute,
                               val.second, val.microsecond);
-        return std::string(buf, buf + (n > 0 ? n : 0));
+        return detail::formatted_string(buf, n);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::numeric>) {
         return val.value;
     } else if constexpr (std::is_same_v<DecayedT, std::chrono::system_clock::time_point>) {
@@ -405,9 +432,16 @@ template <typename T> std::optional<std::string> encode(const T& val) {
         std::string res = "{";
         for (size_t i = 0; i < val.size(); ++i) {
             auto enc = encode(val[i]);
+            using ElemT = typename DecayedT::value_type;
+            if (!enc) {
+                bool encoding_failed = true;
+                if constexpr (is_optional_v<ElemT>)
+                    encoding_failed = val[i].has_value();
+                if (encoding_failed)
+                    return std::nullopt;
+            }
             if (enc) {
-                using ElemT = typename DecayedT::value_type;
-                if constexpr (std::is_convertible_v<ElemT, std::string_view>) {
+                if constexpr (detail::is_string_array_element_v<ElemT>) {
                     std::string escaped = "\"";
                     for (char c : *enc) {
                         if (c == '"' || c == '\\')
@@ -559,11 +593,13 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
             std::string current;
             bool in_quotes = false;
             bool escaped = false;
+            bool item_was_quoted = false;
+            bool item_was_escaped = false;
 
             auto push_item = [&]() -> asterorm::result<void> {
                 ElemT item{};
                 std::optional<std::string> item_str;
-                if (!in_quotes && current == "NULL") {
+                if (!item_was_quoted && !item_was_escaped && current == "NULL") {
                     item_str = std::nullopt;
                 } else {
                     item_str = current;
@@ -574,6 +610,8 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
                 }
                 val.push_back(std::move(item));
                 current.clear();
+                item_was_quoted = false;
+                item_was_escaped = false;
                 return {};
             };
 
@@ -584,8 +622,10 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
                     escaped = false;
                 } else if (c == '\\') {
                     escaped = true;
+                    item_was_escaped = true;
                 } else if (c == '"') {
                     in_quotes = !in_quotes;
+                    item_was_quoted = true;
                 } else if (c == ',' && !in_quotes) {
                     auto res = push_item();
                     if (!res) {
@@ -594,6 +634,13 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
                 } else {
                     current += c;
                 }
+            }
+
+            if (in_quotes || escaped) {
+                db_error err;
+                err.kind = db_error_kind::parse_failed;
+                err.message = "Invalid array quoting or escaping";
+                return std::unexpected(err);
             }
 
             auto res = push_item();
@@ -620,6 +667,30 @@ asterorm::result<void> decode(const std::optional<std::string>& str, std::option
             val = std::move(temp);
         }
         return res;
+    }
+}
+
+template <typename T> query_parameter encode_parameter(const T& val) {
+    using DecayedT = std::decay_t<T>;
+    if constexpr (is_optional_v<DecayedT>) {
+        using ValueT = typename DecayedT::value_type;
+        constexpr auto type =
+            std::is_same_v<ValueT, bool> ? parameter_type::boolean : parameter_type::text;
+        query_parameter parameter{encode(val), type};
+        if (!parameter.value && val.has_value()) {
+            parameter.error = db_error{.kind = db_error_kind::parse_failed,
+                                       .message = "Failed to encode query parameter"};
+        }
+        return parameter;
+    } else {
+        constexpr auto type =
+            std::is_same_v<DecayedT, bool> ? parameter_type::boolean : parameter_type::text;
+        query_parameter parameter{encode(val), type};
+        if (!parameter.value) {
+            parameter.error = db_error{.kind = db_error_kind::parse_failed,
+                                       .message = "Failed to encode query parameter"};
+        }
+        return parameter;
     }
 }
 

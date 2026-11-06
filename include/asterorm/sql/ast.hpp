@@ -14,7 +14,7 @@ struct column_expr {
 };
 
 struct param_expr {
-    std::optional<std::string> encoded_value;
+    query_parameter encoded_value;
 };
 
 // Function call such as COUNT(*), SUM(x), MAX(x). `raw_args` is emitted
@@ -37,7 +37,7 @@ inline column_expr col(std::string name) {
 }
 
 template <typename T> inline param_expr val(T&& v) {
-    return {asterorm::encode(std::forward<T>(v))};
+    return {asterorm::encode_parameter(std::forward<T>(v))};
 }
 
 inline std::shared_ptr<func_expr> func(std::string name, std::vector<expr_ast> args = {}) {

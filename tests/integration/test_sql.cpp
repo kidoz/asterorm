@@ -107,6 +107,19 @@ TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
         REQUIRE(**count_res == 1);
     }
 
+    SECTION("Text parameters reject embedded NUL bytes") {
+        const std::string parameter{"admin\0ignored", 13};
+        auto result = db.native_scalar<std::string>("SELECT $1", parameter);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error().message.contains("NUL"));
+    }
+
+    SECTION("Encoding failures cannot become SQL NULL") {
+        auto result = db.native_scalar<int>("SELECT $1 IS NULL", asterorm::date{2026, 2, 30});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error().kind == asterorm::db_error_kind::parse_failed);
+    }
+
     SECTION("Native row mapper query") {
         auto names_res = db.native_map("SELECT id, name FROM native_users ORDER BY id",
                                        [](const auto& result, int row) {

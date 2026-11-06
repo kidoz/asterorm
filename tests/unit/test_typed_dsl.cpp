@@ -69,7 +69,8 @@ TEST_CASE("Typed DSL: where with typed_col == typed_val emits = $1", "[typed][wh
             R"(SELECT "id", "email", "name", "active", "deleted_at" FROM "typed_users")"
             R"( WHERE "active" = $1 ORDER BY "id" ASC LIMIT 10)");
     REQUIRE(compiled.params.size() == 1);
-    REQUIRE(compiled.params[0] == std::optional<std::string>{"t"});
+    REQUIRE(compiled.params[0].value == std::optional<std::string>{"t"});
+    REQUIRE(compiled.params[0].type == asterorm::parameter_type::boolean);
 }
 
 TEST_CASE("Typed DSL: && / || combine same-entity predicates", "[typed][where][logical]") {

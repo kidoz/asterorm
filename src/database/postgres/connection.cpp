@@ -125,6 +125,20 @@ static void clear_result(PGresult* res) {
     }
 }
 
+static asterorm::result<void> validate_text_params(const query_parameters& params) {
+    for (const auto& parameter : params) {
+        if (parameter.error)
+            return std::unexpected(*parameter.error);
+        if (parameter.value && parameter.value->find('\0') != std::string::npos) {
+            db_error error;
+            error.kind = db_error_kind::query_failed;
+            error.message = "PostgreSQL text parameter contains an embedded NUL byte";
+            return std::unexpected(error);
+        }
+    }
+    return {};
+}
+
 asterorm::result<pg::result> connection::execute(std::string_view sql) {
     std::string sql_str{sql};
     PGresult* res = PQexec(conn_, sql_str.c_str());
@@ -138,15 +152,18 @@ asterorm::result<pg::result> connection::execute(std::string_view sql) {
     return pg::result{res};
 }
 
-asterorm::result<pg::result>
-connection::execute_params(std::string_view sql,
-                           const std::vector<std::optional<std::string>>& params) {
+asterorm::result<pg::result> connection::execute_params(std::string_view sql,
+                                                        const query_parameters& params) {
+    auto validation = validate_text_params(params);
+    if (!validation)
+        return std::unexpected(validation.error());
+
     std::string sql_str{sql};
 
     std::vector<const char*> param_values;
     param_values.reserve(params.size());
-    for (const auto& p : params) {
-        param_values.push_back(p ? p->c_str() : nullptr);
+    for (const auto& parameter : params) {
+        param_values.push_back(parameter.value ? parameter.value->c_str() : nullptr);
     }
 
     PGresult* res = PQexecParams(conn_, sql_str.c_str(), static_cast<int>(params.size()),
@@ -165,12 +182,15 @@ connection::execute_params(std::string_view sql,
     return pg::result{res};
 }
 
-asterorm::result<pg::result>
-connection::execute_prepared(std::string_view sql,
-                             const std::vector<std::optional<std::string>>& params) {
+asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
+                                                          const query_parameters& params) {
     if (max_prepared_statements_ == 0) {
         return execute_params(sql, params);
     }
+
+    auto validation = validate_text_params(params);
+    if (!validation)
+        return std::unexpected(validation.error());
 
     std::string sql_str{sql};
     std::string stmt_name;
@@ -187,8 +207,8 @@ connection::execute_prepared(std::string_view sql,
 
     std::vector<const char*> param_values;
     param_values.reserve(params.size());
-    for (const auto& p : params) {
-        param_values.push_back(p ? p->c_str() : nullptr);
+    for (const auto& parameter : params) {
+        param_values.push_back(parameter.value ? parameter.value->c_str() : nullptr);
     }
 
     PGresult* res = PQexecPrepared(conn_, stmt_name.c_str(), static_cast<int>(params.size()),

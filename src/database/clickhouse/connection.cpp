@@ -24,11 +24,10 @@ enum class sql_scan_state : std::uint8_t {
 };
 
 // ClickHouse-cpp's named-parameter substitution ({name: Type}) requires the
-// caller to declare the server-side type per parameter. The ORM only carries
-// values as std::optional<std::string> and has no per-parameter type hint at
-// this layer, so binding everything as String would break Int/Date/UUID/Array
-// columns. Until typed bindings are plumbed through, we interpolate values as
-// SQL literals and rely on the server to parse each literal in context.
+// caller to declare the server-side type per parameter. The ORM's text
+// parameters do not carry enough server-side type information, so binding
+// everything as String would break Int/Date/UUID/Array columns. We interpolate
+// values as SQL literals and rely on the server to parse each literal in context.
 //
 // Rejection rules for the interpolation path:
 //   - NUL bytes are refused outright.
@@ -38,9 +37,13 @@ enum class sql_scan_state : std::uint8_t {
 // literals, quoted identifiers, or comments is left untouched.
 // Any parameter that cannot be safely encoded fails with parse_failed rather
 // than silently producing malformed SQL.
-asterorm::result<std::string>
-interpolate_params(std::string_view sql,
-                   const std::vector<std::optional<std::string>>& parameters) {
+asterorm::result<std::string> interpolate_params(std::string_view sql,
+                                                 const query_parameters& parameters) {
+    for (const auto& parameter : parameters) {
+        if (parameter.error)
+            return std::unexpected(*parameter.error);
+    }
+
     auto escape_literal = [](std::string_view input_literal,
                              std::string& escaped_sql) -> asterorm::result<void> {
         escaped_sql.reserve(escaped_sql.size() + input_literal.size() + 2);
@@ -221,9 +224,8 @@ asterorm::result<ch::result> connection::execute(std::string_view sql) {
     return run_query(*client_, std::string{sql});
 }
 
-asterorm::result<ch::result>
-connection::execute_params(std::string_view sql,
-                           const std::vector<std::optional<std::string>>& parameters) {
+asterorm::result<ch::result> connection::execute_params(std::string_view sql,
+                                                        const query_parameters& parameters) {
     if (!client_) {
         db_error error;
         error.kind = db_error_kind::connection_failed;
@@ -237,9 +239,8 @@ connection::execute_params(std::string_view sql,
     return run_query(*client_, *interpolated_sql);
 }
 
-asterorm::result<ch::result>
-connection::execute_prepared(std::string_view sql,
-                             const std::vector<std::optional<std::string>>& parameters) {
+asterorm::result<ch::result> connection::execute_prepared(std::string_view sql,
+                                                          const query_parameters& parameters) {
     return execute_params(sql, parameters);
 }
 

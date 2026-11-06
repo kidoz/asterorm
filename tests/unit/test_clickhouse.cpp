@@ -16,7 +16,7 @@
 #include "asterorm/clickhouse/result.hpp"
 
 TEST_CASE("ClickHouse: parameter interpolation skips literals and comments", "[clickhouse]") {
-    std::vector<std::optional<std::string>> parameters{"value", "second"};
+    query_parameters parameters{"value", "second"};
 
     auto interpolated_sql = asterorm::ch::detail::interpolate_params(
         "SELECT '$1', \"$2\", $1, -- $2\n $2, /* $1 */ '$2'", parameters);
@@ -26,7 +26,7 @@ TEST_CASE("ClickHouse: parameter interpolation skips literals and comments", "[c
 }
 
 TEST_CASE("ClickHouse: parameter interpolation rejects unsafe bytes", "[clickhouse]") {
-    std::vector<std::optional<std::string>> parameters{std::string("bad\0value", 9)};
+    query_parameters parameters{std::string("bad\0value", 9)};
 
     auto interpolated_sql = asterorm::ch::detail::interpolate_params("SELECT $1", parameters);
 

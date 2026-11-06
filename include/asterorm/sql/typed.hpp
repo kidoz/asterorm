@@ -196,9 +196,9 @@ template <auto MemberPtr> struct typed_col {
     template <typename U>                                                                          \
         requires detail::compatible_for_compare_v<compare_type, U>                                 \
     friend typed_predicate<entity_type> operator op_token(typed_col, typed_val<U> right_value) {   \
-        return typed_predicate<entity_type>{                                                       \
-            predicate_ast{comparison_predicate{op_enum, column_expr{std::string{column_name()}},   \
-                                               param_expr{asterorm::encode(right_value.value)}}}}; \
+        return typed_predicate<entity_type>{predicate_ast{                                         \
+            comparison_predicate{op_enum, column_expr{std::string{column_name()}},                 \
+                                 param_expr{asterorm::encode_parameter(right_value.value)}}}};     \
     }
     ASTERORM_TYPED_VAL_CMP(==, op_kind::eq)
     ASTERORM_TYPED_VAL_CMP(!=, op_kind::neq)

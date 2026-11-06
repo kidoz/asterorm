@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "asterorm/clickhouse/result.hpp"
+#include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
 
 namespace clickhouse {
@@ -33,12 +34,11 @@ class connection {
     explicit connection(std::unique_ptr<clickhouse::Client> client);
 
     asterorm::result<ch::result> execute(std::string_view sql);
-    asterorm::result<ch::result>
-    execute_params(std::string_view sql, const std::vector<std::optional<std::string>>& parameters);
+    asterorm::result<ch::result> execute_params(std::string_view sql,
+                                                const query_parameters& parameters);
 
-    asterorm::result<ch::result>
-    execute_prepared(std::string_view sql,
-                     const std::vector<std::optional<std::string>>& parameters);
+    asterorm::result<ch::result> execute_prepared(std::string_view sql,
+                                                  const query_parameters& parameters);
 };
 
 } // namespace asterorm::ch

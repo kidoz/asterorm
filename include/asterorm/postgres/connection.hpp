@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/postgres/copy.hpp"
 #include "asterorm/postgres/result.hpp"
@@ -31,10 +32,10 @@ class connection {
     explicit connection(PGconn* conn);
 
     asterorm::result<pg::result> execute(std::string_view sql);
-    asterorm::result<pg::result>
-    execute_params(std::string_view sql, const std::vector<std::optional<std::string>>& params);
-    asterorm::result<pg::result>
-    execute_prepared(std::string_view sql, const std::vector<std::optional<std::string>>& params);
+    asterorm::result<pg::result> execute_params(std::string_view sql,
+                                                const query_parameters& params);
+    asterorm::result<pg::result> execute_prepared(std::string_view sql,
+                                                  const query_parameters& params);
 
     void set_max_prepared_statements(size_t max_statements);
     [[nodiscard]] size_t prepared_statement_count() const;
