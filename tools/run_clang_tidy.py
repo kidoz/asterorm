@@ -37,7 +37,10 @@ def collect_from_compile_commands(source_root: Path, build_root: Path) -> list[P
     collected_files: list[Path] = []
     seen: set[Path] = set()
     for entry in entries:
-        path = Path(entry["file"]).resolve()
+        entry_directory = Path(entry.get("directory", build_root))
+        if not entry_directory.is_absolute():
+            entry_directory = build_root / entry_directory
+        path = (entry_directory / Path(entry["file"])).resolve()
         try:
             relative_parent_parts = path.relative_to(source_root).parts[:-1]
         except ValueError:
@@ -64,7 +67,8 @@ def main() -> int:
     build_root = parsed_arguments.build_root.resolve()
     source_files = collect_from_compile_commands(source_root, build_root)
     if not source_files:
-        return 0
+        print("clang-tidy: no source files selected", file=sys.stderr)
+        return 1
 
     clang_tidy_path = shutil.which("clang-tidy")
     if clang_tidy_path is None:
