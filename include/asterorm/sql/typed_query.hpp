@@ -78,7 +78,7 @@ template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
 query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder) {
     auto select_ast_value = builder.build();
-    asterorm::sql::compiler statement_compiler;
+    asterorm::sql::compiler statement_compiler{asterorm::sql::dialect_for_session<Session>()};
     auto compiled_query = statement_compiler.compile(select_ast_value);
 
     auto execution_result = session.with_connection([&](auto& connection) {

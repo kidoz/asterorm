@@ -2,12 +2,14 @@ core_tests = executable(
   'core_tests',
   [
     'unit/test_core.cpp',
+    'unit/test_mysql_dialect.cpp',
     'unit/test_pool.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
     'unit/test_typed_dsl.cpp',
+    'unit/test_typed_query_header.cpp',
   ],
   dependencies : [asterorm_core_dep, catch2_dep],
 )

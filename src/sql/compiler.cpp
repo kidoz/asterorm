@@ -1,26 +1,29 @@
 #include "asterorm/sql/compiler.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string_view>
 
 namespace asterorm::sql {
 
-static std::string quote_ident(std::string_view ident) {
+std::string compiler::quote_ident(std::string_view ident) const {
+    const char quote = dialect_ == dialect::mysql ? '`' : '"';
     std::string res;
     res.reserve(ident.size() + 2);
-    res += '"';
+    res += quote;
     for (char c : ident) {
-        if (c == '"') {
-            res += "\"\"";
+        if (c == quote) {
+            res += quote;
+            res += quote;
         } else {
             res += c;
         }
     }
-    res += '"';
+    res += quote;
     return res;
 }
 
-static std::string quote_qualified_ident(std::string_view ident) {
+std::string compiler::quote_qualified_ident(std::string_view ident) const {
     std::string res;
     std::size_t start = 0;
     while (start <= ident.size()) {
@@ -36,8 +39,12 @@ static std::string quote_qualified_ident(std::string_view ident) {
     return res;
 }
 
-static std::string render_column(std::string_view ident) {
+std::string compiler::render_column(std::string_view ident) const {
     return (ident == "*") ? std::string{"*"} : quote_qualified_ident(ident);
+}
+
+std::string compiler::placeholder(std::size_t index) const {
+    return dialect_ == dialect::mysql ? "?" : "$" + std::to_string(index);
 }
 
 std::string compiler::op_to_string(op_kind op) {
@@ -63,13 +70,13 @@ std::string compiler::op_to_string(op_kind op) {
 }
 
 std::string compiler::compile_expr(const expr_ast& expr,
-                                   std::vector<std::optional<std::string>>& params) { // NOLINT
+                                   query_parameters& params) { // NOLINT
     if (std::holds_alternative<column_expr>(expr)) {
         return quote_qualified_ident(std::get<column_expr>(expr).name);
     }
     if (std::holds_alternative<param_expr>(expr)) {
         params.push_back(std::get<param_expr>(expr).encoded_value);
-        return "$" + std::to_string(params.size());
+        return placeholder(params.size());
     }
     const auto& fn = *std::get<std::shared_ptr<func_expr>>(expr);
     std::string out = fn.name;
@@ -92,18 +99,17 @@ std::string compiler::compile_expr(const expr_ast& expr,
     return out;
 }
 
-std::string compiler::compile_value(const value_source& src,
-                                    std::vector<std::optional<std::string>>& params) {
+std::string compiler::compile_value(const value_source& src, query_parameters& params) {
     if (std::holds_alternative<raw_expr>(src)) {
         // raw_expr is verbatim; the builder author is responsible for safety.
         return std::get<raw_expr>(src).fragment;
     }
     params.push_back(std::get<param_expr>(src).encoded_value);
-    return "$" + std::to_string(params.size());
+    return placeholder(params.size());
 }
 
 std::string compiler::compile_predicate(const predicate_ast& pred,
-                                        std::vector<std::optional<std::string>>& params) { // NOLINT
+                                        query_parameters& params) { // NOLINT
     if (std::holds_alternative<comparison_predicate>(pred.val)) {
         const auto& comp = std::get<comparison_predicate>(pred.val);
         std::string left = compile_expr(comp.left, params);
@@ -119,6 +125,40 @@ std::string compiler::compile_predicate(const predicate_ast& pred,
     std::string left = compile_predicate(*bin.left, params);
     std::string right = compile_predicate(*bin.right, params);
     return "(" + left + " " + op_to_string(bin.op) + " " + right + ")";
+}
+
+std::string compiler::upsert_clause(std::string_view table, const std::vector<std::string>& columns,
+                                    const std::vector<std::string>& primary_keys,
+                                    std::optional<std::string_view> version_column) const {
+    std::string clause;
+    if (dialect_ == dialect::mysql) {
+        clause = " AS asterorm_new ON DUPLICATE KEY UPDATE ";
+    } else {
+        clause = " ON CONFLICT (";
+        for (std::size_t index = 0; index < primary_keys.size(); ++index) {
+            if (index != 0)
+                clause += ", ";
+            clause += quote_ident(primary_keys[index]);
+        }
+        clause += ") DO UPDATE SET ";
+    }
+    bool first = true;
+    for (const auto& column : columns) {
+        if (std::ranges::find(primary_keys, column) != primary_keys.end())
+            continue;
+        if (!first)
+            clause += ", ";
+        first = false;
+        clause += quote_ident(column) + " = ";
+        if (version_column && *version_column == column)
+            clause += quote_qualified_ident(table) + "." + quote_ident(column) + " + 1";
+        else
+            clause +=
+                (dialect_ == dialect::mysql ? "asterorm_new." : "EXCLUDED.") + quote_ident(column);
+    }
+    if (first)
+        throw std::invalid_argument("upsert requires at least one updatable column");
+    return clause;
 }
 
 compiled_query compiler::compile(const select_ast& ast) { // NOLINT
@@ -167,6 +207,8 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
             q.sql += " RIGHT JOIN ";
             break;
         case join_kind::full:
+            if (dialect_ == dialect::mysql)
+                throw std::invalid_argument("MySQL does not support FULL JOIN");
             q.sql += " FULL JOIN ";
             break;
         case join_kind::cross:
@@ -212,6 +254,8 @@ compiled_query compiler::compile(const select_ast& ast) { // NOLINT
     if (ast.limit_val) {
         q.sql += " LIMIT " + std::to_string(*ast.limit_val);
     }
+    if (dialect_ == dialect::mysql && ast.offset_val && !ast.limit_val)
+        q.sql += " LIMIT 18446744073709551615";
     if (ast.offset_val) {
         q.sql += " OFFSET " + std::to_string(*ast.offset_val);
     }
@@ -250,6 +294,9 @@ compiled_query compiler::compile(const insert_ast& ast) {
     }
 
     if (ast.on_conflict) {
+        if (dialect_ == dialect::mysql)
+            throw std::invalid_argument(
+                "MySQL does not support targeted ON CONFLICT; use repository::upsert");
         const auto& oc = *ast.on_conflict;
         q.sql += " ON CONFLICT";
         if (!oc.target_columns.empty()) {
@@ -279,6 +326,8 @@ compiled_query compiler::compile(const insert_ast& ast) {
     }
 
     if (!ast.returning.empty()) {
+        if (dialect_ == dialect::mysql)
+            throw std::invalid_argument("MySQL does not support RETURNING");
         q.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
             q.sql += render_column(ast.returning[i]);
@@ -304,6 +353,8 @@ compiled_query compiler::compile(const update_ast& ast) {
         q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
     }
     if (!ast.returning.empty()) {
+        if (dialect_ == dialect::mysql)
+            throw std::invalid_argument("MySQL does not support RETURNING");
         q.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
             q.sql += render_column(ast.returning[i]);
@@ -321,6 +372,8 @@ compiled_query compiler::compile(const delete_ast& ast) {
         q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
     }
     if (!ast.returning.empty()) {
+        if (dialect_ == dialect::mysql)
+            throw std::invalid_argument("MySQL does not support RETURNING");
         q.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
             q.sql += render_column(ast.returning[i]);
