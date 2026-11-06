@@ -176,6 +176,8 @@ template <typename Pool> class session {
 
     // Install a user observer called for each query executed via observed_execute().
     // Pass a null function to clear. Safe to call before or between queries.
+    // The observer runs while this session holds its connection lease. It must
+    // not call pool::close or wait for another lease on the same pool.
     void set_observer(query_observer obs) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         observer_ = std::move(obs);
@@ -209,7 +211,7 @@ template <typename Pool> class session {
             record_transaction_error(res.error());
         }
         const auto elapsed = std::chrono::steady_clock::now() - start;
-        query_event ev{sql, params.size(),
+        query_event ev{std::string{sql}, params.size(),
                        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed), nullptr};
         if (!res)
             ev.error = &res.error();
