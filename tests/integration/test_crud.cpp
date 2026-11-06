@@ -281,6 +281,33 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
         REQUIRE(stale_res.error().kind == asterorm::db_error_kind::stale_write);
     }
 
+    SECTION("Patch and const update enforce the version predicate") {
+        locked_user current{.email = "locked-writes@example.com", .name = "Initial"};
+        REQUIRE(repo.insert(current).has_value());
+        auto stale = repo.find<locked_user>(*current.id).value();
+
+        const auto& const_current = current;
+        REQUIRE(repo.update(const_current).has_value());
+        current = repo.find<locked_user>(*current.id).value();
+        REQUIRE(current.version == 1);
+
+        stale.name = "Stale patch";
+        auto patched = repo.patch(stale, {"name"});
+        REQUIRE_FALSE(patched.has_value());
+        REQUIRE(patched.error().kind == asterorm::db_error_kind::stale_write);
+
+        const auto& const_stale = stale;
+        auto updated = repo.update(const_stale);
+        REQUIRE_FALSE(updated.has_value());
+        REQUIRE(updated.error().kind == asterorm::db_error_kind::stale_write);
+
+        REQUIRE(repo.patch(current, {"name"}).has_value());
+        auto reloaded = repo.find<locked_user>(*current.id);
+        REQUIRE(reloaded.has_value());
+        REQUIRE(reloaded->name == "Initial");
+        REQUIRE(reloaded->version == 2);
+    }
+
     SECTION("Composite primary keys support CRUD and upsert") {
         order_line first{.order_id = 100, .line_no = 1, .sku = "ABC", .qty = 2};
         auto insert_res = repo.insert(first);

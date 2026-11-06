@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -31,6 +32,66 @@ struct query_options {
 using projection_row = std::vector<std::optional<std::string>>;
 
 namespace detail {
+template <typename T> struct refresh_key_value {
+    using type = T;
+};
+template <typename T> struct refresh_key_value<std::optional<T>> {
+    using type = T;
+};
+template <typename Connection> constexpr bool supports_returning_for() {
+    if constexpr (requires { Connection::supports_returning; })
+        return Connection::supports_returning;
+    return true;
+}
+// Rolls back the refresh scope on expected errors and on C++ exceptions.
+template <typename Connection> class write_refresh_guard {
+  public:
+    write_refresh_guard(Connection& connection, bool nested, std::string name) noexcept
+        : connection_(&connection), nested_(nested), name_(std::move(name)) {}
+    write_refresh_guard(const write_refresh_guard&) = delete;
+    write_refresh_guard& operator=(const write_refresh_guard&) = delete;
+    ~write_refresh_guard() {
+        rollback();
+    }
+
+    asterorm::result<void> commit() {
+        auto committed = connection_->execute(nested_ ? "RELEASE SAVEPOINT " + name_ : "COMMIT");
+        if (!committed) {
+            auto failure = committed.error();
+            connection_->close();
+            active_ = false;
+            return std::unexpected(std::move(failure));
+        }
+        active_ = false;
+        return {};
+    }
+
+  private:
+    void rollback() noexcept {
+        if (!active_)
+            return;
+        active_ = false;
+        try {
+            auto rolled_back =
+                connection_->execute(nested_ ? "ROLLBACK TO SAVEPOINT " + name_ : "ROLLBACK");
+            if (!rolled_back) {
+                connection_->close();
+            } else if (nested_) {
+                auto released = connection_->execute("RELEASE SAVEPOINT " + name_);
+                if (!released)
+                    connection_->close();
+            }
+        } catch (...) {
+            connection_->close();
+        }
+    }
+
+    Connection* connection_;
+    bool nested_;
+    std::string name_;
+    bool active_{true};
+};
+
 template <typename T, typename = void> struct has_version_column : std::false_type {};
 
 template <typename T>
@@ -68,8 +129,7 @@ template <typename T> std::vector<std::string> primary_key_names() {
 }
 
 template <typename T, typename Tuple, std::size_t... Is>
-void collect_insert_params(const T& entity, const Tuple& columns,
-                           std::vector<std::optional<std::string>>& params,
+void collect_insert_params(const T& entity, const Tuple& columns, query_parameters& params,
                            std::vector<std::string>& col_names,
                            std::vector<std::string>& placeholders,
                            std::index_sequence<Is...> /*seq*/) {
@@ -89,10 +149,46 @@ void collect_insert_params(const T& entity, const Tuple& columns,
             if (!skip) {
                 col_names.push_back(std::string(col.name));
                 placeholders.push_back("$" + std::to_string(param_idx++));
-                params.push_back(asterorm::encode(val));
+                params.push_back(asterorm::encode_parameter(val));
             }
         }
     }());
+}
+
+struct bulk_insert_layout {
+    std::vector<std::string> col_names;
+    std::vector<bool> include_mask;
+};
+
+template <typename T, std::size_t... Is>
+asterorm::result<bulk_insert_layout>
+collect_bulk_insert_layout(const std::vector<T>& rows, std::index_sequence<Is...> /*seq*/) {
+    using traits = entity_traits<T>;
+    bulk_insert_layout layout;
+    bool consistent_rows = true;
+    (..., [&]() {
+        auto col = std::get<Is>(traits::columns);
+        bool include_column = col.gen != generated::always;
+        if constexpr (is_optional_v<std::decay_t<decltype(rows.front().*(col.member_ptr))>>) {
+            if (col.gen == generated::by_default) {
+                include_column = (rows.front().*(col.member_ptr)).has_value();
+                for (const auto& row : rows) {
+                    if ((row.*(col.member_ptr)).has_value() != include_column)
+                        consistent_rows = false;
+                }
+            }
+        }
+        layout.include_mask.push_back(include_column);
+        if (include_column)
+            layout.col_names.push_back(std::string(col.name));
+    }());
+    if (!consistent_rows) {
+        db_error error;
+        error.kind = db_error_kind::parse_failed;
+        error.message = "Bulk rows must agree on which generated-by-default values are set";
+        return std::unexpected(error);
+    }
+    return layout;
 }
 
 template <typename T, std::size_t... Is>
@@ -256,8 +352,8 @@ template <typename T> void append_primary_key_csv(std::string& sql) {
 }
 
 template <typename T>
-void append_entity_pk_predicate(std::string& sql, std::vector<std::optional<std::string>>& params,
-                                const T& entity, std::size_t& param_idx) {
+void append_entity_pk_predicate(std::string& sql, query_parameters& params, const T& entity,
+                                std::size_t& param_idx) {
     bool first = true;
     for_each_pk(entity_traits<T>::primary_key, [&](const auto& pk) {
         if (!first)
@@ -265,14 +361,13 @@ void append_entity_pk_predicate(std::string& sql, std::vector<std::optional<std:
         first = false;
         sql += pk.name;
         sql += " = $" + std::to_string(param_idx++);
-        params.push_back(asterorm::encode(entity.*(pk.member_ptr)));
+        params.push_back(asterorm::encode_parameter(entity.*(pk.member_ptr)));
     });
 }
 
 template <typename T, typename Key, std::size_t... Is>
-void append_tuple_key_predicate(std::string& sql, std::vector<std::optional<std::string>>& params,
-                                const Key& key, std::size_t& param_idx,
-                                std::index_sequence<Is...>) {
+void append_tuple_key_predicate(std::string& sql, query_parameters& params, const Key& key,
+                                std::size_t& param_idx, std::index_sequence<Is...>) {
     constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
     bool first = true;
     (..., [&]() {
@@ -282,13 +377,13 @@ void append_tuple_key_predicate(std::string& sql, std::vector<std::optional<std:
         const auto& primary_key_part = std::get<Is>(primary_key_metadata);
         sql += primary_key_part.name;
         sql += " = $" + std::to_string(param_idx++);
-        params.push_back(asterorm::encode(std::get<Is>(key)));
+        params.push_back(asterorm::encode_parameter(std::get<Is>(key)));
     }());
 }
 
 template <typename T, typename Key>
-void append_key_predicate(std::string& sql, std::vector<std::optional<std::string>>& params,
-                          const Key& key, std::size_t& param_idx) {
+void append_key_predicate(std::string& sql, query_parameters& params, const Key& key,
+                          std::size_t& param_idx) {
     constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
     if constexpr (is_tuple_like_v<decltype(primary_key_metadata)>) {
         static_assert(is_tuple_like_v<Key>,
@@ -303,7 +398,7 @@ void append_key_predicate(std::string& sql, std::vector<std::optional<std::strin
     } else {
         sql += primary_key_metadata.name;
         sql += " = $" + std::to_string(param_idx++);
-        params.push_back(asterorm::encode(key));
+        params.push_back(asterorm::encode_parameter(key));
     }
 }
 
@@ -325,6 +420,50 @@ inline db_error stale_write_error() {
     err.message = "Optimistic lock conflict";
     return err;
 }
+
+template <typename T>
+sql::compiled_query build_versioned_update(const T& entity, bool include_returning) {
+    using traits = entity_traits<T>;
+    constexpr auto version_col = traits::version_column;
+    sql::compiled_query compiled;
+    compiled.sql = "UPDATE ";
+    compiled.sql += traits::table;
+    compiled.sql += " SET ";
+
+    bool first = true;
+    std::size_t param_idx = 1;
+    auto collect_update = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (..., [&]() {
+            auto col = std::get<Is>(traits::columns);
+            if (detail::is_primary_key_column<T>(col.name) || col.name == version_col.name ||
+                col.gen == generated::always) {
+                return;
+            }
+            if (!first)
+                compiled.sql += ", ";
+            compiled.sql += col.name;
+            compiled.sql += " = $" + std::to_string(param_idx++);
+            compiled.params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
+            first = false;
+        }());
+    };
+    collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+
+    if (!first)
+        compiled.sql += ", ";
+    compiled.sql += version_col.name;
+    compiled.sql += " = ";
+    compiled.sql += version_col.name;
+    compiled.sql += " + 1 WHERE ";
+    detail::append_entity_pk_predicate(compiled.sql, compiled.params, entity, param_idx);
+    compiled.sql += " AND ";
+    compiled.sql += version_col.name;
+    compiled.sql += " = $" + std::to_string(param_idx);
+    compiled.params.push_back(asterorm::encode_parameter(entity.*(version_col.member_ptr)));
+    if (include_returning)
+        detail::append_returning_all<T>(compiled.sql);
+    return compiled;
+}
 } // namespace detail
 
 template <typename Session> class repository {
@@ -341,22 +480,14 @@ template <typename Session> class repository {
         if (rows.empty())
             return std::size_t{0};
 
-        std::vector<std::string> col_names;
-        std::vector<bool> include_mask;
-        auto collect_cols = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., [&]() {
-                auto col = std::get<Is>(traits::columns);
-                if (col.gen != generated::always) {
-                    col_names.push_back(std::string(col.name));
-                    include_mask.push_back(true);
-                } else {
-                    include_mask.push_back(false);
-                }
-            }());
-        };
-        collect_cols(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        auto layout = detail::collect_bulk_insert_layout<T>(
+            rows, std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        if (!layout)
+            return std::unexpected(layout.error());
+        auto col_names = std::move(layout->col_names);
+        auto include_mask = std::move(layout->include_mask);
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         params.reserve(rows.size() * col_names.size());
 
         std::string sql = "INSERT INTO ";
@@ -376,20 +507,14 @@ template <typename Session> class repository {
             auto bind = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
                     auto col = std::get<Is>(traits::columns);
-                    if (col.gen == generated::always)
+                    if (!include_mask[Is])
                         return;
                     if (!first_in_row)
                         sql += ", ";
                     first_in_row = false;
                     const auto& val = rows[r].*(col.member_ptr);
-                    if constexpr (is_optional_v<std::decay_t<decltype(val)>>) {
-                        if (!val.has_value() && col.gen == generated::by_default) {
-                            sql += "DEFAULT";
-                            return;
-                        }
-                    }
                     sql += "$" + std::to_string(param_idx++);
-                    params.push_back(asterorm::encode(val));
+                    params.push_back(asterorm::encode_parameter(val));
                 }());
             };
             bind(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
@@ -417,7 +542,7 @@ template <typename Session> class repository {
             return std::unexpected(err);
         }
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         std::string sql = "UPDATE ";
         sql += traits::table;
         sql += " SET ";
@@ -430,13 +555,17 @@ template <typename Session> class repository {
                 auto col = std::get<Is>(traits::columns);
                 for (std::size_t i = 0; i < changed.size(); ++i) {
                     if (std::string_view(col.name) == changed[i]) {
+                        matched[i] = true;
+                        if constexpr (detail::has_version_column<T>::value) {
+                            if (col.name == traits::version_column.name)
+                                continue;
+                        }
                         if (!first)
                             sql += ", ";
                         first = false;
                         sql += col.name;
                         sql += " = $" + std::to_string(idx++);
-                        params.push_back(asterorm::encode(entity.*(col.member_ptr)));
-                        matched[i] = true;
+                        params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     }
                 }
             }());
@@ -452,25 +581,40 @@ template <typename Session> class repository {
             }
         }
 
+        if constexpr (detail::has_version_column<T>::value) {
+            if (!first)
+                sql += ", ";
+            sql += traits::version_column.name;
+            sql += " = ";
+            sql += traits::version_column.name;
+            sql += " + 1";
+        }
+
         sql += " WHERE ";
         detail::append_entity_pk_predicate(sql, params, entity, idx);
+        if constexpr (detail::has_version_column<T>::value) {
+            sql += " AND ";
+            sql += traits::version_column.name;
+            sql += " = $" + std::to_string(idx);
+            params.push_back(
+                asterorm::encode_parameter(entity.*(traits::version_column.member_ptr)));
+        }
 
         auto res = session_->with_connection(
             [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
         if (!res)
             return std::unexpected(res.error());
         if (res->affected_rows() == 0) {
-            db_error err;
-            err.kind = db_error_kind::query_failed;
-            err.message = "No rows affected";
-            return std::unexpected(err);
+            if constexpr (detail::has_version_column<T>::value)
+                return std::unexpected(detail::stale_write_error());
+            return std::unexpected(detail::no_rows_affected_error());
         }
         return {};
     }
 
     template <typename T> asterorm::result<void> insert(T& entity) {
         using traits = entity_traits<T>;
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         std::vector<std::string> col_names;
         std::vector<std::string> placeholders;
 
@@ -493,10 +637,10 @@ template <typename Session> class repository {
                 sql += ", ";
         }
         sql += ")";
-        detail::append_returning_all<T>(sql);
+        if constexpr (supports_returning)
+            detail::append_returning_all<T>(sql);
 
-        auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+        auto res = execute_returning(entity, sql, params, true);
 
         if (!res)
             return std::unexpected(res.error());
@@ -512,7 +656,7 @@ template <typename Session> class repository {
 
     template <typename T> asterorm::result<void> upsert(T& entity) {
         using traits = entity_traits<T>;
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         std::vector<std::string> col_names;
         std::vector<std::string> placeholders;
 
@@ -534,46 +678,19 @@ template <typename Session> class repository {
             if (i < placeholders.size() - 1)
                 sql += ", ";
         }
-        sql += ") ON CONFLICT (";
-        detail::append_primary_key_csv<T>(sql);
-        sql += ") DO UPDATE SET ";
+        sql += ")";
+        bool has_update_column = false;
+        for (const auto& column : col_names)
+            has_update_column = has_update_column || !detail::is_primary_key_column<T>(column);
+        if (!has_update_column)
+            return std::unexpected(
+                detail::projection_error("upsert() requires at least one updatable column"));
+        sql += upsert_clause<T>(col_names);
 
-        bool first_update_col = true;
-        for (size_t i = 0; i < col_names.size(); ++i) {
-            if (!detail::is_primary_key_column<T>(col_names[i])) {
-                if (!first_update_col)
-                    sql += ", ";
-                sql += col_names[i];
-                if constexpr (detail::has_version_column<T>::value) {
-                    if (col_names[i] == traits::version_column.name) {
-                        sql += " = ";
-                        sql += traits::table;
-                        sql += ".";
-                        sql += col_names[i];
-                        sql += " + 1";
-                    } else {
-                        sql += " = EXCLUDED.";
-                        sql += col_names[i];
-                    }
-                } else {
-                    sql += " = EXCLUDED.";
-                    sql += col_names[i];
-                }
-                first_update_col = false;
-            }
-        }
+        if constexpr (supports_returning)
+            detail::append_returning_all<T>(sql);
 
-        if (first_update_col) {
-            db_error err;
-            err.kind = db_error_kind::parse_failed;
-            err.message = "upsert() requires at least one updatable column";
-            return std::unexpected(err);
-        }
-
-        detail::append_returning_all<T>(sql);
-
-        auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+        auto res = execute_returning(entity, sql, params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -589,18 +706,21 @@ template <typename Session> class repository {
 
     template <typename T> asterorm::result<std::size_t> upsert_many(std::vector<T>& rows) {
         using traits = entity_traits<T>;
+        if constexpr (!supports_returning) {
+            if (!rows.empty())
+                return std::unexpected(detail::projection_error(
+                    "Bulk upsert with entity refresh requires RETURNING; use insert_many or "
+                    "individual upsert calls in a transaction"));
+        }
         if (rows.empty())
             return std::size_t{0};
 
-        std::vector<std::string> col_names;
-        auto collect_cols = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., [&]() {
-                auto col = std::get<Is>(traits::columns);
-                if (col.gen != generated::always)
-                    col_names.push_back(std::string(col.name));
-            }());
-        };
-        collect_cols(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        auto layout = detail::collect_bulk_insert_layout<T>(
+            rows, std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
+        if (!layout)
+            return std::unexpected(layout.error());
+        auto col_names = std::move(layout->col_names);
+        auto include_mask = std::move(layout->include_mask);
 
         bool has_update_col = false;
         for (const auto& name : col_names) {
@@ -616,7 +736,7 @@ template <typename Session> class repository {
             return std::unexpected(err);
         }
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         params.reserve(rows.size() * col_names.size());
 
         std::string sql = "INSERT INTO ";
@@ -632,20 +752,14 @@ template <typename Session> class repository {
             auto bind = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
                     auto col = std::get<Is>(traits::columns);
-                    if (col.gen == generated::always)
+                    if (!include_mask[Is])
                         return;
                     if (!first_in_row)
                         sql += ", ";
                     first_in_row = false;
                     const auto& val = rows[r].*(col.member_ptr);
-                    if constexpr (is_optional_v<std::decay_t<decltype(val)>>) {
-                        if (!val.has_value() && col.gen == generated::by_default) {
-                            sql += "DEFAULT";
-                            return;
-                        }
-                    }
                     sql += "$" + std::to_string(param_idx++);
-                    params.push_back(asterorm::encode(val));
+                    params.push_back(asterorm::encode_parameter(val));
                 }());
             };
             bind(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
@@ -654,34 +768,7 @@ template <typename Session> class repository {
                 sql += ", ";
         }
 
-        sql += " ON CONFLICT (";
-        detail::append_primary_key_csv<T>(sql);
-        sql += ") DO UPDATE SET ";
-
-        bool first_update_col = true;
-        for (const auto& name : col_names) {
-            if (detail::is_primary_key_column<T>(name))
-                continue;
-            if (!first_update_col)
-                sql += ", ";
-            sql += name;
-            if constexpr (detail::has_version_column<T>::value) {
-                if (name == traits::version_column.name) {
-                    sql += " = ";
-                    sql += traits::table;
-                    sql += ".";
-                    sql += name;
-                    sql += " + 1";
-                } else {
-                    sql += " = EXCLUDED.";
-                    sql += name;
-                }
-            } else {
-                sql += " = EXCLUDED.";
-                sql += name;
-            }
-            first_update_col = false;
-        }
+        sql += upsert_clause<T>(col_names);
 
         detail::append_returning_all<T>(sql);
 
@@ -729,7 +816,7 @@ template <typename Session> class repository {
         sql += traits::table;
         sql += " WHERE ";
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         std::size_t param_idx = 1;
         detail::append_key_predicate<T>(sql, params, pk_val, param_idx);
 
@@ -804,7 +891,7 @@ template <typename Session> class repository {
             builder.offset(*options.offset);
         auto ast = builder.build();
 
-        sql::compiler c;
+        sql::compiler c{sql::dialect_for_session<Session>()};
         auto compiled = c.compile(ast);
 
         auto res = session_->with_connection([&](auto& conn) {
@@ -860,7 +947,7 @@ template <typename Session> class repository {
         if (options.offset)
             builder.offset(*options.offset);
 
-        sql::compiler c;
+        sql::compiler c{sql::dialect_for_session<Session>()};
         auto compiled = c.compile(builder.build());
         return session_->template native<T>(compiled.sql);
     }
@@ -985,7 +1072,11 @@ template <typename Session> class repository {
     }
 
     template <typename T> asterorm::result<void> update(const T& entity) {
-        return update_const(entity);
+        if constexpr (detail::has_version_column<T>::value) {
+            return update_versioned_const(entity);
+        } else {
+            return update_const(entity);
+        }
     }
 
     template <typename T, typename PkType> asterorm::result<void> erase(const PkType& pk_val) {
@@ -994,7 +1085,7 @@ template <typename Session> class repository {
         sql += traits::table;
         sql += " WHERE ";
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         std::size_t param_idx = 1;
         detail::append_key_predicate<T>(sql, params, pk_val, param_idx);
 
@@ -1010,6 +1101,127 @@ template <typename Session> class repository {
     }
 
   private:
+    static constexpr bool supports_returning = [] {
+        if constexpr (requires { typename Session::connection_type; })
+            return detail::supports_returning_for<typename Session::connection_type>();
+        return true;
+    }();
+
+    template <typename T> std::string upsert_clause(const std::vector<std::string>& columns) {
+        sql::compiler compiler{sql::dialect_for_session<Session>()};
+        std::optional<std::string_view> version_column;
+        if constexpr (detail::has_version_column<T>::value)
+            version_column = entity_traits<T>::version_column.name;
+        return compiler.upsert_clause(entity_traits<T>::table, columns,
+                                      detail::primary_key_names<T>(), version_column);
+    }
+
+    // Backends without RETURNING use an explicitly scoped write + primary-key
+    // read. Never infer consecutive IDs for bulk writes or release the lease
+    // between the mutation and refresh. A savepoint protects caller transactions.
+    template <typename T>
+    auto execute_returning(const T& entity, std::string_view sql, const query_parameters& params,
+                           bool inserting) {
+        return session_->with_connection([&](auto& connection) {
+            using execution_result = decltype(session_->observed_execute(connection, sql, params));
+            if constexpr (supports_returning) {
+                return session_->observed_execute(connection, sql, params);
+            } else {
+                query_parameters key_params;
+                std::optional<std::size_t> generated_key_index;
+                bool invalid_key = false;
+                const auto key_names = detail::primary_key_names<T>();
+                detail::for_each_pk(entity_traits<T>::primary_key, [&](const auto& key) {
+                    auto parameter = asterorm::encode_parameter(entity.*(key.member_ptr));
+                    bool omitted = false;
+                    bool numeric_generated_key = false;
+                    std::apply(
+                        [&](const auto&... columns) {
+                            (
+                                [&] {
+                                    if (columns.name != key.name)
+                                        return;
+                                    using field_type =
+                                        std::decay_t<decltype(entity.*(columns.member_ptr))>;
+                                    using value_type =
+                                        typename detail::refresh_key_value<field_type>::type;
+                                    omitted =
+                                        (inserting && columns.gen == generated::always) ||
+                                        (columns.gen == generated::by_default && !parameter.value);
+                                    numeric_generated_key = columns.gen != generated::none &&
+                                                            std::is_integral_v<value_type> &&
+                                                            !std::is_same_v<value_type, bool>;
+                                }(),
+                                ...);
+                        },
+                        entity_traits<T>::columns);
+                    if (omitted || !parameter.value) {
+                        if (!inserting || key_names.size() != 1 || !numeric_generated_key)
+                            invalid_key = true;
+                        generated_key_index = key_params.size();
+                    }
+                    if (parameter.error)
+                        invalid_key = true;
+                    key_params.push_back(std::move(parameter));
+                });
+                if (invalid_key)
+                    return execution_result{std::unexpected(
+                        detail::projection_error("Entity refresh requires explicit primary keys or "
+                                                 "one generated integral key on insert"))};
+
+                static std::atomic<std::uint64_t> next_savepoint{0};
+                auto savepoint = "asterorm_refresh_" + std::to_string(++next_savepoint);
+                const bool nested = connection.in_transaction();
+                auto started = nested ? connection.execute("SAVEPOINT " + savepoint)
+                                      : connection.execute("START TRANSACTION");
+                if (!started)
+                    return execution_result{std::unexpected(started.error())};
+                detail::write_refresh_guard guard{connection, nested, std::move(savepoint)};
+                auto execute_and_refresh = [&]() -> execution_result {
+                    auto written = session_->observed_execute(connection, sql, params);
+                    if (!written)
+                        return std::unexpected(written.error());
+                    if (written->affected_rows() == 0)
+                        return written;
+                    if (generated_key_index) {
+                        if (written->last_insert_id() == 0)
+                            return std::unexpected(
+                                detail::projection_error("Insert did not produce a generated key"));
+                        key_params[*generated_key_index] =
+                            std::to_string(written->last_insert_id());
+                    }
+                    sql::select_ast refresh;
+                    refresh.table = entity_traits<T>::table;
+                    refresh.columns = detail::column_names<T>();
+                    for (std::size_t index = 0; index < key_names.size(); ++index) {
+                        auto predicate =
+                            sql::col(key_names[index]) == sql::param_expr{key_params[index]};
+                        if (refresh.where_clause)
+                            refresh.where_clause =
+                                std::move(*refresh.where_clause) && std::move(predicate);
+                        else
+                            refresh.where_clause = std::move(predicate);
+                    }
+                    sql::compiler compiler{sql::dialect_for_session<Session>()};
+                    const auto query = compiler.compile(refresh);
+                    auto refreshed =
+                        session_->observed_execute(connection, query.sql, query.params);
+                    if (refreshed && refreshed->rows() != 1)
+                        return std::unexpected(detail::projection_error(
+                            "Write could not be refreshed by primary key"));
+                    return refreshed;
+                };
+                auto refreshed = execute_and_refresh();
+                if (!refreshed)
+                    return refreshed;
+                auto committed = guard.commit();
+                if (!committed)
+                    return execution_result{std::unexpected(committed.error())};
+                return refreshed;
+            }
+        });
+    }
+
     template <typename T>
     asterorm::result<sql::compiled_query>
     compile_projection_query(const std::vector<std::string>& selected_columns,
@@ -1036,7 +1248,7 @@ template <typename Session> class repository {
             query_builder.offset(*options.offset);
         }
 
-        sql::compiler query_compiler;
+        sql::compiler query_compiler{sql::dialect_for_session<Session>()};
         return query_compiler.compile(query_builder.build());
     }
 
@@ -1068,7 +1280,7 @@ template <typename Session> class repository {
             query_builder.offset(*options.offset);
         }
 
-        sql::compiler query_compiler;
+        sql::compiler query_compiler{sql::dialect_for_session<Session>()};
         return query_compiler.compile(query_builder.build());
     }
 
@@ -1137,7 +1349,7 @@ template <typename Session> class repository {
         sql += traits::table;
         sql += " SET ";
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         bool has_assignment = false;
 
         auto collect_update = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -1150,7 +1362,7 @@ template <typename Session> class repository {
                         sql += ", ";
                     sql += col.name;
                     sql += " = $" + std::to_string(param_idx++);
-                    params.push_back(asterorm::encode(entity.*(col.member_ptr)));
+                    params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     first = false;
                     has_assignment = true;
                 }
@@ -1184,7 +1396,7 @@ template <typename Session> class repository {
         sql += traits::table;
         sql += " SET ";
 
-        std::vector<std::optional<std::string>> params;
+        query_parameters params;
         bool has_assignment = false;
         auto collect_update = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             size_t param_idx = 1;
@@ -1196,7 +1408,7 @@ template <typename Session> class repository {
                         sql += ", ";
                     sql += col.name;
                     sql += " = $" + std::to_string(param_idx++);
-                    params.push_back(asterorm::encode(entity.*(col.member_ptr)));
+                    params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     first = false;
                     has_assignment = true;
                 }
@@ -1213,10 +1425,10 @@ template <typename Session> class repository {
             return std::unexpected(err);
         }
 
-        detail::append_returning_all<T>(sql);
+        if constexpr (supports_returning)
+            detail::append_returning_all<T>(sql);
 
-        auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+        auto res = execute_returning(entity, sql, params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -1231,51 +1443,9 @@ template <typename Session> class repository {
     }
 
     template <typename T> asterorm::result<void> update_versioned(T& entity) {
-        using traits = entity_traits<T>;
-        constexpr auto version_col = traits::version_column;
+        auto compiled = detail::build_versioned_update(entity, supports_returning);
 
-        std::string sql = "UPDATE ";
-        sql += traits::table;
-        sql += " SET ";
-
-        std::vector<std::optional<std::string>> params;
-        bool first = true;
-        std::size_t param_idx = 1;
-        auto collect_update = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., [&]() {
-                auto col = std::get<Is>(traits::columns);
-                if (detail::is_primary_key_column<T>(col.name) || col.name == version_col.name ||
-                    col.gen == generated::always) {
-                    return;
-                }
-                if (!first)
-                    sql += ", ";
-                sql += col.name;
-                sql += " = $" + std::to_string(param_idx++);
-                params.push_back(asterorm::encode(entity.*(col.member_ptr)));
-                first = false;
-            }());
-        };
-        collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
-
-        if (!first)
-            sql += ", ";
-        sql += version_col.name;
-        sql += " = ";
-        sql += version_col.name;
-        sql += " + 1";
-
-        sql += " WHERE ";
-        detail::append_entity_pk_predicate(sql, params, entity, param_idx);
-        sql += " AND ";
-        sql += version_col.name;
-        sql += " = $" + std::to_string(param_idx);
-        params.push_back(asterorm::encode(entity.*(version_col.member_ptr)));
-
-        detail::append_returning_all<T>(sql);
-
-        auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+        auto res = execute_returning(entity, compiled.sql, compiled.params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -1286,6 +1456,18 @@ template <typename Session> class repository {
         auto decoded = detail::hydrate_entity(*res, 0, entity);
         if (!decoded)
             return std::unexpected(decoded.error());
+        return {};
+    }
+
+    template <typename T> asterorm::result<void> update_versioned_const(const T& entity) {
+        auto compiled = detail::build_versioned_update(entity, false);
+        auto res = session_->with_connection([&](auto& conn) {
+            return session_->observed_execute(conn, compiled.sql, compiled.params);
+        });
+        if (!res)
+            return std::unexpected(res.error());
+        if (res->affected_rows() == 0)
+            return std::unexpected(detail::stale_write_error());
         return {};
     }
 

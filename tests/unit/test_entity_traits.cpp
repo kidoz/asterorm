@@ -154,12 +154,11 @@ struct fake_query_result {
 
 struct fake_repository_connection {
     std::string sql;
-    std::vector<std::optional<std::string>> params;
+    asterorm::query_parameters params;
     fake_query_result query_result{.affected = 2};
 
     asterorm::result<fake_query_result>
-    execute_prepared(std::string_view statement,
-                     const std::vector<std::optional<std::string>>& bound_params) {
+    execute_prepared(std::string_view statement, const asterorm::query_parameters& bound_params) {
         sql = std::string{statement};
         params = bound_params;
         return query_result;
@@ -173,33 +172,45 @@ struct fake_repository_session {
         return func(conn);
     }
 
-    asterorm::result<fake_query_result>
-    observed_execute(fake_repository_connection& connection, std::string_view sql,
-                     const std::vector<std::optional<std::string>>& params) {
+    asterorm::result<fake_query_result> observed_execute(fake_repository_connection& connection,
+                                                         std::string_view sql,
+                                                         const asterorm::query_parameters& params) {
         return connection.execute_prepared(sql, params);
     }
 };
 
-TEST_CASE("Repository: batch insert uses DEFAULT for unset generated values", "[core][crud]") {
+TEST_CASE("Repository: batch insert omits unset generated values", "[core][crud]") {
     fake_repository_session session;
     asterorm::repository repo{session};
 
     std::vector<test_user> rows{
         {.id = std::nullopt, .name = "generated", .active = true},
-        {.id = 42, .name = "explicit", .active = false},
+        {.id = std::nullopt, .name = "also generated", .active = false},
     };
 
     auto inserted = repo.insert_many(rows);
     REQUIRE(inserted.has_value());
     REQUIRE(*inserted == 2);
-    REQUIRE(session.conn.sql ==
-            "INSERT INTO users (id, name, active) VALUES (DEFAULT, $1, $2), ($3, $4, $5)");
-    REQUIRE(session.conn.params.size() == 5);
+    REQUIRE(session.conn.sql == "INSERT INTO users (name, active) VALUES ($1, $2), ($3, $4)");
+    REQUIRE(session.conn.params.size() == 4);
     REQUIRE(session.conn.params[0] == "generated");
     REQUIRE(session.conn.params[1] == "t");
-    REQUIRE(session.conn.params[2] == "42");
-    REQUIRE(session.conn.params[3] == "explicit");
-    REQUIRE(session.conn.params[4] == "f");
+    REQUIRE(session.conn.params[2] == "also generated");
+    REQUIRE(session.conn.params[3] == "f");
+}
+
+TEST_CASE("Repository: batch insert rejects inconsistent generated values", "[core][crud]") {
+    fake_repository_session session;
+    asterorm::repository repo{session};
+    const std::vector<test_user> rows{
+        {.id = std::nullopt, .name = "generated", .active = true},
+        {.id = 42, .name = "explicit", .active = false},
+    };
+
+    auto inserted = repo.insert_many(rows);
+    REQUIRE_FALSE(inserted.has_value());
+    REQUIRE(inserted.error().kind == asterorm::db_error_kind::parse_failed);
+    REQUIRE(session.conn.sql.empty());
 }
 
 TEST_CASE("Repository: projection queries decode scalar, tuple, and mapped rows", "[core][query]") {
