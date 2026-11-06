@@ -1,0 +1,7 @@
+workload,path,columns_size,columns_capacity,items_size,items_capacity,group_by_capacity,string_size,select_item_size
+simple_filter,string,4,4,0,0,0,24,80
+simple_filter,typed,4,4,0,0,0,24,80
+nullable_projection,string,3,3,0,0,0,24,80
+nullable_projection,typed,0,0,3,4,0,24,80
+aggregate,string,0,0,4,4,1,24,80
+aggregate,typed,0,0,4,4,1,24,80

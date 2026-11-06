@@ -1,0 +1,113 @@
+{
+  "started_utc": "2026-11-06T19:12:57.431346+00:00",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "cpu_model": "Apple M4 Max",
+  "logical_cpus": 16,
+  "python": "3.15.2",
+  "build_options": {
+    "buildtype": "release",
+    "debug": false,
+    "default_library": "static",
+    "optimization": "3",
+    "b_lto": false,
+    "cpp_args": [],
+    "cpp_link_args": [],
+    "cpp_std": "c++23",
+    "benchmarks": true
+  },
+  "compilers": {
+    "host": {
+      "cpp": {
+        "id": "clang",
+        "exelist": [
+          "c++"
+        ],
+        "linker_exelist": [
+          "c++"
+        ],
+        "file_suffixes": [
+          "cpp",
+          "cppm",
+          "cc",
+          "cp",
+          "cxx",
+          "c++",
+          "hh",
+          "hp",
+          "hpp",
+          "ipp",
+          "hxx",
+          "h++",
+          "ino",
+          "ixx",
+          "CPP",
+          "C",
+          "HPP",
+          "H"
+        ],
+        "default_suffix": "cpp",
+        "version": "21.0.0",
+        "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+        "linker_id": "ld64"
+      }
+    },
+    "build": {
+      "cpp": {
+        "id": "clang",
+        "exelist": [
+          "c++"
+        ],
+        "linker_exelist": [
+          "c++"
+        ],
+        "file_suffixes": [
+          "cpp",
+          "cppm",
+          "cc",
+          "cp",
+          "cxx",
+          "c++",
+          "hh",
+          "hp",
+          "hpp",
+          "ipp",
+          "hxx",
+          "h++",
+          "ino",
+          "ixx",
+          "CPP",
+          "C",
+          "HPP",
+          "H"
+        ],
+        "default_suffix": "cpp",
+        "version": "21.0.0",
+        "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+        "linker_id": "ld64"
+      }
+    }
+  },
+  "git_commit": "d4f4669f760762fc9876bfa3c1dd9076fb0d452a",
+  "tracked_worktree_dirty": true,
+  "runs": 3,
+  "samples": 21,
+  "iterations": 10000,
+  "allocation_iterations": 256,
+  "material_timing_ratio": 1.1,
+  "source_sha256": {
+    "src/sql/compiler.cpp": "e69111260cf4c7f9d47b405c04621a5c1e16eb8e8498e0aacdacd0abbfd35bfe",
+    "include/asterorm/sql/compiler.hpp": "0b5ae659b23123c22a1993ae5d777d6fb43ea8b874fec13ac05a085d3aeead38",
+    "include/asterorm/sql/ast.hpp": "145fd0fd1fd20b93b45dec1bf38d3bb542c737b53d6ed9690125438f12063560",
+    "include/asterorm/sql/typed.hpp": "47af798c53cd1f21b1ec113e68d17ce5ea96c83eeb9051281c845b9cb3d7d38e",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004",
+    "include/asterorm/core/parameter.hpp": "c105511394a148dc6aab998b17a1ee501f8b607ad5a5db88d90e85dab9484f8d",
+    "benchmarks/allocation_probe.cpp": "ceeb304c5b13034ecfd48eed671bb0cddcd6ace73c7f7b72c005f1831a868486",
+    "benchmarks/dsl_benchmark.cpp": "8790cd05f1887f8c7e2fcdd512d4d41f6d72461f4d8f5f8963e31c49544066a6",
+    "benchmarks/measurement_support.cpp": "19fe50c5ae2ed5fcbe8aa142ba41f852c604fde2a8cd01870fbb89d231c3405c",
+    "benchmarks/measurement_support.hpp": "2505f86a58f22feb50fcea3bbe0defeae6e57da9d5a362d5274b01160f0dd80d",
+    "benchmarks/meson.build": "54bf5e31957597e71778d8806aad34bb321f5fc261bfba57d291e543234c451e",
+    "benchmarks/run_dsl_benchmark.py": "edb88573ec7c63e55a5f37470a24f9de560a85eb0fc2537bad4a9a1105bd11a4"
+  },
+  "completed_utc": "2026-11-06T19:13:05.522911+00:00"
+}
