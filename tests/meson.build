@@ -17,6 +17,20 @@ core_tests = executable(
 
 test('core unit tests', core_tests)
 
+test('typed query guide snippets', python_program, args : files('check_typed_query_guide.py'))
+
+if get_option('examples')
+  if sqlite_enabled
+    test('typed query guide sqlite', typed_query_migration, args : ['sqlite'])
+  endif
+  if postgres_enabled
+    test('typed query guide postgres', typed_query_migration, args : ['postgres'])
+  endif
+  if mysql_enabled
+    test('typed query guide mysql', typed_query_migration, args : ['mysql'])
+  endif
+endif
+
 test(
   'typed DSL compile checks',
   python_program,

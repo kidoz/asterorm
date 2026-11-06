@@ -51,6 +51,8 @@ AsterORM v0.1 covers a small but production-shaped surface:
   boolean operands, and text columns accept string literals as bound text parameters
 * inferred tuple projections through `sql::typed::select_cols(...)`, including
   optional columns and aggregate projected types, alongside explicit DTO projections
+* an [incremental typed-query migration guide](docs/typed-query-migration.md) with
+  executable examples for PostgreSQL, SQLite, and MySQL
 
 Not implemented yet: lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, streaming cursors for large result sets, and a production-ready identity map. Relationship rows are loaded explicitly with `load_related_one` / `load_related_many`. The typed DSL covers `select`, filters, order, limit, `group_by`, `having`, and aggregates. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
 
@@ -114,6 +116,9 @@ int main() {
 ```
 
 ## Typed Projections
+
+To convert existing queries, follow the
+[string-to-typed migration guide](docs/typed-query-migration.md).
 
 For a mapped `User` and a session `db`, omit the result type to infer a tuple in
 selection order:
