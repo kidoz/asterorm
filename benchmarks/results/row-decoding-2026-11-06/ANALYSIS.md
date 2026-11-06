@@ -89,3 +89,18 @@ these measurements support the runtime-cost requirement for the tested client-si
 workloads. The next planned deliverable is the incremental migration guide,
 followed by a final acceptance review. These results do not mark the whole feature
 complete by themselves.
+
+## Verification
+
+- `meson compile -C buildRowDecode`: exit 0 in the documented optimized static
+  configuration with all three adapters enabled and LTO disabled.
+- `meson test -C buildRowDecode --print-errorlogs`: `Ok: 4`, `Fail: 0`; both SQL/probe
+  checks and both new native-result decoding verification checks passed.
+- `python3 benchmarks/run_row_decode_benchmark.py --build-root buildRowDecode --output benchmarks/results/row-decoding-2026-11-06`:
+  completed three processes, retaining 6,804 positive timings and 108 allocation
+  records. All 54 summaries had exact C++ allocation-call/requested-byte parity.
+- `just test`: `Ok: 6`, `Fail: 0`, including PostgreSQL, SQLite, MySQL and compile checks.
+- `just format-check`: exit 0.
+- `just lint` and `meson compile -C buildRowDecode clang-tidy`: both exited 0,
+  with warnings.
+- Final measured-source hashes match `metadata.json`; document links resolve.
