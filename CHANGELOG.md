@@ -1,0 +1,50 @@
+# Changelog
+
+All notable changes to AsterORM will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- C++23 entity mapping for plain structs, including composite primary keys,
+  generated values, optimistic locking, and explicit relationship loading.
+- Repository CRUD, bulk inserts and upserts, and raw SQL entity, scalar, and
+  custom projection mapping.
+- Connection pooling with exclusive leases, acquisition timeouts, statistics,
+  explicit shutdown, and configurable prepared-statement caches.
+- Scoped transactions, savepoints, transaction retries, and schema migration
+  apply and rollback helpers for PostgreSQL and SQLite.
+- PostgreSQL support through libpq, including structured SQLSTATE errors,
+  scalar and array codecs, JSONB, UUID, bytea, temporal and numeric types, and
+  raw or structured COPY input and output.
+- SQLite support for file, URI, and in-memory databases, with native parameter
+  binding, foreign keys, a busy timeout, and transaction mode selection.
+- Optional MySQL support with native prepared statements, generated-key refresh,
+  transactions, and system or bundled client dependencies.
+- An experimental ClickHouse adapter, disabled by default.
+- A parameterized SQL AST and dialect-aware compiler, plus a typed query DSL
+  with checked columns, projections, filters, aggregates, grouping, and HAVING.
+- Meson builds, installable libraries and headers, pkg-config metadata, CMake
+  package configuration, examples, and CI build and test workflows.
+
+### Changed
+
+- Organized backend implementations under `src/database`.
+- Added typed query parameters and shared entity hydration across backends.
+- Made repository writes and schema migrations aware of backend capabilities.
+
+### Fixed
+
+- Prevented stale transaction guards and failed transactions from committing.
+- Corrected SQLite parameter binding and statement execution handling.
+- Ensured pending connection acquisitions fail when the pool closes.
+- Discarded PostgreSQL connections after COPY protocol failures.
+- Checked affected rows when updating or deleting entities.
+- Refreshed the schema migration version after rollback.
+- Corrected clang-tidy source selection for relative compilation commands.
+
+### Security
+
+- Quoted SQL identifiers and validated entity columns used for ordering.
+- Hardened ClickHouse parameter interpolation against control bytes and
+  malformed values.
