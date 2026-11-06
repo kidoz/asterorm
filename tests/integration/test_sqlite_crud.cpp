@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "asterorm/migration.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
@@ -17,6 +19,17 @@ struct sqlite_user {
     std::optional<std::string> deleted_at;
 };
 
+struct sqlite_lenient_row {
+    std::optional<int> id;
+    int omitted;
+};
+
+struct sqlite_locked_user {
+    std::optional<int> id;
+    std::string name;
+    int version{0};
+};
+
 } // namespace
 
 template <> struct asterorm::entity_traits<sqlite_user> {
@@ -29,6 +42,23 @@ template <> struct asterorm::entity_traits<sqlite_user> {
                         asterorm::column<&sqlite_user::name>("name"),
                         asterorm::column<&sqlite_user::active>("active"),
                         asterorm::column<&sqlite_user::deleted_at>("deleted_at"));
+};
+
+template <> struct asterorm::entity_traits<sqlite_lenient_row> {
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&sqlite_lenient_row::id>("id"),
+                        asterorm::column<&sqlite_lenient_row::omitted>("omitted"));
+};
+
+template <> struct asterorm::entity_traits<sqlite_locked_user> {
+    static constexpr const char* table = "asterorm_locked_users";
+    static constexpr auto primary_key = asterorm::pk<&sqlite_locked_user::id>("id");
+    static constexpr auto version_column =
+        asterorm::version<&sqlite_locked_user::version>("version");
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&sqlite_locked_user::id>("id", asterorm::generated::by_default),
+        asterorm::column<&sqlite_locked_user::name>("name"),
+        asterorm::column<&sqlite_locked_user::version>("version"));
 };
 
 namespace {
@@ -55,6 +85,11 @@ void create_schema(asterorm::connection_pool<asterorm::sqlite::driver>& pool) {
                          "name TEXT NOT NULL, "
                          "active INTEGER NOT NULL, "
                          "deleted_at TEXT)")
+                .has_value());
+    REQUIRE(conn.execute("CREATE TABLE asterorm_locked_users ("
+                         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                         "name TEXT NOT NULL, "
+                         "version INTEGER NOT NULL DEFAULT 0)")
                 .has_value());
 }
 
@@ -293,6 +328,166 @@ TEST_CASE("SQLite Integration: bind rejects extra parameters", "[sqlite][bind]")
         "SELECT $1", {std::optional<std::string>{"a"}, std::optional<std::string>{"b"}});
     REQUIRE_FALSE(res.has_value());
     REQUIRE(res.error().message.find("placeholders") != std::string::npos);
+}
+
+TEST_CASE("SQLite Integration: bind validates counts and preserves text", "[sqlite][bind]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    create_schema(pool);
+    asterorm::session<decltype(pool)> db{pool};
+
+    auto missing = db.with_connection(
+        [](auto& conn) { return conn.execute_prepared("SELECT COALESCE($1, -99)", {}); });
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().message.find("placeholders") != std::string::npos);
+
+    auto text = db.native_scalar<std::string>("SELECT $1", std::string{"t"});
+    REQUIRE(text.has_value());
+    REQUIRE(text->has_value());
+    REQUIRE(**text == "t");
+
+    asterorm::repository repo{db};
+    sqlite_user user{.email = "t", .name = "f"};
+    REQUIRE(repo.insert(user).has_value());
+    auto loaded = repo.find<sqlite_user>(*user.id);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->email == "t");
+    REQUIRE(loaded->name == "f");
+
+    auto invalid_date = db.native_scalar<int>("SELECT $1 IS NULL", asterorm::date{2026, 2, 30});
+    REQUIRE_FALSE(invalid_date.has_value());
+    REQUIRE(invalid_date.error().kind == asterorm::db_error_kind::parse_failed);
+}
+
+TEST_CASE("SQLite Integration: rejects trailing SQL statements", "[sqlite][bind]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+
+    asterorm::session<decltype(pool)> db{pool};
+    auto result = db.with_connection([](auto& conn) {
+        return conn.execute("CREATE TABLE first_table (id INTEGER); "
+                            "CREATE TABLE second_table (id INTEGER)");
+    });
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().message.find("trailing SQL") != std::string::npos);
+
+    auto line_comment = db.with_connection(
+        [](auto& conn) { return conn.execute("SELECT 1; -- valid trailing comment"); });
+    REQUIRE(line_comment.has_value());
+    REQUIRE(line_comment->rows() == 1);
+
+    auto block_comment = db.with_connection(
+        [](auto& conn) { return conn.execute("SELECT 1; /* valid trailing comment */"); });
+    REQUIRE(block_comment.has_value());
+    REQUIRE(block_comment->rows() == 1);
+
+    auto statement_after_comment = db.with_connection(
+        [](auto& conn) { return conn.execute("SELECT 1; -- comment\nSELECT 2"); });
+    REQUIRE_FALSE(statement_after_comment.has_value());
+    REQUIRE(statement_after_comment.error().message.find("trailing SQL") != std::string::npos);
+}
+
+TEST_CASE("SQLite Integration: bulk writes support generated identifiers", "[sqlite][crud]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    create_schema(pool);
+    asterorm::session<decltype(pool)> db{pool};
+    asterorm::repository repo{db};
+
+    SECTION("Bulk insert") {
+        const std::vector<sqlite_user> rows{
+            {.email = "bulk-a@x", .name = "Bulk A"},
+            {.email = "bulk-b@x", .name = "Bulk B"},
+        };
+        auto inserted = repo.insert_many(rows);
+        REQUIRE(inserted.has_value());
+        REQUIRE(*inserted == 2);
+        auto count = db.native_scalar<int>("SELECT COUNT(*) FROM asterorm_users");
+        REQUIRE(count.has_value());
+        REQUIRE(**count == 2);
+    }
+
+    SECTION("Bulk upsert") {
+        std::vector<sqlite_user> rows{
+            {.email = "bulk-a@x", .name = "Bulk A"},
+            {.email = "bulk-b@x", .name = "Bulk B"},
+        };
+        auto upserted = repo.upsert_many(rows);
+        REQUIRE(upserted.has_value());
+        REQUIRE(*upserted == 2);
+        REQUIRE(rows[0].id.has_value());
+        REQUIRE(rows[1].id.has_value());
+    }
+}
+
+TEST_CASE("SQLite Integration: all versioned writes check optimistic locks", "[sqlite][crud]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    create_schema(pool);
+    asterorm::session<decltype(pool)> db{pool};
+    asterorm::repository repo{db};
+
+    sqlite_locked_user current{.name = "Initial"};
+    REQUIRE(repo.insert(current).has_value());
+    auto stale = repo.find<sqlite_locked_user>(*current.id).value();
+
+    const auto& const_current = current;
+    REQUIRE(repo.update(const_current).has_value());
+    current = repo.find<sqlite_locked_user>(*current.id).value();
+    REQUIRE(current.version == 1);
+
+    current.name = "Mutable";
+    REQUIRE(repo.update(current).has_value());
+    REQUIRE(current.version == 2);
+
+    stale.name = "Stale patch";
+    auto patched = repo.patch(stale, {"name"});
+    REQUIRE_FALSE(patched.has_value());
+    REQUIRE(patched.error().kind == asterorm::db_error_kind::stale_write);
+
+    const auto& const_stale = stale;
+    auto updated = repo.update(const_stale);
+    REQUIRE_FALSE(updated.has_value());
+    REQUIRE(updated.error().kind == asterorm::db_error_kind::stale_write);
+
+    auto reloaded = repo.find<sqlite_locked_user>(*current.id);
+    REQUIRE(reloaded.has_value());
+    REQUIRE(reloaded->name == "Mutable");
+    REQUIRE(reloaded->version == 2);
+}
+
+TEST_CASE("SQLite Integration: lenient hydration value-initializes omitted fields", "[sqlite]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    create_schema(pool);
+    asterorm::session<decltype(pool)> db{pool};
+    asterorm::repository repo{db};
+    sqlite_user user{.email = "lenient@x", .name = "Lenient"};
+    REQUIRE(repo.insert(user).has_value());
+
+    auto rows = db.native_as<sqlite_lenient_row>(asterorm::native_hydration::lenient,
+                                                 "SELECT id FROM asterorm_users");
+    REQUIRE(rows.has_value());
+    REQUIRE(rows->size() == 1);
+    REQUIRE(rows->front().omitted == 0);
+}
+
+TEST_CASE("SQLite Integration: migrations use SQLite-compatible defaults", "[sqlite][migration]") {
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                             make_memory_cfg()};
+    asterorm::session<decltype(pool)> db{pool};
+    asterorm::schema_migrator migrator{db};
+    const std::vector<asterorm::migration> migrations{
+        {.version = 1,
+         .name = "create items",
+         .up_sql = "CREATE TABLE migration_items (id INTEGER PRIMARY KEY)",
+         .down_sql = "DROP TABLE migration_items"},
+    };
+
+    auto applied = migrator.apply(migrations);
+    REQUIRE(applied.has_value());
+    REQUIRE(applied->current_version == 1);
+    REQUIRE(applied->applied_count == 1);
 }
 
 TEST_CASE("SQLite Integration: bounded prepared statement cache evicts LRU", "[sqlite][cache]") {
