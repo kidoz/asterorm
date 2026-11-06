@@ -472,6 +472,7 @@ template <typename Entity> select_ast make_entity_select_ast() {
     using traits = entity_traits<Entity>;
     select_ast initial_ast;
     initial_ast.table = traits::table;
+    initial_ast.columns.reserve(std::tuple_size_v<std::decay_t<decltype(traits::columns)>>);
 
     auto append_columns = [&]<std::size_t... Indices>(std::index_sequence<Indices...>) {
         (initial_ast.columns.emplace_back(std::get<Indices>(traits::columns).name), ...);
@@ -484,6 +485,7 @@ template <typename Entity> select_ast make_entity_select_ast() {
 template <typename Entity, typename... Items> select_ast make_projection_select_ast() {
     select_ast initial_ast;
     initial_ast.table = entity_traits<Entity>::table;
+    initial_ast.items.reserve(sizeof...(Items));
     (initial_ast.items.emplace_back(Items::to_select_item()), ...);
     return initial_ast;
 }
