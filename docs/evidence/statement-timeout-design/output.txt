@@ -1,0 +1,153 @@
+ server_version 
+----------------
+ 16.14
+(1 row)
+
+ unit | min_val |  max_val   | context 
+------+---------+------------+---------
+ ms   | 0       | 2147483647 | user
+(1 row)
+
+ set_config 
+------------
+ 500ms
+(1 row)
+
+SET
+DO
+PASS autocommit_local_has_no_effect
+BEGIN
+ set_config 
+------------
+ 200ms
+(1 row)
+
+ set_config 
+------------
+ 100ms
+(1 row)
+
+ set_config 
+------------
+ 200ms
+(1 row)
+
+DO
+ set_config 
+------------
+ 500ms
+(1 row)
+
+COMMIT
+DO
+PASS nested_local_restore
+BEGIN
+ set_config 
+------------
+ 350ms
+(1 row)
+
+ROLLBACK
+DO
+BEGIN
+ set_config 
+------------
+ 350ms
+(1 row)
+
+ set_config 
+------------
+ 100ms
+(1 row)
+
+COMMIT
+DO
+ set_config 
+------------
+ 500ms
+(1 row)
+
+PASS session_set_is_transactional_and_local_does_not_replace_it
+BEGIN
+ set_config 
+------------
+ 200ms
+(1 row)
+
+SAVEPOINT
+ set_config 
+------------
+ 100ms
+(1 row)
+
+ROLLBACK
+DO
+ROLLBACK
+PASS earlier_savepoint_undoes_local_override
+BEGIN
+ set_config 
+------------
+ 200ms
+(1 row)
+
+ set_config 
+------------
+ 100ms
+(1 row)
+
+SAVEPOINT
+ set_config 
+------------
+ 200ms
+(1 row)
+
+ROLLBACK
+DO
+ROLLBACK
+PASS later_savepoint_can_resurrect_inner_override
+BEGIN
+ set_config 
+------------
+ 100ms
+(1 row)
+
+COMMIT
+DO
+BEGIN
+ set_config 
+------------
+ 100ms
+(1 row)
+
+ROLLBACK
+DO
+PASS transaction_completion_restores_session_value
+BEGIN
+ set_config 
+------------
+ 40ms
+(1 row)
+
+ROLLBACK
+PASS cancellation_and_failed_transaction_restore
+cancellation_state 57014 restoration_state 25P02
+DO
+ set_config 
+------------
+ 0
+(1 row)
+
+  set_config  
+--------------
+ 2147483647ms
+(1 row)
+
+DO
+PASS zero_maximum_and_invalid_bounds
+negative_state 22023 overflow_state 22023
+ set_config 
+------------
+ 0
+(1 row)
+
+PASS original_session_value_restored

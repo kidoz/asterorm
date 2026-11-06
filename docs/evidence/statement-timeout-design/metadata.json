@@ -1,0 +1,20 @@
+{
+  "captured_utc": "2026-11-06T23:46:05.694563+00:00",
+  "purpose": "Native semantics for timeout design; future API acceptance is pending",
+  "git_commit": "405d26ee39c49774548bb9e29a27b0ac31ead51b",
+  "connection_configuration": "ASTERORM_TEST_CONNINFO or compose defaults; value not captured",
+  "command": [
+    "/opt/homebrew/opt/libpq/bin/psql",
+    "--no-psqlrc",
+    "--set=ON_ERROR_STOP=1",
+    "--file=/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql",
+    "--dbname=<configured connection>"
+  ],
+  "exit_code": 0,
+  "sha256": {
+    "probe.sql": "1744c371a30586620bc2a4ec0f5e177a2cb853050130fcd787596931cafb733a",
+    "capture.py": "df9502d1a6943f9f6e588e63f46e405bf7fff5ee8f7771aab1af18542308ffb2",
+    "output.txt": "9fa0fb0affb014e412b69de6e4e2375c57450ee3803e4286314cbc6b092e4e54",
+    "stderr.txt": "1da6f0d9f7a26b9818ee463fe62dfd40d8d1e1b69e1b3ff04de46ad341a687fb"
+  }
+}

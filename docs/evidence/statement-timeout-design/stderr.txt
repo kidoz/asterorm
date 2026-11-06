@@ -1,0 +1,6 @@
+psql:/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql:9: WARNING:  SET LOCAL can only be used in transaction blocks
+psql:/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql:85: ERROR:  canceling statement due to statement timeout
+psql:/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql:87: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql:108: ERROR:  -1 ms is outside the valid range for parameter "statement_timeout" (0 .. 2147483647)
+psql:/Users/apavlov/Projects/AsterORM/docs/evidence/statement-timeout-design/probe.sql:110: ERROR:  invalid value for parameter "statement_timeout": "2147483648ms"
+HINT:  Value exceeds integer range.
