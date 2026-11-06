@@ -220,3 +220,103 @@ just check
 ## License
 
 Distributed under the MIT License.
+
+## MySQL
+
+The optional MySQL adapter targets **MySQL 8.0.19 or newer** and uses the MySQL
+client C API with native server prepared statements. Enable it explicitly:
+
+```bash
+# Debian/Ubuntu: sudo apt install default-libmysqlclient-dev
+# macOS: brew install mysql-client
+meson setup buildDir --reconfigure -Dmysql=enabled
+meson compile -C buildDir
+just test-mysql
+```
+
+Meson first looks for a system `mysqlclient` through pkg-config or Homebrew.
+If it is unavailable, Meson downloads and builds the pinned MariaDB Connector/C
+3.4.11 wrap, which provides the MySQL C API. The bundled build needs CMake,
+OpenSSL development files and zlib development files; it includes the MySQL
+`caching_sha2_password` and `sha256_password` authentication plugins directly.
+On Debian/Ubuntu install `cmake libssl-dev zlib1g-dev`; on macOS install
+`cmake openssl@3` with Homebrew.
+
+To select the bundled client even when a system client is installed:
+
+```bash
+meson setup buildDir --reconfigure -Dmysql=enabled --force-fallback-for=mysqlclient
+```
+
+`--wrap-mode=nofallback` requires a system client. `-Dmysql=auto` allows dependency
+resolution (including the wrap); `-Dmysql=disabled` skips client discovery and
+downloads. The Meson dependency is `asterorm_mysql_dep`; installed CMake consumers
+link `AsterORM::mysql`. Installation includes the bundled client's matching
+headers, shared library, license, and `asterorm_mysqlclient.pc` when selected.
+Add the installation's pkg-config directory to `PKG_CONFIG_PATH` when using a
+custom prefix. For a system Homebrew mysql-client, use its `lib/pkgconfig` path.
+
+MariaDB Connector/C can connect to MySQL servers; choosing it does not require a
+MariaDB server or change the `asterorm::mysql::driver` API. Percona Server for
+MySQL is expected to work through the same protocol, but is not covered by the
+current integration tests. Backend implementations live under
+`src/database/{postgres,sqlite,mysql,clickhouse}`; public include paths are unchanged.
+
+```cpp
+#include <asterorm/mysql/driver.hpp>
+#include <asterorm/repository.hpp>
+
+asterorm::pool_config cfg{
+    .conninfo = "host=127.0.0.1 port=3306 dbname=app user=app password='with spaces'"};
+asterorm::connection_pool<asterorm::mysql::driver> pool{asterorm::mysql::driver{}, cfg};
+asterorm::session db{pool};
+asterorm::repository repo{db};
+```
+
+Connection options are whitespace-separated `key=value` pairs: `host`, `port`,
+`user`, `password`, `dbname`, `unix_socket`, and `connect_timeout` (seconds,
+5 by default). Values may be quoted with single or double quotes; backslash
+escapes the next character. Unknown, duplicate, malformed, or invalid numeric
+options fail before connecting. The client library's default TLS policy applies.
+
+The same repository and typed SELECT APIs work with MySQL. The SQL compiler
+emits backtick-quoted identifiers and `?` parameters. Native parameterized SQL
+also accepts `$1`, `$2`, including repeated and reordered placeholders. Values
+are bound through the C API; they are never interpolated into SQL. Each call
+accepts one statement. SQLSTATE and native error numbers are preserved in errors.
+
+MySQL differences:
+
+- `insert()` refreshes a generated integral primary key and server defaults.
+  Mutable `update()` refreshes the row, including optimistic-lock versions.
+  These operations use a write followed by a primary-key SELECT on the same
+  leased connection, scoped by a transaction or a savepoint inside an existing
+  transaction. Use InnoDB tables for rollback and locking guarantees.
+- Generated-key refresh supports one integral generated primary key. Composite
+  keys must be supplied explicitly. Bulk `insert_many()` is one multi-row
+  statement and leaves generated keys unset, as on the other backends.
+- `upsert()` requires explicit primary keys and uses MySQL's `ON DUPLICATE KEY
+  UPDATE`. Any unique index can trigger MySQL's duplicate handling. If the result
+  cannot be found by the supplied key, the operation fails and rolls back its
+  savepoint/transaction. `upsert_many()` with entity refresh is unsupported and
+  fails before writing; use individual upserts in an explicit transaction.
+- The compiler rejects `RETURNING`, targeted `ON CONFLICT`, and `FULL JOIN`.
+  PostgreSQL-specific COPY, arrays, and other vendor-specific types have no MySQL
+  mapping. Scalar text/numeric values, booleans, NULL, enums and compatible
+  date/time values use the shared codecs. The `bytea` codec is PostgreSQL-specific;
+  native string parameters/results preserve embedded NUL bytes when needed.
+- Isolation levels, read-only transactions, commit, rollback, and savepoints are
+  supported. `DEFERRABLE` is rejected. `CLIENT_FOUND_ROWS` gives ordinary UPDATE
+  operations matched-row semantics, including unchanged rows.
+- The generic `schema_migrator` is rejected before creating its history table:
+  MySQL DDL implicitly commits, so its atomic migration contract cannot be met.
+  Apply MySQL schema SQL through `connection::execute()` with explicit tracking.
+- Connections use `utf8mb4` and add `ANSI_QUOTES` and `NO_BACKSLASH_ESCAPES` to
+  their session SQL mode. Keep those modes enabled; use single quotes and doubled
+  single quotes in native SQL literals. Parameter values need no SQL escaping.
+
+`just mysql-up` starts the opt-in Compose service on port 3307. Integration tests
+use `ASTERORM_MYSQL_TEST_CONNINFO` or the local Compose defaults and fail if the
+server is unavailable. When the adapter is enabled, start this service before
+running the full `just test` or `just test-all` suite. CI exercises MySQL 8.4
+alongside PostgreSQL and SQLite.
