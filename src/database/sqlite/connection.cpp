@@ -1,6 +1,6 @@
 #include "asterorm/sqlite/connection.hpp"
 
-#include <algorithm>
+#include <cctype>
 #include <utility>
 
 #include "asterorm/core/error.hpp"
@@ -45,38 +45,83 @@ db_error make_error_msg(db_error_kind kind, std::string message) {
     return err;
 }
 
-// Shared codecs encode bool as "t"/"f" (PostgreSQL text format). SQLite's
-// numeric affinity won't coerce those, so a row stored with active = 1 won't
-// match WHERE active = $1 when $1 is bound as the text "t". Translate the two
-// reserved bool tokens to integer 1/0 at bind time so SQLite sees an INTEGER.
-//
-// Caveat: a caller passing the literal std::string "t" or "f" as a parameter
-// is indistinguishable here from an encoded bool. In practice CRUD never
-// produces single-character "t"/"f" strings for non-bool values; if you need
-// to pass that exact text against a TEXT column, use a longer encoding.
-int bind_text_or_null(sqlite3_stmt* stmt, int idx, const std::optional<std::string>& value) {
-    if (!value) {
+bool has_executable_trailing_sql(std::string_view trailing_sql) {
+    std::size_t position = 0;
+    while (position < trailing_sql.size()) {
+        if (std::isspace(static_cast<unsigned char>(trailing_sql[position])) != 0) {
+            ++position;
+            continue;
+        }
+        if (trailing_sql.substr(position, 2) == "--") {
+            const auto line_end = trailing_sql.find_first_of("\r\n", position + 2);
+            if (line_end == std::string_view::npos)
+                return false;
+            position = line_end + 1;
+            continue;
+        }
+        if (trailing_sql.substr(position, 2) == "/*") {
+            const auto comment_end = trailing_sql.find("*/", position + 2);
+            if (comment_end == std::string_view::npos)
+                return true;
+            position = comment_end + 2;
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+asterorm::result<void> prepare_single_statement(sqlite3* db, std::string_view sql,
+                                                sqlite3_stmt*& stmt) {
+    const char* tail = nullptr;
+    const int rc = sqlite3_prepare_v2(db, sql.data(), static_cast<int>(sql.size()), &stmt, &tail);
+    if (rc != SQLITE_OK) {
+        if (stmt) {
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+        }
+        return std::unexpected(make_error(db, rc));
+    }
+    if (!stmt) {
+        return std::unexpected(
+            make_error_msg(db_error_kind::query_failed, "SQLite SQL contains no statement"));
+    }
+
+    const auto* sql_end = sql.data() + sql.size();
+    const std::string_view trailing_sql{tail, static_cast<std::size_t>(sql_end - tail)};
+    if (has_executable_trailing_sql(trailing_sql)) {
+        sqlite3_finalize(stmt);
+        stmt = nullptr;
+        return std::unexpected(make_error_msg(
+            db_error_kind::query_failed,
+            "SQLite execute accepts exactly one SQL statement; trailing SQL was rejected"));
+    }
+    return {};
+}
+
+int bind_text_or_null(sqlite3_stmt* stmt, int idx, const query_parameter& parameter) {
+    if (!parameter.value) {
         return sqlite3_bind_null(stmt, idx);
     }
-    if (value->size() == 1) {
-        if ((*value)[0] == 't') {
+    if (parameter.type == parameter_type::boolean && parameter.value->size() == 1) {
+        if ((*parameter.value)[0] == 't') {
             return sqlite3_bind_int(stmt, idx, 1);
         }
-        if ((*value)[0] == 'f') {
+        if ((*parameter.value)[0] == 'f') {
             return sqlite3_bind_int(stmt, idx, 0);
         }
     }
-    return sqlite3_bind_text(stmt, idx, value->data(), static_cast<int>(value->size()),
-                             SQLITE_TRANSIENT);
+    return sqlite3_bind_text(stmt, idx, parameter.value->data(),
+                             static_cast<int>(parameter.value->size()), SQLITE_TRANSIENT);
 }
 
 // Bind params using positional or named placeholders. Repository SQL emits
 // "$1, $2, ..."; SQLite treats those as named parameters so we look each one
 // up by name and fall back to positional binding for unnamed "?" placeholders.
 asterorm::result<void> bind_params(sqlite3* db, sqlite3_stmt* stmt,
-                                   const std::vector<std::optional<std::string>>& params) {
+                                   const query_parameters& params) {
     const int total_params = sqlite3_bind_parameter_count(stmt);
-    if (params.size() > static_cast<std::size_t>(total_params)) {
+    if (params.size() != static_cast<std::size_t>(total_params)) {
         return std::unexpected(make_error_msg(db_error_kind::query_failed,
                                               "SQLite bind: " + std::to_string(params.size()) +
                                                   " parameters supplied for statement with " +
@@ -84,6 +129,8 @@ asterorm::result<void> bind_params(sqlite3* db, sqlite3_stmt* stmt,
     }
 
     for (size_t i = 0; i < params.size(); ++i) {
+        if (params[i].error)
+            return std::unexpected(*params[i].error);
         const std::string name = "$" + std::to_string(i + 1);
         int idx = sqlite3_bind_parameter_index(stmt, name.c_str());
         if (idx == 0) {
@@ -219,18 +266,12 @@ asterorm::result<sqlite::result> connection::execute(std::string_view sql) {
     return execute_params(sql, {});
 }
 
-asterorm::result<sqlite::result>
-connection::execute_params(std::string_view sql,
-                           const std::vector<std::optional<std::string>>& params) {
+asterorm::result<sqlite::result> connection::execute_params(std::string_view sql,
+                                                            const query_parameters& params) {
     sqlite3_stmt* stmt = nullptr;
-    const int rc =
-        sqlite3_prepare_v2(db_, sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        if (stmt) {
-            sqlite3_finalize(stmt);
-        }
-        return std::unexpected(make_error(db_, rc));
-    }
+    auto prepared = prepare_single_statement(db_, sql, stmt);
+    if (!prepared)
+        return std::unexpected(prepared.error());
 
     auto bind_res = bind_params(db_, stmt, params);
     if (!bind_res) {
@@ -243,9 +284,8 @@ connection::execute_params(std::string_view sql,
     return out;
 }
 
-asterorm::result<sqlite::result>
-connection::execute_prepared(std::string_view sql,
-                             const std::vector<std::optional<std::string>>& params) {
+asterorm::result<sqlite::result> connection::execute_prepared(std::string_view sql,
+                                                              const query_parameters& params) {
     if (max_prepared_statements_ == 0) {
         return execute_params(sql, params);
     }
@@ -258,14 +298,9 @@ connection::execute_prepared(std::string_view sql,
         while (prepared_statements_.size() >= max_prepared_statements_) {
             evict_one_prepared_statement();
         }
-        const int rc = sqlite3_prepare_v2(db_, sql_str.c_str(), static_cast<int>(sql_str.size()),
-                                          &stmt, nullptr);
-        if (rc != SQLITE_OK) {
-            if (stmt) {
-                sqlite3_finalize(stmt);
-            }
-            return std::unexpected(make_error(db_, rc));
-        }
+        auto prepared = prepare_single_statement(db_, sql_str, stmt);
+        if (!prepared)
+            return std::unexpected(prepared.error());
         prepared_statements_.emplace(sql_str, stmt);
         prepared_statement_order_.push_back(sql_str);
     } else {

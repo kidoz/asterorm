@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/sqlite/result.hpp"
 
@@ -35,10 +36,10 @@ class connection {
     explicit connection(sqlite3* db);
 
     asterorm::result<sqlite::result> execute(std::string_view sql);
-    asterorm::result<sqlite::result>
-    execute_params(std::string_view sql, const std::vector<std::optional<std::string>>& params);
-    asterorm::result<sqlite::result>
-    execute_prepared(std::string_view sql, const std::vector<std::optional<std::string>>& params);
+    asterorm::result<sqlite::result> execute_params(std::string_view sql,
+                                                    const query_parameters& params);
+    asterorm::result<sqlite::result> execute_prepared(std::string_view sql,
+                                                      const query_parameters& params);
 
     // Bounded LRU prepared-statement cache. The connection_pool calls this
     // with pool_config::prepared_statement_cache_size on construction.
