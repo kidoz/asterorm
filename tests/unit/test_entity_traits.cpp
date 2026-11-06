@@ -191,7 +191,8 @@ TEST_CASE("Repository: batch insert omits unset generated values", "[core][crud]
     auto inserted = repo.insert_many(rows);
     REQUIRE(inserted.has_value());
     REQUIRE(*inserted == 2);
-    REQUIRE(session.conn.sql == "INSERT INTO users (name, active) VALUES ($1, $2), ($3, $4)");
+    REQUIRE(session.conn.sql ==
+            R"(INSERT INTO "users" ("name", "active") VALUES ($1, $2), ($3, $4))");
     REQUIRE(session.conn.params.size() == 4);
     REQUIRE(session.conn.params[0] == "generated");
     REQUIRE(session.conn.params[1] == "t");
@@ -351,4 +352,27 @@ TEST_CASE("Repository: relationship loading uses explicit follow-up selects",
         REQUIRE(session.conn.params.size() == 1);
         REQUIRE(session.conn.params[0] == "7");
     }
+}
+
+struct hostile_row {
+    int id{1};
+    std::string name;
+};
+
+template <> struct asterorm::entity_traits<hostile_row> {
+    static constexpr const char* table = "users; DROP TABLE accounts";
+    static constexpr auto primary_key = asterorm::pk<&hostile_row::id>("id");
+    static constexpr auto columns = std::make_tuple(asterorm::column<&hostile_row::id>("id"),
+                                                    asterorm::column<&hostile_row::name>("na\"me"));
+};
+
+TEST_CASE("Repository quotes identifiers before splicing them into SQL", "[core][crud]") {
+    fake_repository_session session;
+    asterorm::repository repo{session};
+    hostile_row row{.id = 1, .name = "Ada"};
+
+    auto inserted = repo.insert(row);
+    REQUIRE(inserted.has_value());
+    REQUIRE(session.conn.sql == "INSERT INTO \"users; DROP TABLE accounts\" (\"id\", \"na\"\"me\") "
+                                "VALUES ($1, $2) RETURNING \"id\", \"na\"\"me\"");
 }

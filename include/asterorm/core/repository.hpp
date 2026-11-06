@@ -339,50 +339,94 @@ asterorm::result<Projection> decode_projection(const Result& query_result, int r
     }
 }
 
-inline void append_csv(std::string& sql, const std::vector<std::string>& names) {
+// Accumulates one statement and quotes every identifier through sql::compiler.
+// After the first quoting failure, later appends are ignored. Call finish()
+// before executing the text.
+class quoted_sql {
+  public:
+    explicit quoted_sql(sql::dialect dialect) : dialect_(dialect) {}
+
+    quoted_sql& raw(std::string_view text) {
+        if (!error_)
+            sql_ += text;
+        return *this;
+    }
+
+    quoted_sql& ident(std::string_view name) {
+        append(name, false);
+        return *this;
+    }
+
+    quoted_sql& qualified(std::string_view name) {
+        append(name, true);
+        return *this;
+    }
+
+    [[nodiscard]] asterorm::result<std::string> finish() {
+        if (error_)
+            return std::unexpected(*error_);
+        return std::move(sql_);
+    }
+
+  private:
+    void append(std::string_view name, bool qualified) {
+        if (error_)
+            return;
+        sql::compiler compiler{dialect_};
+        auto quoted = qualified ? compiler.quote_qualified_ident(name) : compiler.quote_ident(name);
+        if (!quoted)
+            error_ = quoted.error();
+        else
+            sql_ += *quoted;
+    }
+
+    sql::dialect dialect_;
+    std::string sql_;
+    std::optional<db_error> error_;
+};
+
+inline void append_csv(quoted_sql& sql, const std::vector<std::string>& names) {
     for (std::size_t i = 0; i < names.size(); ++i) {
-        sql += names[i];
-        if (i + 1 < names.size())
-            sql += ", ";
+        if (i != 0)
+            sql.raw(", ");
+        sql.ident(names[i]);
     }
 }
 
-template <typename T> void append_primary_key_csv(std::string& sql) {
+template <typename T> void append_primary_key_csv(quoted_sql& sql) {
     append_csv(sql, primary_key_names<T>());
 }
 
 template <typename T>
-void append_entity_pk_predicate(std::string& sql, query_parameters& params, const T& entity,
+void append_entity_pk_predicate(quoted_sql& sql, query_parameters& params, const T& entity,
                                 std::size_t& param_idx) {
     bool first = true;
     for_each_pk(entity_traits<T>::primary_key, [&](const auto& pk) {
         if (!first)
-            sql += " AND ";
+            sql.raw(" AND ");
         first = false;
-        sql += pk.name;
-        sql += " = $" + std::to_string(param_idx++);
+        sql.ident(pk.name).raw(" = $" + std::to_string(param_idx++));
         params.push_back(asterorm::encode_parameter(entity.*(pk.member_ptr)));
     });
 }
 
 template <typename T, typename Key, std::size_t... Is>
-void append_tuple_key_predicate(std::string& sql, query_parameters& params, const Key& key,
+void append_tuple_key_predicate(quoted_sql& sql, query_parameters& params, const Key& key,
                                 std::size_t& param_idx, std::index_sequence<Is...>) {
     constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
     bool first = true;
     (..., [&]() {
         if (!first)
-            sql += " AND ";
+            sql.raw(" AND ");
         first = false;
         const auto& primary_key_part = std::get<Is>(primary_key_metadata);
-        sql += primary_key_part.name;
-        sql += " = $" + std::to_string(param_idx++);
+        sql.ident(primary_key_part.name).raw(" = $" + std::to_string(param_idx++));
         params.push_back(asterorm::encode_parameter(std::get<Is>(key)));
     }());
 }
 
 template <typename T, typename Key>
-void append_key_predicate(std::string& sql, query_parameters& params, const Key& key,
+void append_key_predicate(quoted_sql& sql, query_parameters& params, const Key& key,
                           std::size_t& param_idx) {
     constexpr auto primary_key_metadata = entity_traits<T>::primary_key;
     if constexpr (is_tuple_like_v<decltype(primary_key_metadata)>) {
@@ -396,14 +440,13 @@ void append_key_predicate(std::string& sql, query_parameters& params, const Key&
             std::make_index_sequence<
                 std::tuple_size_v<std::decay_t<decltype(primary_key_metadata)>>>{});
     } else {
-        sql += primary_key_metadata.name;
-        sql += " = $" + std::to_string(param_idx++);
+        sql.ident(primary_key_metadata.name).raw(" = $" + std::to_string(param_idx++));
         params.push_back(asterorm::encode_parameter(key));
     }
 }
 
-template <typename T> void append_returning_all(std::string& sql) {
-    sql += " RETURNING ";
+template <typename T> void append_returning_all(quoted_sql& sql) {
+    sql.raw(" RETURNING ");
     append_csv(sql, column_names<T>());
 }
 
@@ -422,13 +465,13 @@ inline db_error stale_write_error() {
 }
 
 template <typename T>
-sql::compiled_query build_versioned_update(const T& entity, bool include_returning) {
+asterorm::result<sql::compiled_query>
+build_versioned_update(const T& entity, bool include_returning, sql::dialect dialect) {
     using traits = entity_traits<T>;
     constexpr auto version_col = traits::version_column;
     sql::compiled_query compiled;
-    compiled.sql = "UPDATE ";
-    compiled.sql += traits::table;
-    compiled.sql += " SET ";
+    quoted_sql statement{dialect};
+    statement.raw("UPDATE ").qualified(traits::table).raw(" SET ");
 
     bool first = true;
     std::size_t param_idx = 1;
@@ -440,9 +483,8 @@ sql::compiled_query build_versioned_update(const T& entity, bool include_returni
                 return;
             }
             if (!first)
-                compiled.sql += ", ";
-            compiled.sql += col.name;
-            compiled.sql += " = $" + std::to_string(param_idx++);
+                statement.raw(", ");
+            statement.ident(col.name).raw(" = $" + std::to_string(param_idx++));
             compiled.params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
             first = false;
         }());
@@ -450,18 +492,17 @@ sql::compiled_query build_versioned_update(const T& entity, bool include_returni
     collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
     if (!first)
-        compiled.sql += ", ";
-    compiled.sql += version_col.name;
-    compiled.sql += " = ";
-    compiled.sql += version_col.name;
-    compiled.sql += " + 1 WHERE ";
-    detail::append_entity_pk_predicate(compiled.sql, compiled.params, entity, param_idx);
-    compiled.sql += " AND ";
-    compiled.sql += version_col.name;
-    compiled.sql += " = $" + std::to_string(param_idx);
+        statement.raw(", ");
+    statement.ident(version_col.name).raw(" = ").ident(version_col.name).raw(" + 1 WHERE ");
+    detail::append_entity_pk_predicate(statement, compiled.params, entity, param_idx);
+    statement.raw(" AND ").ident(version_col.name).raw(" = $" + std::to_string(param_idx));
     compiled.params.push_back(asterorm::encode_parameter(entity.*(version_col.member_ptr)));
     if (include_returning)
-        detail::append_returning_all<T>(compiled.sql);
+        detail::append_returning_all<T>(statement);
+    auto sql = statement.finish();
+    if (!sql)
+        return std::unexpected(sql.error());
+    compiled.sql = std::move(*sql);
     return compiled;
 }
 } // namespace detail
@@ -490,19 +531,14 @@ template <typename Session> class repository {
         query_parameters params;
         params.reserve(rows.size() * col_names.size());
 
-        std::string sql = "INSERT INTO ";
-        sql += traits::table;
-        sql += " (";
-        for (std::size_t i = 0; i < col_names.size(); ++i) {
-            sql += col_names[i];
-            if (i + 1 < col_names.size())
-                sql += ", ";
-        }
-        sql += ") VALUES ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("INSERT INTO ").qualified(traits::table).raw(" (");
+        detail::append_csv(statement, col_names);
+        statement.raw(") VALUES ");
 
         std::size_t param_idx = 1;
         for (std::size_t r = 0; r < rows.size(); ++r) {
-            sql += '(';
+            statement.raw("(");
             bool first_in_row = true;
             auto bind = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
@@ -510,21 +546,24 @@ template <typename Session> class repository {
                     if (!include_mask[Is])
                         return;
                     if (!first_in_row)
-                        sql += ", ";
+                        statement.raw(", ");
                     first_in_row = false;
                     const auto& val = rows[r].*(col.member_ptr);
-                    sql += "$" + std::to_string(param_idx++);
+                    statement.raw("$" + std::to_string(param_idx++));
                     params.push_back(asterorm::encode_parameter(val));
                 }());
             };
             bind(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
-            sql += ')';
+            statement.raw(")");
             if (r + 1 < rows.size())
-                sql += ", ";
+                statement.raw(", ");
         }
 
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
         if (!res)
             return std::unexpected(res.error());
         return static_cast<std::size_t>(res->affected_rows());
@@ -543,9 +582,8 @@ template <typename Session> class repository {
         }
 
         query_parameters params;
-        std::string sql = "UPDATE ";
-        sql += traits::table;
-        sql += " SET ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("UPDATE ").qualified(traits::table).raw(" SET ");
         std::size_t idx = 1;
         bool first = true;
         std::vector<bool> matched(changed.size(), false);
@@ -561,10 +599,9 @@ template <typename Session> class repository {
                                 continue;
                         }
                         if (!first)
-                            sql += ", ";
+                            statement.raw(", ");
                         first = false;
-                        sql += col.name;
-                        sql += " = $" + std::to_string(idx++);
+                        statement.ident(col.name).raw(" = $" + std::to_string(idx++));
                         params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     }
                 }
@@ -583,25 +620,28 @@ template <typename Session> class repository {
 
         if constexpr (detail::has_version_column<T>::value) {
             if (!first)
-                sql += ", ";
-            sql += traits::version_column.name;
-            sql += " = ";
-            sql += traits::version_column.name;
-            sql += " + 1";
+                statement.raw(", ");
+            statement.ident(traits::version_column.name)
+                .raw(" = ")
+                .ident(traits::version_column.name)
+                .raw(" + 1");
         }
 
-        sql += " WHERE ";
-        detail::append_entity_pk_predicate(sql, params, entity, idx);
+        statement.raw(" WHERE ");
+        detail::append_entity_pk_predicate(statement, params, entity, idx);
         if constexpr (detail::has_version_column<T>::value) {
-            sql += " AND ";
-            sql += traits::version_column.name;
-            sql += " = $" + std::to_string(idx);
+            statement.raw(" AND ")
+                .ident(traits::version_column.name)
+                .raw(" = $" + std::to_string(idx));
             params.push_back(
                 asterorm::encode_parameter(entity.*(traits::version_column.member_ptr)));
         }
 
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
         if (!res)
             return std::unexpected(res.error());
         if (res->affected_rows() == 0) {
@@ -622,25 +662,23 @@ template <typename Session> class repository {
             entity, traits::columns, params, col_names, placeholders,
             std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
-        std::string sql = "INSERT INTO ";
-        sql += traits::table;
-        sql += " (";
-        for (size_t i = 0; i < col_names.size(); ++i) {
-            sql += col_names[i];
-            if (i < col_names.size() - 1)
-                sql += ", ";
-        }
-        sql += ") VALUES (";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("INSERT INTO ").qualified(traits::table).raw(" (");
+        detail::append_csv(statement, col_names);
+        statement.raw(") VALUES (");
         for (size_t i = 0; i < placeholders.size(); ++i) {
-            sql += placeholders[i];
-            if (i < placeholders.size() - 1)
-                sql += ", ";
+            if (i != 0)
+                statement.raw(", ");
+            statement.raw(placeholders[i]);
         }
-        sql += ")";
+        statement.raw(")");
         if constexpr (supports_returning)
-            detail::append_returning_all<T>(sql);
+            detail::append_returning_all<T>(statement);
 
-        auto res = execute_returning(entity, sql, params, true);
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
+        auto res = execute_returning(entity, *sql, params, true);
 
         if (!res)
             return std::unexpected(res.error());
@@ -664,33 +702,34 @@ template <typename Session> class repository {
             entity, traits::columns, params, col_names, placeholders,
             std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
-        std::string sql = "INSERT INTO ";
-        sql += traits::table;
-        sql += " (";
-        for (size_t i = 0; i < col_names.size(); ++i) {
-            sql += col_names[i];
-            if (i < col_names.size() - 1)
-                sql += ", ";
-        }
-        sql += ") VALUES (";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("INSERT INTO ").qualified(traits::table).raw(" (");
+        detail::append_csv(statement, col_names);
+        statement.raw(") VALUES (");
         for (size_t i = 0; i < placeholders.size(); ++i) {
-            sql += placeholders[i];
-            if (i < placeholders.size() - 1)
-                sql += ", ";
+            if (i != 0)
+                statement.raw(", ");
+            statement.raw(placeholders[i]);
         }
-        sql += ")";
+        statement.raw(")");
         bool has_update_column = false;
         for (const auto& column : col_names)
             has_update_column = has_update_column || !detail::is_primary_key_column<T>(column);
         if (!has_update_column)
             return std::unexpected(
                 detail::projection_error("upsert() requires at least one updatable column"));
-        sql += upsert_clause<T>(col_names);
+        auto clause = upsert_clause<T>(col_names);
+        if (!clause)
+            return std::unexpected(clause.error());
+        statement.raw(*clause);
 
         if constexpr (supports_returning)
-            detail::append_returning_all<T>(sql);
+            detail::append_returning_all<T>(statement);
 
-        auto res = execute_returning(entity, sql, params, false);
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
+        auto res = execute_returning(entity, *sql, params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -739,15 +778,14 @@ template <typename Session> class repository {
         query_parameters params;
         params.reserve(rows.size() * col_names.size());
 
-        std::string sql = "INSERT INTO ";
-        sql += traits::table;
-        sql += " (";
-        detail::append_csv(sql, col_names);
-        sql += ") VALUES ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("INSERT INTO ").qualified(traits::table).raw(" (");
+        detail::append_csv(statement, col_names);
+        statement.raw(") VALUES ");
 
         std::size_t param_idx = 1;
         for (std::size_t r = 0; r < rows.size(); ++r) {
-            sql += '(';
+            statement.raw("(");
             bool first_in_row = true;
             auto bind = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
@@ -755,25 +793,30 @@ template <typename Session> class repository {
                     if (!include_mask[Is])
                         return;
                     if (!first_in_row)
-                        sql += ", ";
+                        statement.raw(", ");
                     first_in_row = false;
                     const auto& val = rows[r].*(col.member_ptr);
-                    sql += "$" + std::to_string(param_idx++);
+                    statement.raw("$" + std::to_string(param_idx++));
                     params.push_back(asterorm::encode_parameter(val));
                 }());
             };
             bind(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
-            sql += ')';
+            statement.raw(")");
             if (r + 1 < rows.size())
-                sql += ", ";
+                statement.raw(", ");
         }
 
-        sql += upsert_clause<T>(col_names);
+        auto clause = upsert_clause<T>(col_names);
+        if (!clause)
+            return std::unexpected(clause.error());
+        statement.raw(*clause);
+        detail::append_returning_all<T>(statement);
 
-        detail::append_returning_all<T>(sql);
-
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
         if (!res)
             return std::unexpected(res.error());
 
@@ -795,7 +838,8 @@ template <typename Session> class repository {
 
     template <typename T, typename PkType> asterorm::result<T> find(const PkType& pk_val) {
         using traits = entity_traits<T>;
-        std::string sql = "SELECT ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("SELECT ");
 
         std::vector<std::string> col_names;
         auto collect_select = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -805,23 +849,18 @@ template <typename Session> class repository {
             }());
         };
         collect_select(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
-
-        for (size_t i = 0; i < col_names.size(); ++i) {
-            sql += col_names[i];
-            if (i < col_names.size() - 1)
-                sql += ", ";
-        }
-
-        sql += " FROM ";
-        sql += traits::table;
-        sql += " WHERE ";
+        detail::append_csv(statement, col_names);
+        statement.raw(" FROM ").qualified(traits::table).raw(" WHERE ");
 
         query_parameters params;
         std::size_t param_idx = 1;
-        detail::append_key_predicate<T>(sql, params, pk_val, param_idx);
+        detail::append_key_predicate<T>(statement, params, pk_val, param_idx);
 
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
 
         if (!res)
             return std::unexpected(res.error());
@@ -893,9 +932,11 @@ template <typename Session> class repository {
 
         sql::compiler c{sql::dialect_for_session<Session>()};
         auto compiled = c.compile(ast);
+        if (!compiled)
+            return std::unexpected(compiled.error());
 
         auto res = session_->with_connection([&](auto& conn) {
-            return session_->observed_execute(conn, compiled.sql, compiled.params);
+            return session_->observed_execute(conn, compiled->sql, compiled->params);
         });
         if (!res)
             return std::unexpected(res.error());
@@ -949,7 +990,9 @@ template <typename Session> class repository {
 
         sql::compiler c{sql::dialect_for_session<Session>()};
         auto compiled = c.compile(builder.build());
-        return session_->template native<T>(compiled.sql);
+        if (!compiled)
+            return std::unexpected(compiled.error());
+        return session_->template native<T>(compiled->sql);
     }
 
     template <typename T> asterorm::result<std::optional<T>> find_one_by(sql::predicate_ast pred) {
@@ -1081,16 +1124,18 @@ template <typename Session> class repository {
 
     template <typename T, typename PkType> asterorm::result<void> erase(const PkType& pk_val) {
         using traits = entity_traits<T>;
-        std::string sql = "DELETE FROM ";
-        sql += traits::table;
-        sql += " WHERE ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("DELETE FROM ").qualified(traits::table).raw(" WHERE ");
 
         query_parameters params;
         std::size_t param_idx = 1;
-        detail::append_key_predicate<T>(sql, params, pk_val, param_idx);
+        detail::append_key_predicate<T>(statement, params, pk_val, param_idx);
 
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
 
         if (!res)
             return std::unexpected(res.error());
@@ -1107,7 +1152,8 @@ template <typename Session> class repository {
         return true;
     }();
 
-    template <typename T> std::string upsert_clause(const std::vector<std::string>& columns) {
+    template <typename T>
+    asterorm::result<std::string> upsert_clause(const std::vector<std::string>& columns) {
         sql::compiler compiler{sql::dialect_for_session<Session>()};
         std::optional<std::string_view> version_column;
         if constexpr (detail::has_version_column<T>::value)
@@ -1204,8 +1250,10 @@ template <typename Session> class repository {
                     }
                     sql::compiler compiler{sql::dialect_for_session<Session>()};
                     const auto query = compiler.compile(refresh);
+                    if (!query)
+                        return execution_result{std::unexpected(query.error())};
                     auto refreshed =
-                        session_->observed_execute(connection, query.sql, query.params);
+                        session_->observed_execute(connection, query->sql, query->params);
                     if (refreshed && refreshed->rows() != 1)
                         return std::unexpected(detail::projection_error(
                             "Write could not be refreshed by primary key"));
@@ -1345,9 +1393,8 @@ template <typename Session> class repository {
 
     template <typename T> asterorm::result<void> update_const(const T& entity) {
         using traits = entity_traits<T>;
-        std::string sql = "UPDATE ";
-        sql += traits::table;
-        sql += " SET ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("UPDATE ").qualified(traits::table).raw(" SET ");
 
         query_parameters params;
         bool has_assignment = false;
@@ -1359,16 +1406,15 @@ template <typename Session> class repository {
                 auto col = std::get<Is>(traits::columns);
                 if (!detail::is_primary_key_column<T>(col.name) && col.gen != generated::always) {
                     if (!first)
-                        sql += ", ";
-                    sql += col.name;
-                    sql += " = $" + std::to_string(param_idx++);
+                        statement.raw(", ");
+                    statement.ident(col.name).raw(" = $" + std::to_string(param_idx++));
                     params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     first = false;
                     has_assignment = true;
                 }
             }());
-            sql += " WHERE ";
-            detail::append_entity_pk_predicate(sql, params, entity, param_idx);
+            statement.raw(" WHERE ");
+            detail::append_entity_pk_predicate(statement, params, entity, param_idx);
         };
         collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
@@ -1379,8 +1425,11 @@ template <typename Session> class repository {
             return std::unexpected(err);
         }
 
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
         auto res = session_->with_connection(
-            [&](auto& conn) { return session_->observed_execute(conn, sql, params); });
+            [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
 
         if (!res)
             return std::unexpected(res.error());
@@ -1392,9 +1441,8 @@ template <typename Session> class repository {
 
     template <typename T> asterorm::result<void> update_returning(T& entity) {
         using traits = entity_traits<T>;
-        std::string sql = "UPDATE ";
-        sql += traits::table;
-        sql += " SET ";
+        detail::quoted_sql statement{sql::dialect_for_session<Session>()};
+        statement.raw("UPDATE ").qualified(traits::table).raw(" SET ");
 
         query_parameters params;
         bool has_assignment = false;
@@ -1405,16 +1453,15 @@ template <typename Session> class repository {
                 auto col = std::get<Is>(traits::columns);
                 if (!detail::is_primary_key_column<T>(col.name) && col.gen != generated::always) {
                     if (!first)
-                        sql += ", ";
-                    sql += col.name;
-                    sql += " = $" + std::to_string(param_idx++);
+                        statement.raw(", ");
+                    statement.ident(col.name).raw(" = $" + std::to_string(param_idx++));
                     params.push_back(asterorm::encode_parameter(entity.*(col.member_ptr)));
                     first = false;
                     has_assignment = true;
                 }
             }());
-            sql += " WHERE ";
-            detail::append_entity_pk_predicate(sql, params, entity, param_idx);
+            statement.raw(" WHERE ");
+            detail::append_entity_pk_predicate(statement, params, entity, param_idx);
         };
         collect_update(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 
@@ -1426,9 +1473,12 @@ template <typename Session> class repository {
         }
 
         if constexpr (supports_returning)
-            detail::append_returning_all<T>(sql);
+            detail::append_returning_all<T>(statement);
 
-        auto res = execute_returning(entity, sql, params, false);
+        auto sql = statement.finish();
+        if (!sql)
+            return std::unexpected(sql.error());
+        auto res = execute_returning(entity, *sql, params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -1443,9 +1493,12 @@ template <typename Session> class repository {
     }
 
     template <typename T> asterorm::result<void> update_versioned(T& entity) {
-        auto compiled = detail::build_versioned_update(entity, supports_returning);
+        auto compiled = detail::build_versioned_update(entity, supports_returning,
+                                                       sql::dialect_for_session<Session>());
+        if (!compiled)
+            return std::unexpected(compiled.error());
 
-        auto res = execute_returning(entity, compiled.sql, compiled.params, false);
+        auto res = execute_returning(entity, compiled->sql, compiled->params, false);
 
         if (!res)
             return std::unexpected(res.error());
@@ -1460,9 +1513,12 @@ template <typename Session> class repository {
     }
 
     template <typename T> asterorm::result<void> update_versioned_const(const T& entity) {
-        auto compiled = detail::build_versioned_update(entity, false);
+        auto compiled =
+            detail::build_versioned_update(entity, false, sql::dialect_for_session<Session>());
+        if (!compiled)
+            return std::unexpected(compiled.error());
         auto res = session_->with_connection([&](auto& conn) {
-            return session_->observed_execute(conn, compiled.sql, compiled.params);
+            return session_->observed_execute(conn, compiled->sql, compiled->params);
         });
         if (!res)
             return std::unexpected(res.error());
