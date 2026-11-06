@@ -3,8 +3,10 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -108,13 +110,27 @@ template <typename Driver> class connection_pool {
 
     connection_pool(Driver driver, pool_config config)
         : driver_(std::move(driver)), config_(std::move(config)) {
-        for (size_t i = 0; i < config_.min_size; ++i) {
-            auto conn_res = driver_.connect(config_.conninfo);
-            if (conn_res) {
+        try {
+            for (size_t i = 0; i < config_.min_size; ++i) {
+                auto conn_res = driver_.connect(config_.conninfo);
+                if (!conn_res) {
+                    fail_warmup(conn_res.error());
+                    return;
+                }
                 detail::configure_connection(*conn_res, config_);
                 idle_connections_.push_back(std::move(*conn_res));
                 ++current_size_;
             }
+        } catch (const std::exception& exception) {
+            db_error error;
+            error.kind = db_error_kind::connection_failed;
+            error.message = exception.what();
+            fail_warmup(std::move(error));
+        } catch (...) {
+            db_error error;
+            error.kind = db_error_kind::connection_failed;
+            error.message = "Connection pool warmup failed";
+            fail_warmup(std::move(error));
         }
     }
 
@@ -149,42 +165,50 @@ template <typename Driver> class connection_pool {
                           .closed = closed_};
     }
 
+    // Set when `min_size` connections could not be opened. `acquire` keeps
+    // returning this error until the pool is replaced.
+    [[nodiscard]] std::optional<db_error> warmup_error() const {
+        std::lock_guard lock(mutex_);
+        return warmup_error_;
+    }
+
     asterorm::result<lease_type> acquire() {
         std::unique_lock lock(mutex_);
+        if (warmup_error_)
+            return std::unexpected(*warmup_error_);
 
-        auto now = std::chrono::steady_clock::now();
-        auto timeout_time = now + config_.acquire_timeout;
+        const auto timeout_time = std::chrono::steady_clock::now() + config_.acquire_timeout;
 
-        while (idle_connections_.empty()) {
-            if (closed_) {
-                db_error err;
-                err.kind = db_error_kind::connection_failed;
-                err.message = "Connection pool is closed";
-                return std::unexpected(err);
+        for (;;) {
+            if (closed_)
+                return std::unexpected(closed_error());
+
+            if (!idle_connections_.empty()) {
+                auto conn = std::move(idle_connections_.back());
+                idle_connections_.pop_back();
+                if (!conn.is_open()) {
+                    --current_size_;
+                    cv_.notify_all();
+                    continue;
+                }
+                return lease_type{std::move(conn), this, alive_flag_};
             }
 
             if (current_size_ < config_.max_size) {
                 ++current_size_;
+                // Releases the reserved slot if connect throws or returns an error.
+                slot_reservation reservation{*this, lock};
                 lock.unlock();
 
                 auto conn_res = driver_.connect(config_.conninfo);
-                if (!conn_res) {
-                    lock.lock();
-                    --current_size_;
-                    cv_.notify_all(); // Notify destructor if it's waiting
+                if (!conn_res)
                     return std::unexpected(conn_res.error());
-                }
 
                 detail::configure_connection(*conn_res, config_);
                 lock.lock();
-                if (closed_) {
-                    --current_size_;
-                    cv_.notify_all();
-                    db_error err;
-                    err.kind = db_error_kind::connection_failed;
-                    err.message = "Connection pool is closed";
-                    return std::unexpected(err);
-                }
+                if (closed_)
+                    return std::unexpected(closed_error());
+                reservation.disarm();
                 return lease_type{std::move(*conn_res), this, alive_flag_};
             }
 
@@ -197,25 +221,6 @@ template <typename Driver> class connection_pool {
                 }
             }
         }
-
-        if (closed_) {
-            db_error err;
-            err.kind = db_error_kind::connection_failed;
-            err.message = "Connection pool is closed";
-            return std::unexpected(err);
-        }
-
-        auto conn = std::move(idle_connections_.back());
-        idle_connections_.pop_back();
-
-        if (!conn.is_open()) {
-            --current_size_;
-            cv_.notify_all();
-            lock.unlock();
-            return acquire();
-        }
-
-        return lease_type{std::move(conn), this, alive_flag_};
     }
 
     void release(connection_type&& conn) {
@@ -248,8 +253,47 @@ template <typename Driver> class connection_pool {
     size_t current_size_{0};
     size_t leaked_at_close_{0};
     bool closed_{false};
+    std::optional<db_error> warmup_error_;
     std::shared_ptr<std::atomic<bool>> alive_flag_{std::make_shared<std::atomic<bool>>(true)};
     std::chrono::milliseconds close_timeout_{std::chrono::seconds(10)};
+
+    void fail_warmup(db_error error) {
+        idle_connections_.clear();
+        current_size_ = 0;
+        warmup_error_ = std::move(error);
+    }
+
+    [[nodiscard]] static db_error closed_error() {
+        db_error err;
+        err.kind = db_error_kind::connection_failed;
+        err.message = "Connection pool is closed";
+        return err;
+    }
+
+    // Decrements current_size_ unless disarm() is called after a successful connect.
+    class slot_reservation {
+      public:
+        slot_reservation(connection_pool& pool, std::unique_lock<std::mutex>& lock)
+            : pool_(&pool), lock_(&lock) {}
+        slot_reservation(const slot_reservation&) = delete;
+        slot_reservation& operator=(const slot_reservation&) = delete;
+        ~slot_reservation() {
+            if (!active_)
+                return;
+            if (!lock_->owns_lock())
+                lock_->lock();
+            --pool_->current_size_;
+            pool_->cv_.notify_all();
+        }
+        void disarm() {
+            active_ = false;
+        }
+
+      private:
+        connection_pool* pool_;
+        std::unique_lock<std::mutex>* lock_;
+        bool active_{true};
+    };
 };
 
 } // namespace asterorm

@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 #include "asterorm/pool/connection_pool.hpp"
@@ -161,4 +162,74 @@ TEST_CASE("Core: Connection Pool acquire fails if close wins connect race", "[po
 
     REQUIRE(acquire_error_message.has_value());
     REQUIRE(*acquire_error_message == "Connection pool is closed");
+}
+
+struct failing_driver {
+    [[nodiscard]]
+    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
+        asterorm::db_error error;
+        error.kind = asterorm::db_error_kind::connection_failed;
+        error.message = "warmup failed";
+        return std::unexpected(error);
+    }
+};
+
+struct throwing_driver {
+    mutable int calls{0};
+    [[nodiscard]]
+    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
+        if (++calls == 1)
+            throw std::runtime_error("connect failed");
+        return mock_connection{calls};
+    }
+};
+
+struct closed_then_open_driver {
+    mutable int calls{0};
+    [[nodiscard]]
+    asterorm::result<mock_connection> connect(const std::string& /*conninfo*/) const {
+        mock_connection connection{++calls};
+        if (calls == 1)
+            connection.open = false;
+        return connection;
+    }
+};
+
+TEST_CASE("Core: Connection Pool reports a failed warmup", "[pool]") {
+    asterorm::pool_config cfg;
+    cfg.min_size = 2;
+    cfg.max_size = 2;
+    asterorm::connection_pool<failing_driver> pool{failing_driver{}, cfg};
+
+    auto warmup = pool.warmup_error();
+    REQUIRE(warmup.has_value());
+    REQUIRE(warmup->message == "warmup failed");
+    REQUIRE(pool.stats().total == 0);
+
+    auto lease = pool.acquire();
+    REQUIRE_FALSE(lease.has_value());
+    REQUIRE(lease.error().message == "warmup failed");
+}
+
+TEST_CASE("Core: Connection Pool releases a slot when connect throws", "[pool]") {
+    asterorm::pool_config cfg;
+    cfg.min_size = 0;
+    cfg.max_size = 1;
+    cfg.acquire_timeout = std::chrono::milliseconds(50);
+    asterorm::connection_pool<throwing_driver> pool{throwing_driver{}, cfg};
+
+    REQUIRE_THROWS_AS(pool.acquire(), std::runtime_error);
+    auto lease = pool.acquire();
+    REQUIRE(lease.has_value());
+}
+
+TEST_CASE("Core: Connection Pool replaces a closed idle connection", "[pool]") {
+    asterorm::pool_config cfg;
+    cfg.min_size = 1;
+    cfg.max_size = 2;
+    asterorm::connection_pool<closed_then_open_driver> pool{closed_then_open_driver{}, cfg};
+
+    auto lease = pool.acquire();
+    REQUIRE(lease.has_value());
+    REQUIRE((*lease)->id == 2);
 }
