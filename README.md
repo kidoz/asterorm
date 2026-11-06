@@ -265,6 +265,12 @@ typed projections removes the measured excess allocation bytes. All current
 benchmark cases are within the timing/allocation investigation screen; the
 measurements do not establish a blanket claim of unchanged runtime cost.
 
+A separate [row-decoding benchmark](benchmarks/ROW_DECODING.md) compares the
+production typed/string tuple decoders using native PostgreSQL, SQLite and MySQL
+result classes populated in memory. The recorded cases have matching allocation
+counts/bytes and no material typed slowdown; database execution and networking
+remain outside these measurements.
+
 ## License
 
 Distributed under the MIT License.

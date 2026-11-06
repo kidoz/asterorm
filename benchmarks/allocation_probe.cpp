@@ -1,5 +1,5 @@
-// Linked only into dsl_allocations. The timing executable uses the normal
-// allocator. The core library is static so its allocations use this replacement.
+// Linked only into allocation-counting executables. Timing uses the normal
+// allocator. Static core/adapter libraries use this replacement when counting.
 #include "measurement_support.hpp"
 #include <cstdlib>
 #include <new>

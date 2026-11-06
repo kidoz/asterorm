@@ -21,3 +21,24 @@ dsl_allocations = executable(
 
 test('DSL benchmark verification', dsl_benchmark, args : ['--verify-only'])
 test('DSL allocation probe verification', dsl_allocations, args : ['--verify-only'])
+
+if postgres_enabled and sqlite_enabled and mysql_enabled
+  decode_dependencies = [asterorm_core_dep, asterorm_pg_dep, asterorm_sqlite_dep, asterorm_mysql_dep]
+  row_decode_benchmark = executable(
+    'row_decode_benchmark',
+    ['row_decode_benchmark.cpp', 'measurement_support.cpp'],
+    dependencies : decode_dependencies,
+    install : false,
+  )
+  row_decode_allocations = executable(
+    'row_decode_allocations',
+    ['row_decode_benchmark.cpp', 'measurement_support.cpp', 'allocation_probe.cpp'],
+    cpp_args : ['-DASTERORM_BENCH_ALLOCATIONS'],
+    dependencies : decode_dependencies,
+    install : false,
+  )
+  test('Row decoding verification', row_decode_benchmark, args : ['--verify-only'], timeout : 60)
+  test('Row decoding allocation verification', row_decode_allocations, args : ['--verify-only'], timeout : 60)
+else
+  message('Enable PostgreSQL, SQLite and MySQL with benchmarks=true to build row-decoding benchmarks.')
+endif

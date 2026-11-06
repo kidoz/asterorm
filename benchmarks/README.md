@@ -1,5 +1,7 @@
 # SQL DSL benchmark
 
+For the separate decoding layer, see [row-decoding benchmarks](ROW_DECODING.md).
+
 Hypothesis: typed and string query construction/compilation produce identical SQL
 and parameters without a material increase in runtime cost or allocations. This
 benchmark measures the client-side DSL boundary only. Decoding, database queries,
