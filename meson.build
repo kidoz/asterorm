@@ -64,14 +64,56 @@ if sqlite_enabled
   asterorm_pkg_requires_private += ['sqlite3']
 endif
 
+mysql_feature = get_option('mysql')
+mysqlclient_dep = disabler()
+mysqlclient_pkg_name = 'mysqlclient'
+if mysql_feature.allowed()
+  mysql_force_fallback = get_option('wrap_mode') == 'forcefallback' or 'mysqlclient' in get_option('force_fallback_for')
+  if not mysql_force_fallback
+    mysqlclient_dep = dependency('mysqlclient', required : false, allow_fallback : false)
+    if not mysqlclient_dep.found()
+      foreach mysql_prefix : ['/opt/homebrew/opt/mysql-client', '/usr/local/opt/mysql-client', '/opt/homebrew/opt/mysql', '/usr/local/opt/mysql']
+        if not mysqlclient_dep.found() and filesystem_module.exists(mysql_prefix / 'include' / 'mysql' / 'mysql.h')
+          mysql_library = cpp_compiler.find_library('mysqlclient', dirs : mysql_prefix / 'lib', required : false)
+          if mysql_library.found()
+            mysqlclient_dep = declare_dependency(
+              dependencies : mysql_library,
+              compile_args : ['-I' + (mysql_prefix / 'include' / 'mysql')],
+            )
+          endif
+        endif
+      endforeach
+    endif
+  endif
+  if not mysqlclient_dep.found()
+    mysqlclient_dep = dependency('mysqlclient', required : mysql_feature,
+      fallback : ['mysqlclient', 'mysqlclient_dep'],
+      default_options : ['warning_level=0', 'werror=false'])
+  endif
+  if mysqlclient_dep.found()
+    mysqlclient_pkg_name = mysqlclient_dep.get_variable(internal : 'pkgconfig_name', default_value : 'mysqlclient')
+  endif
+endif
+mysql_enabled = mysql_feature.allowed() and mysqlclient_dep.found()
+if mysql_enabled
+  asterorm_pkg_requires_private += [mysqlclient_pkg_name]
+endif
+
 clickhouse_feature = get_option('clickhouse')
 clickhouse_dep = dependency('clickhouse-cpp', required : clickhouse_feature, fallback: ['clickhouse-cpp', 'clickhouse_cpp_lib_dep'], default_options: ['werror=false', 'warning_level=0'])
 
 subdir('src')
 
 install_subdir('include/asterorm', install_dir : get_option('includedir'))
+asterorm_cmake_config = configuration_data()
+asterorm_cmake_config.set('ASTERORM_MYSQL_PKGCONFIG', mysqlclient_pkg_name)
+configure_file(
+  input : 'cmake/AsterORMConfig.cmake',
+  output : 'AsterORMConfig.cmake',
+  configuration : asterorm_cmake_config,
+  install_dir : get_option('libdir') / 'cmake' / 'AsterORM',
+)
 install_data(
-  'cmake/AsterORMConfig.cmake',
   'cmake/AsterORMConfigVersion.cmake',
   install_dir : get_option('libdir') / 'cmake' / 'AsterORM',
 )

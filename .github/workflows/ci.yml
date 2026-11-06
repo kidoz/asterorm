@@ -7,6 +7,9 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mysql-client: [system, bundled]
     services:
       postgres:
         image: postgres:16
@@ -22,7 +25,23 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: orm_root
+          MYSQL_DATABASE: orm_test
+          MYSQL_USER: orm_test
+          MYSQL_PASSWORD: orm_test
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uorm_test -porm_test --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
     env:
+      ASTERORM_MYSQL_TEST_CONNINFO: host=127.0.0.1 port=3307 dbname=orm_test user=orm_test password=orm_test
       ASTERORM_TEST_CONNINFO: host=127.0.0.1 port=5432 dbname=orm_test user=orm_test password=orm_test sslmode=disable
 
     steps:
@@ -31,10 +50,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format clang-tidy libpq-dev meson ninja-build pkg-config
+          sudo apt-get install -y clang-format clang-tidy libpq-dev default-libmysqlclient-dev libssl-dev zlib1g-dev cmake meson ninja-build pkg-config
 
       - name: Configure
-        run: meson setup buildDir -Dclickhouse=disabled
+        run: meson setup buildDir -Dclickhouse=disabled -Dmysql=enabled ${{ matrix.mysql-client == 'bundled' && '--force-fallback-for=mysqlclient' || '' }}
 
       - name: Build
         run: meson compile -C buildDir

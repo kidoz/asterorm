@@ -64,3 +64,18 @@ if postgres_enabled
     ],
   )
 endif
+
+if mysql_enabled
+  mysql_unit_tests = executable(
+    'mysql_unit_tests',
+    ['unit/test_mysql.cpp'],
+    dependencies : [asterorm_mysql_dep, catch2_dep],
+  )
+  test('mysql unit tests', mysql_unit_tests)
+  mysql_tests = executable(
+    'mysql_integration',
+    ['integration/test_mysql_crud.cpp'],
+    dependencies : [asterorm_mysql_dep, catch2_dep],
+  )
+  test('mysql integration', mysql_tests)
+endif

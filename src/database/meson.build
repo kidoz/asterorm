@@ -66,3 +66,18 @@ if clickhouse_feature.allowed()
   asterorm_libraries += [asterorm_ch]
 endif
 
+if mysql_enabled
+  asterorm_mysql = library(
+    'asterorm_mysql',
+    ['mysql/driver.cpp', 'mysql/connection.cpp', 'mysql/result.cpp'],
+    include_directories : inc,
+    dependencies : [asterorm_core_dep, mysqlclient_dep],
+    install : true,
+  )
+  asterorm_mysql_dep = declare_dependency(
+    include_directories : inc,
+    dependencies : [asterorm_core_dep, mysqlclient_dep],
+    link_with : asterorm_mysql,
+  )
+  asterorm_libraries += [asterorm_mysql]
+endif

@@ -47,6 +47,17 @@ if(EXISTS "${_asterorm_prefix}/lib/libasterorm_ch${CMAKE_SHARED_LIBRARY_SUFFIX}"
   )
 endif()
 
+if(EXISTS "${_asterorm_prefix}/lib/libasterorm_mysql${CMAKE_SHARED_LIBRARY_SUFFIX}" AND NOT TARGET AsterORM::mysql)
+  find_dependency(PkgConfig)
+  pkg_check_modules(ASTERORM_MYSQL REQUIRED IMPORTED_TARGET @ASTERORM_MYSQL_PKGCONFIG@)
+  add_library(AsterORM::mysql SHARED IMPORTED)
+  set_target_properties(AsterORM::mysql PROPERTIES
+    IMPORTED_LOCATION "${_asterorm_prefix}/lib/libasterorm_mysql${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_asterorm_prefix}/include"
+    INTERFACE_LINK_LIBRARIES "AsterORM::core;PkgConfig::ASTERORM_MYSQL"
+  )
+endif()
+
 if(NOT TARGET AsterORM::asterorm)
   add_library(AsterORM::asterorm INTERFACE IMPORTED)
   set(_asterorm_components AsterORM::core)
@@ -58,6 +69,9 @@ if(NOT TARGET AsterORM::asterorm)
   endif()
   if(TARGET AsterORM::clickhouse)
     list(APPEND _asterorm_components AsterORM::clickhouse)
+  endif()
+  if(TARGET AsterORM::mysql)
+    list(APPEND _asterorm_components AsterORM::mysql)
   endif()
   set_target_properties(AsterORM::asterorm PROPERTIES
     INTERFACE_LINK_LIBRARIES "${_asterorm_components}"

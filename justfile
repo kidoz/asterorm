@@ -58,3 +58,11 @@ clean: setup
 
 wipe:
     rm -rf {{build_dir}}
+
+# Enable the adapter and run against MySQL 8.4 on port 3307.
+mysql-up:
+    docker compose --profile mysql up -d --wait mysql
+
+test-mysql: setup mysql-up
+    meson configure {{build_dir}} -Dmysql=enabled
+    meson test -C {{build_dir}} "core unit tests" "mysql unit tests" "mysql integration" --print-errorlogs

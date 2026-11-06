@@ -1,0 +1,6 @@
+[wrap-file]
+directory = mariadb-connector-c-3.4.11
+source_url = https://github.com/mariadb-corporation/mariadb-connector-c/archive/refs/tags/v3.4.11.tar.gz
+source_filename = mariadb-connector-c-3.4.11.tar.gz
+source_hash = 7cdb35c571dd0c187f806f569285829d31b4aba4feb93957a034b0b1e887e276
+method = cmake
