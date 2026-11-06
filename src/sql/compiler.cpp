@@ -1,46 +1,87 @@
 #include "asterorm/sql/compiler.hpp"
 
 #include <algorithm>
-#include <stdexcept>
+#include <cctype>
 #include <string_view>
 
 namespace asterorm::sql {
+namespace {
 
-std::string compiler::quote_ident(std::string_view ident) const {
-    const char quote = dialect_ == dialect::mysql ? '`' : '"';
-    std::string res;
-    res.reserve(ident.size() + 2);
-    res += quote;
-    for (char c : ident) {
-        if (c == quote) {
-            res += quote;
-            res += quote;
-        } else {
-            res += c;
-        }
-    }
-    res += quote;
-    return res;
+db_error invalid_sql(std::string message) {
+    db_error error;
+    error.kind = db_error_kind::parse_failed;
+    error.message = std::move(message);
+    return error;
 }
 
-std::string compiler::quote_qualified_ident(std::string_view ident) const {
-    std::string res;
+bool bare_function_name(std::string_view name) {
+    if (name.empty())
+        return false;
+    const auto first = static_cast<unsigned char>(name.front());
+    if (std::isalpha(first) == 0 && name.front() != '_')
+        return false;
+    for (char character : name) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (std::isalnum(byte) == 0 && character != '_')
+            return false;
+    }
+    return true;
+}
+
+bool contains_nul(std::string_view text) {
+    return text.find('\0') != std::string_view::npos;
+}
+
+} // namespace
+
+asterorm::result<std::string> compiler::quote_ident(std::string_view ident) const {
+    if (ident.empty() || contains_nul(ident))
+        return std::unexpected(invalid_sql("Invalid SQL identifier"));
+
+    const char quote = dialect_ == dialect::mysql ? '`' : '"';
+    std::string quoted;
+    quoted.reserve(ident.size() + 2);
+    quoted += quote;
+    for (char character : ident) {
+        if (character == quote) {
+            quoted += quote;
+            quoted += quote;
+        } else {
+            quoted += character;
+        }
+    }
+    quoted += quote;
+    return quoted;
+}
+
+asterorm::result<std::string> compiler::quote_qualified_ident(std::string_view ident) const {
+    if (ident.empty())
+        return std::unexpected(invalid_sql("Invalid SQL identifier"));
+
+    std::string quoted;
     std::size_t start = 0;
     while (start <= ident.size()) {
         const auto dot = ident.find('.', start);
         const auto end = dot == std::string_view::npos ? ident.size() : dot;
-        if (!res.empty())
-            res += '.';
-        res += quote_ident(ident.substr(start, end - start));
+        if (end == start)
+            return std::unexpected(invalid_sql("Invalid SQL identifier"));
+        auto part = quote_ident(ident.substr(start, end - start));
+        if (!part)
+            return std::unexpected(part.error());
+        if (!quoted.empty())
+            quoted += '.';
+        quoted += *part;
         if (dot == std::string_view::npos)
             break;
         start = dot + 1;
     }
-    return res;
+    return quoted;
 }
 
-std::string compiler::render_column(std::string_view ident) const {
-    return (ident == "*") ? std::string{"*"} : quote_qualified_ident(ident);
+asterorm::result<std::string> compiler::render_column(std::string_view ident) const {
+    if (ident == "*")
+        return std::string{"*"};
+    return quote_qualified_ident(ident);
 }
 
 std::string compiler::placeholder(std::size_t index) const {
@@ -69,16 +110,20 @@ std::string compiler::op_to_string(op_kind op) {
     return "";
 }
 
-std::string compiler::compile_expr(const expr_ast& expr,
-                                   query_parameters& params) { // NOLINT
-    if (std::holds_alternative<column_expr>(expr)) {
+asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr,
+                                                     query_parameters& params) { // NOLINT
+    if (std::holds_alternative<column_expr>(expr))
         return quote_qualified_ident(std::get<column_expr>(expr).name);
-    }
     if (std::holds_alternative<param_expr>(expr)) {
         params.push_back(std::get<param_expr>(expr).encoded_value);
         return placeholder(params.size());
     }
     const auto& fn = *std::get<std::shared_ptr<func_expr>>(expr);
+    if (!bare_function_name(fn.name))
+        return std::unexpected(invalid_sql("Invalid SQL function name"));
+    if (fn.raw_arg && contains_nul(*fn.raw_arg))
+        return std::unexpected(invalid_sql("SQL fragment contains a NUL byte"));
+
     std::string out = fn.name;
     out += '(';
     if (fn.distinct)
@@ -87,49 +132,70 @@ std::string compiler::compile_expr(const expr_ast& expr,
         out += *fn.raw_arg;
     } else {
         for (std::size_t i = 0; i < fn.args.size(); ++i) {
-            out += compile_expr(fn.args[i], params);
+            auto argument = compile_expr(fn.args[i], params);
+            if (!argument)
+                return std::unexpected(argument.error());
+            out += *argument;
             if (i + 1 < fn.args.size())
                 out += ", ";
         }
     }
     out += ')';
     if (fn.alias) {
-        out += " AS " + quote_ident(*fn.alias);
+        auto alias = quote_ident(*fn.alias);
+        if (!alias)
+            return std::unexpected(alias.error());
+        out += " AS " + *alias;
     }
     return out;
 }
 
-std::string compiler::compile_value(const value_source& src, query_parameters& params) {
+asterorm::result<std::string> compiler::compile_value(const value_source& src,
+                                                      query_parameters& params) {
     if (std::holds_alternative<raw_expr>(src)) {
         // raw_expr is verbatim; the builder author is responsible for safety.
-        return std::get<raw_expr>(src).fragment;
+        const auto& fragment = std::get<raw_expr>(src).fragment;
+        if (contains_nul(fragment))
+            return std::unexpected(invalid_sql("SQL fragment contains a NUL byte"));
+        return fragment;
     }
     params.push_back(std::get<param_expr>(src).encoded_value);
     return placeholder(params.size());
 }
 
-std::string compiler::compile_predicate(const predicate_ast& pred,
-                                        query_parameters& params) { // NOLINT
+asterorm::result<std::string> compiler::compile_predicate(const predicate_ast& pred,
+                                                          query_parameters& params) { // NOLINT
     if (std::holds_alternative<comparison_predicate>(pred.val)) {
         const auto& comp = std::get<comparison_predicate>(pred.val);
-        std::string left = compile_expr(comp.left, params);
-        std::string right = compile_expr(comp.right, params);
-        return left + " " + op_to_string(comp.op) + " " + right;
+        auto left = compile_expr(comp.left, params);
+        if (!left)
+            return std::unexpected(left.error());
+        auto right = compile_expr(comp.right, params);
+        if (!right)
+            return std::unexpected(right.error());
+        return *left + " " + op_to_string(comp.op) + " " + *right;
     }
     if (std::holds_alternative<unary_predicate>(pred.val)) {
         const auto& un = std::get<unary_predicate>(pred.val);
-        std::string operand = compile_expr(un.operand, params);
-        return operand + (un.op == unary_op_kind::is_null ? " IS NULL" : " IS NOT NULL");
+        auto operand = compile_expr(un.operand, params);
+        if (!operand)
+            return std::unexpected(operand.error());
+        return *operand + (un.op == unary_op_kind::is_null ? " IS NULL" : " IS NOT NULL");
     }
     const auto& bin = std::get<binary_predicate>(pred.val);
-    std::string left = compile_predicate(*bin.left, params);
-    std::string right = compile_predicate(*bin.right, params);
-    return "(" + left + " " + op_to_string(bin.op) + " " + right + ")";
+    auto left = compile_predicate(*bin.left, params);
+    if (!left)
+        return std::unexpected(left.error());
+    auto right = compile_predicate(*bin.right, params);
+    if (!right)
+        return std::unexpected(right.error());
+    return "(" + *left + " " + op_to_string(bin.op) + " " + *right + ")";
 }
 
-std::string compiler::upsert_clause(std::string_view table, const std::vector<std::string>& columns,
-                                    const std::vector<std::string>& primary_keys,
-                                    std::optional<std::string_view> version_column) const {
+asterorm::result<std::string>
+compiler::upsert_clause(std::string_view table, const std::vector<std::string>& columns,
+                        const std::vector<std::string>& primary_keys,
+                        std::optional<std::string_view> version_column) const {
     std::string clause;
     if (dialect_ == dialect::mysql) {
         clause = " AS asterorm_new ON DUPLICATE KEY UPDATE ";
@@ -138,7 +204,10 @@ std::string compiler::upsert_clause(std::string_view table, const std::vector<st
         for (std::size_t index = 0; index < primary_keys.size(); ++index) {
             if (index != 0)
                 clause += ", ";
-            clause += quote_ident(primary_keys[index]);
+            auto quoted = quote_ident(primary_keys[index]);
+            if (!quoted)
+                return std::unexpected(quoted.error());
+            clause += *quoted;
         }
         clause += ") DO UPDATE SET ";
     }
@@ -149,239 +218,332 @@ std::string compiler::upsert_clause(std::string_view table, const std::vector<st
         if (!first)
             clause += ", ";
         first = false;
-        clause += quote_ident(column) + " = ";
-        if (version_column && *version_column == column)
-            clause += quote_qualified_ident(table) + "." + quote_ident(column) + " + 1";
-        else
-            clause +=
-                (dialect_ == dialect::mysql ? "asterorm_new." : "EXCLUDED.") + quote_ident(column);
+        auto quoted_column = quote_ident(column);
+        if (!quoted_column)
+            return std::unexpected(quoted_column.error());
+        clause += *quoted_column + " = ";
+        if (version_column && *version_column == column) {
+            auto quoted_table = quote_qualified_ident(table);
+            if (!quoted_table)
+                return std::unexpected(quoted_table.error());
+            clause += *quoted_table + "." + *quoted_column + " + 1";
+        } else {
+            clause += (dialect_ == dialect::mysql ? "asterorm_new." : "EXCLUDED.") + *quoted_column;
+        }
     }
     if (first)
-        throw std::invalid_argument("upsert requires at least one updatable column");
+        return std::unexpected(invalid_sql("upsert requires at least one updatable column"));
     return clause;
 }
 
-compiled_query compiler::compile(const select_ast& ast) { // NOLINT
-    compiled_query q;
+asterorm::result<compiled_query> compiler::compile(const select_ast& ast) { // NOLINT
+    compiled_query query;
 
-    q.sql = "SELECT ";
+    auto append_qualified = [&](std::string_view ident) -> asterorm::result<void> {
+        auto quoted = quote_qualified_ident(ident);
+        if (!quoted)
+            return std::unexpected(quoted.error());
+        query.sql += *quoted;
+        return {};
+    };
+    auto append_ident = [&](std::string_view ident) -> asterorm::result<void> {
+        auto quoted = quote_ident(ident);
+        if (!quoted)
+            return std::unexpected(quoted.error());
+        query.sql += *quoted;
+        return {};
+    };
+
+    query.sql = "SELECT ";
     if (!ast.items.empty()) {
         for (size_t i = 0; i < ast.items.size(); ++i) {
             const auto& it = ast.items[i];
             if (it.fn) {
                 expr_ast wrapped = it.fn;
-                q.sql += compile_expr(wrapped, q.params);
+                auto rendered = compile_expr(wrapped, query.params);
+                if (!rendered)
+                    return std::unexpected(rendered.error());
+                query.sql += *rendered;
             } else if (it.column_name) {
-                q.sql += render_column(*it.column_name);
+                auto rendered = render_column(*it.column_name);
+                if (!rendered)
+                    return std::unexpected(rendered.error());
+                query.sql += *rendered;
             }
             if (it.alias && !it.fn) {
-                q.sql += " AS " + quote_ident(*it.alias);
+                query.sql += " AS ";
+                auto appended = append_ident(*it.alias);
+                if (!appended)
+                    return std::unexpected(appended.error());
             }
             if (i + 1 < ast.items.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     } else if (ast.columns.empty()) {
-        q.sql += "*";
+        query.sql += "*";
     } else {
         for (size_t i = 0; i < ast.columns.size(); ++i) {
-            q.sql += render_column(ast.columns[i]);
+            auto rendered = render_column(ast.columns[i]);
+            if (!rendered)
+                return std::unexpected(rendered.error());
+            query.sql += *rendered;
             if (i + 1 < ast.columns.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     }
 
-    q.sql += " FROM " + quote_qualified_ident(ast.table);
+    query.sql += " FROM ";
+    if (auto appended = append_qualified(ast.table); !appended)
+        return std::unexpected(appended.error());
     if (ast.table_alias) {
-        q.sql += " AS " + quote_ident(*ast.table_alias);
+        query.sql += " AS ";
+        if (auto appended = append_ident(*ast.table_alias); !appended)
+            return std::unexpected(appended.error());
     }
 
-    for (const auto& j : ast.joins) {
-        switch (j.kind) {
+    for (const auto& join : ast.joins) {
+        switch (join.kind) {
         case join_kind::inner:
-            q.sql += " INNER JOIN ";
+            query.sql += " INNER JOIN ";
             break;
         case join_kind::left:
-            q.sql += " LEFT JOIN ";
+            query.sql += " LEFT JOIN ";
             break;
         case join_kind::right:
-            q.sql += " RIGHT JOIN ";
+            query.sql += " RIGHT JOIN ";
             break;
         case join_kind::full:
             if (dialect_ == dialect::mysql)
-                throw std::invalid_argument("MySQL does not support FULL JOIN");
-            q.sql += " FULL JOIN ";
+                return std::unexpected(invalid_sql("MySQL does not support FULL JOIN"));
+            query.sql += " FULL JOIN ";
             break;
         case join_kind::cross:
-            q.sql += " CROSS JOIN ";
+            query.sql += " CROSS JOIN ";
             break;
         }
-        q.sql += quote_qualified_ident(j.table);
-        if (j.alias)
-            q.sql += " AS " + quote_ident(*j.alias);
-        if (j.on_clause) {
-            q.sql += " ON " + compile_predicate(*j.on_clause, q.params);
+        if (auto appended = append_qualified(join.table); !appended)
+            return std::unexpected(appended.error());
+        if (join.alias) {
+            query.sql += " AS ";
+            if (auto appended = append_ident(*join.alias); !appended)
+                return std::unexpected(appended.error());
+        }
+        if (join.on_clause) {
+            auto predicate = compile_predicate(*join.on_clause, query.params);
+            if (!predicate)
+                return std::unexpected(predicate.error());
+            query.sql += " ON " + *predicate;
         }
     }
 
     if (ast.where_clause) {
-        q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
+        auto predicate = compile_predicate(*ast.where_clause, query.params);
+        if (!predicate)
+            return std::unexpected(predicate.error());
+        query.sql += " WHERE " + *predicate;
     }
 
     if (!ast.group_bys.empty()) {
-        q.sql += " GROUP BY ";
+        query.sql += " GROUP BY ";
         for (size_t i = 0; i < ast.group_bys.size(); ++i) {
-            q.sql += quote_qualified_ident(ast.group_bys[i]);
+            if (auto appended = append_qualified(ast.group_bys[i]); !appended)
+                return std::unexpected(appended.error());
             if (i + 1 < ast.group_bys.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     }
 
     if (ast.having_clause) {
-        q.sql += " HAVING " + compile_predicate(*ast.having_clause, q.params);
+        auto predicate = compile_predicate(*ast.having_clause, query.params);
+        if (!predicate)
+            return std::unexpected(predicate.error());
+        query.sql += " HAVING " + *predicate;
     }
 
     if (!ast.order_bys.empty()) {
-        q.sql += " ORDER BY ";
+        query.sql += " ORDER BY ";
         for (size_t i = 0; i < ast.order_bys.size(); ++i) {
-            q.sql += quote_qualified_ident(ast.order_bys[i].column) +
-                     (ast.order_bys[i].ascending ? " ASC" : " DESC");
-            if (i < ast.order_bys.size() - 1) {
-                q.sql += ", ";
-            }
+            if (auto appended = append_qualified(ast.order_bys[i].column); !appended)
+                return std::unexpected(appended.error());
+            query.sql += ast.order_bys[i].ascending ? " ASC" : " DESC";
+            if (i < ast.order_bys.size() - 1)
+                query.sql += ", ";
         }
     }
 
-    if (ast.limit_val) {
-        q.sql += " LIMIT " + std::to_string(*ast.limit_val);
-    }
+    if (ast.limit_val)
+        query.sql += " LIMIT " + std::to_string(*ast.limit_val);
     if (dialect_ == dialect::mysql && ast.offset_val && !ast.limit_val)
-        q.sql += " LIMIT 18446744073709551615";
-    if (ast.offset_val) {
-        q.sql += " OFFSET " + std::to_string(*ast.offset_val);
-    }
+        query.sql += " LIMIT 18446744073709551615";
+    if (ast.offset_val)
+        query.sql += " OFFSET " + std::to_string(*ast.offset_val);
 
-    return q;
+    return query;
 }
 
-compiled_query compiler::compile(const insert_ast& ast) {
-    compiled_query q;
+asterorm::result<compiled_query> compiler::compile(const insert_ast& ast) {
+    compiled_query query;
     if (ast.rows.empty())
-        throw std::invalid_argument("insert_ast requires at least one row");
+        return std::unexpected(invalid_sql("insert_ast requires at least one row"));
 
-    q.sql = "INSERT INTO " + quote_qualified_ident(ast.table);
+    auto table = quote_qualified_ident(ast.table);
+    if (!table)
+        return std::unexpected(table.error());
+    query.sql = "INSERT INTO " + *table;
     if (!ast.columns.empty()) {
-        q.sql += " (";
+        query.sql += " (";
         for (size_t i = 0; i < ast.columns.size(); ++i) {
-            q.sql += quote_qualified_ident(ast.columns[i]);
+            auto column = quote_qualified_ident(ast.columns[i]);
+            if (!column)
+                return std::unexpected(column.error());
+            query.sql += *column;
             if (i + 1 < ast.columns.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
-        q.sql += ")";
+        query.sql += ")";
     }
 
-    q.sql += " VALUES ";
-    for (size_t r = 0; r < ast.rows.size(); ++r) {
-        q.sql += "(";
-        const auto& row = ast.rows[r];
+    query.sql += " VALUES ";
+    for (size_t row_index = 0; row_index < ast.rows.size(); ++row_index) {
+        query.sql += "(";
+        const auto& row = ast.rows[row_index];
         for (size_t i = 0; i < row.size(); ++i) {
-            q.sql += compile_value(row[i], q.params);
+            auto value = compile_value(row[i], query.params);
+            if (!value)
+                return std::unexpected(value.error());
+            query.sql += *value;
             if (i + 1 < row.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
-        q.sql += ")";
-        if (r + 1 < ast.rows.size())
-            q.sql += ", ";
+        query.sql += ")";
+        if (row_index + 1 < ast.rows.size())
+            query.sql += ", ";
     }
 
     if (ast.on_conflict) {
         if (dialect_ == dialect::mysql)
-            throw std::invalid_argument(
-                "MySQL does not support targeted ON CONFLICT; use repository::upsert");
-        const auto& oc = *ast.on_conflict;
-        q.sql += " ON CONFLICT";
-        if (!oc.target_columns.empty()) {
-            q.sql += " (";
-            for (size_t i = 0; i < oc.target_columns.size(); ++i) {
-                q.sql += quote_qualified_ident(oc.target_columns[i]);
-                if (i + 1 < oc.target_columns.size())
-                    q.sql += ", ";
+            return std::unexpected(
+                invalid_sql("MySQL does not support targeted ON CONFLICT; use repository::upsert"));
+        const auto& conflict = *ast.on_conflict;
+        query.sql += " ON CONFLICT";
+        if (!conflict.target_columns.empty()) {
+            query.sql += " (";
+            for (size_t i = 0; i < conflict.target_columns.size(); ++i) {
+                auto column = quote_qualified_ident(conflict.target_columns[i]);
+                if (!column)
+                    return std::unexpected(column.error());
+                query.sql += *column;
+                if (i + 1 < conflict.target_columns.size())
+                    query.sql += ", ";
             }
-            q.sql += ")";
+            query.sql += ")";
         }
-        if (oc.do_nothing) {
-            q.sql += " DO NOTHING";
+        if (conflict.do_nothing) {
+            query.sql += " DO NOTHING";
         } else {
-            q.sql += " DO UPDATE SET ";
-            for (size_t i = 0; i < oc.updates.size(); ++i) {
-                q.sql += quote_qualified_ident(oc.updates[i].first);
-                q.sql += " = ";
-                q.sql += compile_value(oc.updates[i].second, q.params);
-                if (i + 1 < oc.updates.size())
-                    q.sql += ", ";
+            query.sql += " DO UPDATE SET ";
+            for (size_t i = 0; i < conflict.updates.size(); ++i) {
+                auto column = quote_qualified_ident(conflict.updates[i].first);
+                if (!column)
+                    return std::unexpected(column.error());
+                auto value = compile_value(conflict.updates[i].second, query.params);
+                if (!value)
+                    return std::unexpected(value.error());
+                query.sql += *column + " = " + *value;
+                if (i + 1 < conflict.updates.size())
+                    query.sql += ", ";
             }
-            if (oc.where_clause) {
-                q.sql += " WHERE " + compile_predicate(*oc.where_clause, q.params);
+            if (conflict.where_clause) {
+                auto predicate = compile_predicate(*conflict.where_clause, query.params);
+                if (!predicate)
+                    return std::unexpected(predicate.error());
+                query.sql += " WHERE " + *predicate;
             }
         }
     }
 
     if (!ast.returning.empty()) {
         if (dialect_ == dialect::mysql)
-            throw std::invalid_argument("MySQL does not support RETURNING");
-        q.sql += " RETURNING ";
+            return std::unexpected(invalid_sql("MySQL does not support RETURNING"));
+        query.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
-            q.sql += render_column(ast.returning[i]);
+            auto column = render_column(ast.returning[i]);
+            if (!column)
+                return std::unexpected(column.error());
+            query.sql += *column;
             if (i + 1 < ast.returning.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     }
 
-    return q;
+    return query;
 }
 
-compiled_query compiler::compile(const update_ast& ast) {
-    compiled_query q;
-    q.sql = "UPDATE " + quote_qualified_ident(ast.table) + " SET ";
+asterorm::result<compiled_query> compiler::compile(const update_ast& ast) {
+    compiled_query query;
+    auto table = quote_qualified_ident(ast.table);
+    if (!table)
+        return std::unexpected(table.error());
+    query.sql = "UPDATE " + *table + " SET ";
     for (size_t i = 0; i < ast.assignments.size(); ++i) {
-        q.sql += quote_qualified_ident(ast.assignments[i].first);
-        q.sql += " = ";
-        q.sql += compile_value(ast.assignments[i].second, q.params);
+        auto column = quote_qualified_ident(ast.assignments[i].first);
+        if (!column)
+            return std::unexpected(column.error());
+        auto value = compile_value(ast.assignments[i].second, query.params);
+        if (!value)
+            return std::unexpected(value.error());
+        query.sql += *column + " = " + *value;
         if (i + 1 < ast.assignments.size())
-            q.sql += ", ";
+            query.sql += ", ";
     }
     if (ast.where_clause) {
-        q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
+        auto predicate = compile_predicate(*ast.where_clause, query.params);
+        if (!predicate)
+            return std::unexpected(predicate.error());
+        query.sql += " WHERE " + *predicate;
     }
     if (!ast.returning.empty()) {
         if (dialect_ == dialect::mysql)
-            throw std::invalid_argument("MySQL does not support RETURNING");
-        q.sql += " RETURNING ";
+            return std::unexpected(invalid_sql("MySQL does not support RETURNING"));
+        query.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
-            q.sql += render_column(ast.returning[i]);
+            auto column = render_column(ast.returning[i]);
+            if (!column)
+                return std::unexpected(column.error());
+            query.sql += *column;
             if (i + 1 < ast.returning.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     }
-    return q;
+    return query;
 }
 
-compiled_query compiler::compile(const delete_ast& ast) {
-    compiled_query q;
-    q.sql = "DELETE FROM " + quote_qualified_ident(ast.table);
+asterorm::result<compiled_query> compiler::compile(const delete_ast& ast) {
+    compiled_query query;
+    auto table = quote_qualified_ident(ast.table);
+    if (!table)
+        return std::unexpected(table.error());
+    query.sql = "DELETE FROM " + *table;
     if (ast.where_clause) {
-        q.sql += " WHERE " + compile_predicate(*ast.where_clause, q.params);
+        auto predicate = compile_predicate(*ast.where_clause, query.params);
+        if (!predicate)
+            return std::unexpected(predicate.error());
+        query.sql += " WHERE " + *predicate;
     }
     if (!ast.returning.empty()) {
         if (dialect_ == dialect::mysql)
-            throw std::invalid_argument("MySQL does not support RETURNING");
-        q.sql += " RETURNING ";
+            return std::unexpected(invalid_sql("MySQL does not support RETURNING"));
+        query.sql += " RETURNING ";
         for (size_t i = 0; i < ast.returning.size(); ++i) {
-            q.sql += render_column(ast.returning[i]);
+            auto column = render_column(ast.returning[i]);
+            if (!column)
+                return std::unexpected(column.error());
+            query.sql += *column;
             if (i + 1 < ast.returning.size())
-                q.sql += ", ";
+                query.sql += ", ";
         }
     }
-    return q;
+    return query;
 }
 
 } // namespace asterorm::sql

@@ -47,7 +47,7 @@ TEST_CASE("Typed DSL: select<Entity>() builds a full-column SELECT", "[typed][se
 
     auto query = select<typed_user>().build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql ==
             R"(SELECT "id", "email", "name", "active", "deleted_at" FROM "typed_users")");
@@ -63,7 +63,7 @@ TEST_CASE("Typed DSL: where with typed_col == typed_val emits = $1", "[typed][wh
                      .limit(10)
                      .build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql ==
             R"(SELECT "id", "email", "name", "active", "deleted_at" FROM "typed_users")"
@@ -81,7 +81,7 @@ TEST_CASE("Typed DSL: && / || combine same-entity predicates", "[typed][where][l
                             (col<&typed_user::email> != val(std::string{"banned@x"})))
                      .build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql.find(R"(WHERE ("active" = $1 AND "email" != $2))") != std::string::npos);
     REQUIRE(compiled.params.size() == 2);
@@ -96,13 +96,13 @@ TEST_CASE("Typed DSL: is_null / is_not_null compile to IS NULL / IS NOT NULL",
         select<typed_user>().where(is_not_null(col<&typed_user::deleted_at>)).build();
 
     asterorm::sql::compiler compiler;
-    auto null_sql = compiler.compile(null_query).sql;
-    auto not_null_sql = compiler.compile(not_null_query).sql;
+    auto null_sql = compiler.compile(null_query).value().sql;
+    auto not_null_sql = compiler.compile(not_null_query).value().sql;
 
     REQUIRE(null_sql.find(R"(WHERE "deleted_at" IS NULL)") != std::string::npos);
     REQUIRE(not_null_sql.find(R"(WHERE "deleted_at" IS NOT NULL)") != std::string::npos);
 
-    auto null_compiled = compiler.compile(null_query);
+    auto null_compiled = compiler.compile(null_query).value();
     REQUIRE(null_compiled.params.empty()); // IS NULL takes no parameter
 }
 
@@ -114,7 +114,7 @@ TEST_CASE("Typed DSL: select_cols<DTO> validates field-type sequence", "[typed][
                      .build();
 
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql == R"(SELECT "email", "name" FROM "typed_users" WHERE "active" = $1)");
 }
@@ -126,7 +126,7 @@ TEST_CASE("Typed DSL: typed_col vs typed_col compares two columns of same entity
     auto query =
         select<typed_user>().where(col<&typed_user::email> != col<&typed_user::name>).build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql.find(R"(WHERE "email" != "name")") != std::string::npos);
     REQUIRE(compiled.params.empty());
@@ -149,7 +149,7 @@ TEST_CASE("Typed DSL: count_all and count(col) emit COUNT and have int64_t resul
     auto query =
         select_cols<typed_user_stats>(count_all(), count(col<&typed_user::active>)).build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql.find(R"(SELECT count(*), count("active") FROM "typed_users")") !=
             std::string::npos);
@@ -201,7 +201,7 @@ TEST_CASE("Typed DSL: mixed aggregate projection compiles to expected SQL",
                      .build();
 
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(
         compiled.sql ==
@@ -218,7 +218,7 @@ TEST_CASE("Typed DSL: group_by and having emit GROUP BY / HAVING", "[typed][aggr
                      .having(col<&order_row::qty> > val(0))
                      .build();
     asterorm::sql::compiler compiler;
-    auto compiled = compiler.compile(query);
+    auto compiled = compiler.compile(query).value();
 
     REQUIRE(compiled.sql.find(R"(GROUP BY "id")") != std::string::npos);
     REQUIRE(compiled.sql.find(R"(HAVING "qty" > $1)") != std::string::npos);

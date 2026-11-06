@@ -40,6 +40,8 @@ template <typename T> inline param_expr val(T&& v) {
     return {asterorm::encode_parameter(std::forward<T>(v))};
 }
 
+// `name` must be a bare identifier (`count`, `char_length`). The compiler
+// rejects anything else. `raw_arg` and `raw_expr` remain verbatim fragments.
 inline std::shared_ptr<func_expr> func(std::string name, std::vector<expr_ast> args = {}) {
     return std::make_shared<func_expr>(
         func_expr{std::move(name), std::move(args), false, std::nullopt, std::nullopt});
@@ -182,8 +184,9 @@ struct select_ast {
 
 // Value source for an INSERT/UPDATE assignment: either a literal value or a
 // raw expression snippet (e.g. "EXCLUDED.col", "DEFAULT"). Raw snippets are
-// NOT parameterized — callers must ensure they are safe (column names are
-// quoted via quote_ident internally).
+// NOT parameterized — callers must ensure they are safe. The compiler rejects
+// an embedded NUL so the fragment cannot truncate a C-string client call.
+// Column names are quoted via quote_ident.
 struct raw_expr {
     std::string fragment;
 };

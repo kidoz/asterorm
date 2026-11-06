@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
+
 #include "asterorm/sql/ast.hpp"
 #include "asterorm/sql/compiler.hpp"
 
@@ -10,7 +12,7 @@ TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
         auto query = select({"id", "name"}).from("users").build();
 
         compiler c;
-        auto compiled = c.compile(query);
+        auto compiled = c.compile(query).value();
 
         REQUIRE(compiled.sql == R"(SELECT "id", "name" FROM "users")");
         REQUIRE(compiled.params.empty());
@@ -25,7 +27,7 @@ TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
                          .build();
 
         compiler c;
-        auto compiled = c.compile(query);
+        auto compiled = c.compile(query).value();
 
         REQUIRE(compiled.sql ==
                 R"(SELECT * FROM "products" WHERE ("price" > $1 AND "active" = $2) ORDER )"
@@ -46,7 +48,7 @@ TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
                          .build();
 
         compiler c;
-        auto compiled = c.compile(query);
+        auto compiled = c.compile(query).value();
 
         REQUIRE(
             compiled.sql ==
@@ -60,7 +62,7 @@ TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
     SECTION("Select with Limit and Offset") {
         auto query = select({"id"}).from("users").limit(20).offset(40).build();
         compiler c;
-        auto compiled = c.compile(query);
+        auto compiled = c.compile(query).value();
         REQUIRE(compiled.sql == R"(SELECT "id" FROM "users" LIMIT 20 OFFSET 40)");
     }
 }
@@ -73,7 +75,7 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
                      .returning({"id"})
                      .build();
         compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql ==
                 R"(INSERT INTO "users" ("email", "name") VALUES ($1, $2) RETURNING "id")");
         REQUIRE(compiled.params.size() == 2);
@@ -87,7 +89,7 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
                      .on_conflict({.target_columns = {"id"}, .do_nothing = true})
                      .build();
         compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql == R"(INSERT INTO "events" ("id", "name") VALUES ($1, $2), ($3, $4) )"
                                 R"(ON CONFLICT ("id") DO NOTHING)");
         REQUIRE(compiled.params.size() == 4);
@@ -101,7 +103,7 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
                                    .updates = {{"name", raw_expr{R"("excluded"."name")"}}}})
                      .build();
         compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql == R"(INSERT INTO "events" ("id", "name") VALUES ($1, $2) )"
                                 R"(ON CONFLICT ("id") DO UPDATE SET "name" = "excluded"."name")");
     }
@@ -113,7 +115,7 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
                      .returning({"id", "name"})
                      .build();
         compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql ==
                 R"(UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id", "name")");
         REQUIRE(compiled.params.size() == 2);
@@ -129,7 +131,7 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
                      .having(count_all() > val(0)) // NOTE: requires comparator overload below
                      .build();
         asterorm::sql::compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql ==
                 R"(SELECT count(*) AS "n", "users"."role" FROM "users" INNER JOIN "roles" ON )"
                 R"("users"."role_id" = "roles"."id" WHERE "users"."active" = $1 GROUP BY )"
@@ -142,8 +144,26 @@ TEST_CASE("DML: insert / update / delete AST", "[core][sql][dml]") {
     SECTION("Delete with RETURNING") {
         auto q = delete_from("users").where(col("id") == val(7)).returning({"*"}).build();
         compiler c;
-        auto compiled = c.compile(q);
+        auto compiled = c.compile(q).value();
         REQUIRE(compiled.sql == R"(DELETE FROM "users" WHERE "id" = $1 RETURNING *)");
         REQUIRE(compiled.params.size() == 1);
     }
+}
+
+TEST_CASE("Compiler rejects identifiers and function names that can change the statement",
+          "[core][sql][ast]") {
+    compiler compiler;
+    REQUIRE_FALSE(compiler.quote_ident(std::string_view("users\0drop", 10)).has_value());
+    REQUIRE_FALSE(compiler.quote_qualified_ident("public..users").has_value());
+    REQUIRE(compiler.quote_ident("na\"me").value() == R"("na""me")");
+
+    auto injected = select({}).from("users").build();
+    injected.items.push_back(select_item{.fn = func("count; delete from accounts", {})});
+    REQUIRE_FALSE(compiler.compile(injected).has_value());
+
+    insert_ast insert;
+    insert.table = "events";
+    insert.columns = {"id"};
+    insert.rows = {{raw_expr{std::string("1\0; drop", 8)}}};
+    REQUIRE_FALSE(compiler.compile(insert).has_value());
 }
