@@ -87,6 +87,20 @@ TEST_CASE("Typed DSL: && / || combine same-entity predicates", "[typed][where][l
     REQUIRE(compiled.params.size() == 2);
 }
 
+TEST_CASE("Typed DSL: string literals remain text parameters", "[typed][where]") {
+    using namespace asterorm::sql::typed;
+
+    auto query =
+        select<typed_user>().where(col<&typed_user::email> == val("alice'o@example.com")).build();
+    asterorm::sql::compiler compiler;
+    auto compiled = compiler.compile(query).value();
+
+    REQUIRE(compiled.sql.contains(R"(WHERE "email" = $1)"));
+    REQUIRE(compiled.params.size() == 1);
+    REQUIRE(compiled.params[0].value == std::optional<std::string>{"alice'o@example.com"});
+    REQUIRE(compiled.params[0].type == asterorm::parameter_type::text);
+}
+
 TEST_CASE("Typed DSL: is_null / is_not_null compile to IS NULL / IS NOT NULL",
           "[typed][where][null]") {
     using namespace asterorm::sql::typed;

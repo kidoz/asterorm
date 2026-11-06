@@ -10,11 +10,20 @@ core_tests = executable(
     'unit/test_transactions.cpp',
     'unit/test_typed_dsl.cpp',
     'unit/test_typed_query_header.cpp',
+    'compile/test_typed_dsl.cpp',
   ],
   dependencies : [asterorm_core_dep, catch2_dep],
 )
 
 test('core unit tests', core_tests)
+
+test(
+  'typed DSL compile checks',
+  python_program,
+  args : [files('compile/check_typed_dsl.py'), '--build-root', meson.project_build_root()],
+  depends : core_tests,
+  timeout : 180,
+)
 
 if clickhouse_feature.allowed()
   clickhouse_tests = executable(

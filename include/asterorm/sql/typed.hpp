@@ -81,17 +81,20 @@ template <auto MemberPtr> constexpr std::string_view column_name_for() {
 
 template <auto MemberPtr> constexpr bool column_declared_v = !column_name_for<MemberPtr>().empty();
 
-// Operand compatibility for comparisons. Same decayed types match; arithmetic
-// types interconvert except across the bool boundary; otherwise fall back to
-// implicit-conversion (covers std::string from const char*, etc.).
+// Operand compatibility for comparisons. Same decayed types match. A boolean
+// operand requires bool on both sides, even for types implicitly convertible to bool.
+// Other arithmetic types interconvert; otherwise allow implicit conversion
+// (covers std::string from const char*, etc.).
 template <typename Field, typename Other>
 inline constexpr bool compatible_for_compare_v = []() constexpr {
     using F = std::decay_t<Field>;
     using O = std::decay_t<Other>;
     if constexpr (std::is_same_v<F, O>) {
         return true;
+    } else if constexpr (std::is_same_v<F, bool> || std::is_same_v<O, bool>) {
+        return false;
     } else if constexpr (std::is_arithmetic_v<F> && std::is_arithmetic_v<O>) {
-        return std::is_same_v<F, bool> == std::is_same_v<O, bool>;
+        return true;
     } else {
         return std::is_convertible_v<O, F>;
     }

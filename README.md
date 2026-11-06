@@ -41,6 +41,8 @@ AsterORM v0.1 covers a small but production-shaped surface:
 * SQLite backend (`sqlite::driver`): file/URI/`:memory:` databases via `sqlite3_open_v2`, foreign keys on by default, 5s busy timeout, native bool binding (`INTEGER 1/0`), bounded LRU prepared-statement cache, `transaction_options`-aware `BEGIN`/`BEGIN IMMEDIATE`
 * raw SQL mapping through `native<T>()`, `native_scalar<T>()`, and `native_map()`
 * a small SQL AST/compiler for parameterized statements
+* typed SELECT predicates with compile-time operand checks; boolean columns accept
+  boolean operands, and text columns accept string literals as bound text parameters
 
 Not implemented yet: lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, streaming cursors for large result sets, and a production-ready identity map. Relationship rows are loaded explicitly with `load_related_one` / `load_related_many`. The typed DSL covers `select`, filters, order, limit, `group_by`, `having`, and aggregates. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
 
