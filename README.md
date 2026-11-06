@@ -42,7 +42,15 @@ AsterORM v0.1 covers a small but production-shaped surface:
 * raw SQL mapping through `native<T>()`, `native_scalar<T>()`, and `native_map()`
 * a small SQL AST/compiler for parameterized statements
 
-Not implemented yet: relationship mapping, lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, a complete typed query DSL, streaming cursors for large result sets, and a production-ready identity map. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
+Not implemented yet: lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, streaming cursors for large result sets, and a production-ready identity map. Relationship rows are loaded explicitly with `load_related_one` / `load_related_many`. The typed DSL covers `select`, filters, order, limit, `group_by`, `having`, and aggregates. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
+
+## Security
+
+Values are bound as parameters on PostgreSQL, SQLite, and MySQL. Table and column names are quoted for the active dialect, and a name that contains a NUL byte is rejected. `func()` accepts only a bare function name. `raw_expr`, `native()`, and `COPY` SQL are caller-owned statement text.
+
+PostgreSQL simple `execute` can run more than one statement in that caller-owned text. SQLite rejects trailing statements. MySQL does not enable multi-statement execution, and after every simple query it restores `ANSI_QUOTES`, `NO_BACKSLASH_ESCAPES`, and `time_zone = '+00:00'` before the next parameterized call.
+
+The ClickHouse adapter is experimental, off by default, and interpolates parameter literals. Do not use it with untrusted input. A failed pool warmup is reported by `warmup_error()` and by `acquire()`; the pool does not pretend that `min_size` connections were opened.
 
 ## Quick Example
 
