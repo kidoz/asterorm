@@ -66,6 +66,9 @@ namespace typed = asterorm::sql::typed;
     (void)typed::select<compile_user>().where(typed::col<&compile_user::age> > typed::val(18));
     (void)typed::select_cols<std::tuple<int, std::string>>(typed::col<&compile_user::age>,
                                                            typed::col<&compile_user::email>);
+    (void)typed::select_cols(typed::col<&compile_user::email>, typed::col<&compile_user::active>,
+                             typed::col<&compile_user::enabled>);
+    (void)typed::select_cols(typed::count_all(), typed::sum(typed::col<&compile_user::age>));
     (void)typed::is_null(typed::col<&compile_user::enabled>);
 #elif ASTERORM_COMPILE_CASE == 1
     (void)(typed::col<&compile_user::active> == typed::val("not-a-boolean"));
@@ -97,6 +100,12 @@ namespace typed = asterorm::sql::typed;
 #elif ASTERORM_COMPILE_CASE == 14
     (void)typed::select_cols<std::tuple<int, int>>(typed::col<&compile_user::age>,
                                                    typed::col<&compile_other::age>);
+#elif ASTERORM_COMPILE_CASE == 15
+    (void)typed::select_cols(typed::col<&compile_user::age>, typed::col<&compile_other::age>);
+#elif ASTERORM_COMPILE_CASE == 16
+    (void)typed::select_cols(typed::count_all());
+#elif ASTERORM_COMPILE_CASE == 17
+    (void)typed::select_cols();
 #else
 #error Unknown ASTERORM_COMPILE_CASE
 #endif

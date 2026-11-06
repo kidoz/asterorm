@@ -43,6 +43,8 @@ AsterORM v0.1 covers a small but production-shaped surface:
 * a small SQL AST/compiler for parameterized statements
 * typed SELECT predicates with compile-time operand checks; boolean columns accept
   boolean operands, and text columns accept string literals as bound text parameters
+* inferred tuple projections through `sql::typed::select_cols(...)`, including
+  optional columns and aggregate projected types, alongside explicit DTO projections
 
 Not implemented yet: lazy/eager loading, async APIs, SQL parsing, raw SQL type checking, streaming cursors for large result sets, and a production-ready identity map. Relationship rows are loaded explicitly with `load_related_one` / `load_related_many`. The typed DSL covers `select`, filters, order, limit, `group_by`, `having`, and aggregates. PostgreSQL binary protocol and SQLite-side bulk-load helpers (analogous to `COPY`) are also not implemented yet.
 
@@ -104,6 +106,27 @@ int main() {
     return 0;
 }
 ```
+
+## Typed Projections
+
+For a mapped `User` and a session `db`, omit the result type to infer a tuple in
+selection order:
+
+```cpp
+#include <asterorm/sql/typed_query.hpp>
+
+namespace typed = asterorm::sql::typed;
+auto rows = typed::query(db,
+    typed::select_cols(typed::col<&User::email>, typed::col<&User::active>)
+        .where(typed::col<&User::active> == typed::val(true)));
+// result<vector<tuple<string, bool>>> for string email and bool active fields.
+```
+
+Optional fields remain optional in the tuple. Aggregate items use their existing
+projected types, for example `count_all()` produces `std::int64_t`. Include at
+least one mapped column or entity-bound aggregate to determine the table, and
+keep all entity-bound items on the same entity. Use `select_cols<DTO>(...)` when
+you want a named result struct instead.
 
 ## Getting Started
 

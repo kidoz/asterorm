@@ -62,9 +62,9 @@ asterorm::result<DTO> hydrate_dto(const Res& result_set, int row) {
 
 // Execute a typed SELECT against the session and hydrate the rows into the
 // builder's Result type. Whole-entity builders (sql::typed::select<Entity>())
-// hydrate via entity_traits<Entity>; projection builders (select_cols<DTO>)
-// aggregate-initialise the DTO from each row positionally using the typelist
-// of projected items.
+// hydrate via entity_traits<Entity>; projection builders (select_cols<DTO> or
+// inferred select_cols) initialise the DTO or tuple from each row positionally
+// using the typelist of projected items.
 // Accept the builder by either rvalue (temporary chain) or lvalue (named).
 // The lvalue overload forwards to the rvalue one; both branch on the typelist
 // to pick whole-entity vs. DTO hydration.

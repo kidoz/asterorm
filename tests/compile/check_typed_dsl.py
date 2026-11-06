@@ -50,6 +50,11 @@ def main() -> int:
         (12, "incompatible DTO", r"DTO field types do not match"),
         (13, "NULL equality", r"Use sql::typed::is_null"),
         (14, "mixed-entity projection", r"every entity-bound item to share the same entity"),
+        (15, "mixed-entity inferred projection",
+         r"every entity-bound item to share the same entity"),
+        (16, "inferred projection without an entity",
+         r"requires at least one entity-bound column"),
+        (17, "empty inferred projection", r"select_cols requires at least one item"),
     ]
     failures = 0
     for case_number, description, diagnostic_pattern in cases:

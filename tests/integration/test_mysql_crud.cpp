@@ -3,6 +3,7 @@
 #include <future>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 
 #include "asterorm/migration.hpp"
 #include "asterorm/mysql/driver.hpp"
@@ -232,6 +233,26 @@ TEST_CASE("MySQL repository, typed queries, generated values and transactions",
     auto counts =
         take(typed::query(db, typed::select_cols<Count>(typed::count(typed::col<&MysqlUser::id>))));
     REQUIRE(counts.front().value == 3);
+
+    auto tuple_rows = take(typed::query(db, typed::select_cols(typed::col<&MysqlUser::name>,
+                                                               typed::col<&MysqlUser::active>,
+                                                               typed::col<&MysqlUser::note>)
+                                                .order_by(typed::col<&MysqlUser::name>)));
+    REQUIRE(tuple_rows.size() == 3);
+    REQUIRE(std::get<0>(tuple_rows[0]) == "Bob");
+    REQUIRE(std::get<1>(tuple_rows[0]));
+    REQUIRE_FALSE(std::get<2>(tuple_rows[0]));
+    REQUIRE(std::get<0>(tuple_rows[2]) == "Upserted");
+    REQUIRE_FALSE(std::get<1>(tuple_rows[2]));
+    REQUIRE(std::get<2>(tuple_rows[2]) == std::optional<std::string>{"t"});
+
+    auto tuple_stats = take(typed::query(
+        db, typed::select_cols(typed::count_all(), typed::count(typed::col<&MysqlUser::note>),
+                               typed::sum(typed::col<&MysqlUser::version>),
+                               typed::avg(typed::col<&MysqlUser::version>))));
+    REQUIRE(tuple_stats.size() == 1);
+    REQUIRE(tuple_stats.front() ==
+            std::tuple<std::int64_t, std::int64_t, std::int64_t, double>{3, 1, 6, 2.0});
 
     MysqlComposite composite{.owner = 1, .item = 2, .label = "composite"};
     take(repo.insert(composite));

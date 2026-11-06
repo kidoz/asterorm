@@ -495,10 +495,11 @@ template <typename Entity> typed_select_builder<Entity, Entity> select() {
     return typed_select_builder<Entity, Entity>{detail::make_entity_select_ast<Entity>()};
 }
 
-// Mixed-projection SELECT into a user-declared DTO. Each Items must be a
-// `selectable` (typed_col or one of the aggregate nodes); the DTO must be
-// aggregate-initialisable from the projected types in declared order.
-template <typename DTO, selectable... Items> auto select_cols(Items...) {
+// Mixed-projection SELECT into an explicit DTO or an inferred tuple. Each Items
+// must be selectable; the result is initialised from projected types in order.
+// A default result type keeps explicit DTO calls unambiguous even if the DTO
+// itself satisfies the public selectable concept.
+template <typename DTO = void, selectable... Items> auto select_cols(Items...) {
     static_assert(sizeof...(Items) > 0, "asterorm: select_cols requires at least one item");
 
     using entity = detail::pick_entity_t<typename Items::entity_type...>;
@@ -510,11 +511,13 @@ template <typename DTO, selectable... Items> auto select_cols(Items...) {
         ((detail::entity_compatible_v<typename Items::entity_type, entity>) && ...),
         "asterorm: select_cols requires every entity-bound item to share the same entity");
 
-    static_assert(detail::aggregate_initable<DTO, typename Items::projected_type...>,
+    using result_type =
+        std::conditional_t<std::is_void_v<DTO>, std::tuple<typename Items::projected_type...>, DTO>;
+    static_assert(detail::aggregate_initable<result_type, typename Items::projected_type...>,
                   "asterorm: DTO field types do not match the projected items. "
                   "Each projected type must aggregate-initialize the DTO in declared order.");
 
-    return typed_select_builder<entity, DTO, Items...>{
+    return typed_select_builder<entity, result_type, Items...>{
         detail::make_projection_select_ast<entity, Items...>()};
 }
 

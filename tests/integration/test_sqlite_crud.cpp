@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "asterorm/migration.hpp"
@@ -259,6 +260,33 @@ TEST_CASE("SQLite Integration: typed DSL query() round-trips entities and DTOs",
         REQUIRE(rows->size() == 1);
         REQUIRE(rows->front().email == "bob@example.com");
         REQUIRE(rows->front().name == "Bob");
+    }
+
+    SECTION("Inferred tuple projection preserves booleans and nullable columns") {
+        bob.deleted_at = "2026-11-06";
+        REQUIRE(repo.update(bob).has_value());
+        auto rows = tsql::query(db, tsql::select_cols(tsql::col<&sqlite_user::email>,
+                                                      tsql::col<&sqlite_user::active>,
+                                                      tsql::col<&sqlite_user::deleted_at>)
+                                        .order_by(tsql::col<&sqlite_user::email>));
+        REQUIRE(rows.has_value());
+        REQUIRE(rows->size() == 2);
+        REQUIRE(std::get<0>((*rows)[0]) == "alice@example.com");
+        REQUIRE(std::get<1>((*rows)[0]));
+        REQUIRE_FALSE(std::get<2>((*rows)[0]));
+        REQUIRE(std::get<0>((*rows)[1]) == "bob@example.com");
+        REQUIRE_FALSE(std::get<1>((*rows)[1]));
+        REQUIRE(std::get<2>((*rows)[1]) == bob.deleted_at);
+
+        auto stats =
+            tsql::query(db, tsql::select_cols(tsql::count_all(),
+                                              tsql::count(tsql::col<&sqlite_user::deleted_at>),
+                                              tsql::sum(tsql::col<&sqlite_user::id>),
+                                              tsql::avg(tsql::col<&sqlite_user::id>)));
+        REQUIRE(stats.has_value());
+        REQUIRE(stats->size() == 1);
+        REQUIRE(stats->front() ==
+                std::tuple<std::int64_t, std::int64_t, std::int64_t, double>{2, 1, 3, 1.5});
     }
 
     SECTION("Aggregate projection: count + max into a stats DTO") {

@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <type_traits>
 
 #include "asterorm/core/entity_traits.hpp"
 #include "asterorm/sql/compiler.hpp"
@@ -146,6 +148,88 @@ TEST_CASE("Typed DSL: typed_col vs typed_col compares two columns of same entity
     REQUIRE(compiled.params.empty());
 }
 
+TEST_CASE("Typed DSL: inferred projections preserve column types and order",
+          "[typed][projection][inferred]") {
+    using namespace asterorm::sql::typed;
+
+    auto selection = select_cols(col<&typed_user::email>, col<&typed_user::active>,
+                                 col<&typed_user::deleted_at>, col<&typed_user::id>);
+    STATIC_REQUIRE(std::is_same_v<
+                   typename decltype(selection)::result_type,
+                   std::tuple<std::string, bool, std::optional<std::string>, std::optional<int>>>);
+    STATIC_REQUIRE(std::is_same_v<typename decltype(selection)::entity_type, typed_user>);
+    STATIC_REQUIRE(decltype(selection)::projection_size == 4);
+
+    auto single_column = select_cols(col<&typed_user::email>);
+    STATIC_REQUIRE(
+        std::is_same_v<typename decltype(single_column)::result_type, std::tuple<std::string>>);
+}
+
+TEST_CASE("Typed DSL: inferred projections match explicit tuples and string SQL",
+          "[typed][projection][inferred]") {
+    namespace typed = asterorm::sql::typed;
+    namespace sql = asterorm::sql;
+    using row_type = std::tuple<std::string, bool, std::optional<std::string>>;
+
+    auto inferred_ast =
+        typed::select_cols(typed::col<&typed_user::email>, typed::col<&typed_user::active>,
+                           typed::col<&typed_user::deleted_at>)
+            .where((typed::col<&typed_user::active> == typed::val(true)) &&
+                   (typed::col<&typed_user::email> != typed::val("excluded")))
+            .order_by(typed::col<&typed_user::email>, typed::desc)
+            .limit(5)
+            .offset(2)
+            .build();
+    auto explicit_ast = typed::select_cols<row_type>(typed::col<&typed_user::email>,
+                                                     typed::col<&typed_user::active>,
+                                                     typed::col<&typed_user::deleted_at>)
+                            .where((typed::col<&typed_user::active> == typed::val(true)) &&
+                                   (typed::col<&typed_user::email> != typed::val("excluded")))
+                            .order_by(typed::col<&typed_user::email>, typed::desc)
+                            .limit(5)
+                            .offset(2)
+                            .build();
+    auto string_ast = sql::select({"email", "active", "deleted_at"})
+                          .from("typed_users")
+                          .where((sql::col("active") == sql::val(true)) &&
+                                 (sql::col("email") != sql::val("excluded")))
+                          .order_by("email", false)
+                          .limit(5)
+                          .offset(2)
+                          .build();
+
+    for (auto target : {sql::dialect::postgres, sql::dialect::mysql}) {
+        sql::compiler compiler{target};
+        auto inferred_query = compiler.compile(inferred_ast).value();
+        auto explicit_query = compiler.compile(explicit_ast).value();
+        auto string_query = compiler.compile(string_ast).value();
+        REQUIRE(inferred_query.sql == explicit_query.sql);
+        REQUIRE(inferred_query.params == explicit_query.params);
+        REQUIRE(inferred_query.sql == string_query.sql);
+        REQUIRE(inferred_query.params == string_query.params);
+    }
+}
+
+TEST_CASE("Typed DSL: explicit selectable DTOs remain unambiguous",
+          "[typed][projection][inferred]") {
+    using namespace asterorm::sql::typed;
+    struct selectable_summary {
+        std::string email;
+        using projected_type = std::string;
+        using entity_type = typed_user;
+        static asterorm::sql::select_item to_select_item() {
+            return typed_col<&typed_user::email>::to_select_item();
+        }
+    };
+
+    auto explicit_selection = select_cols<selectable_summary>(selectable_summary{});
+    STATIC_REQUIRE(
+        std::is_same_v<typename decltype(explicit_selection)::result_type, selectable_summary>);
+    auto inferred_selection = select_cols(selectable_summary{});
+    STATIC_REQUIRE(std::is_same_v<typename decltype(inferred_selection)::result_type,
+                                  std::tuple<std::string>>);
+}
+
 namespace {
 struct typed_user_stats {
     std::int64_t total;
@@ -203,6 +287,21 @@ TEST_CASE("Typed DSL: sum/min/max/avg derive correct projected_type", "[typed][a
     STATIC_REQUIRE(std::is_same_v<min_col_t<&order_row::qty>::projected_type, int>);
     STATIC_REQUIRE(std::is_same_v<max_col_t<&order_row::price>::projected_type, double>);
     STATIC_REQUIRE(std::is_same_v<avg_col_t<&order_row::qty>::projected_type, double>);
+}
+
+TEST_CASE("Typed DSL: inferred aggregate tuples use existing projected types",
+          "[typed][aggregate][inferred]") {
+    using namespace asterorm::sql::typed;
+
+    auto selection =
+        select_cols(count_all(), count(col<&order_row::qty>), sum(col<&order_row::qty>),
+                    sum(col<&order_row::price>), min(col<&order_row::qty>),
+                    max(col<&order_row::price>), avg(col<&order_row::qty>));
+    STATIC_REQUIRE(
+        std::is_same_v<
+            typename decltype(selection)::result_type,
+            std::tuple<std::int64_t, std::int64_t, std::int64_t, double, int, double, double>>);
+    STATIC_REQUIRE(std::is_same_v<typename decltype(selection)::entity_type, order_row>);
 }
 
 TEST_CASE("Typed DSL: mixed aggregate projection compiles to expected SQL",

@@ -2,11 +2,14 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include "asterorm/entity_traits.hpp"
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/session.hpp"
+#include "asterorm/sql/typed_query.hpp"
 
 struct native_user {
     std::optional<int> id;
@@ -25,6 +28,98 @@ template <> struct asterorm::entity_traits<native_user> {
                         asterorm::column<&native_user::name>("name"),
                         asterorm::column<&native_user::active>("active"));
 };
+
+struct pg_projection_user {
+    int id;
+    std::string email;
+    bool active;
+    std::optional<std::string> note;
+};
+
+template <> struct asterorm::entity_traits<pg_projection_user> {
+    static constexpr const char* table = "typed_projection_users";
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&pg_projection_user::id>("id"),
+                        asterorm::column<&pg_projection_user::email>("email"),
+                        asterorm::column<&pg_projection_user::active>("active"),
+                        asterorm::column<&pg_projection_user::note>("note"));
+};
+
+TEST_CASE("PG Integration: inferred tuple projections", "[pg][typed][inferred]") {
+    namespace typed = asterorm::sql::typed;
+    const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::pool_config cfg;
+    cfg.conninfo = configured ? configured
+                              : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                "password=orm_test sslmode=disable";
+    cfg.min_size = 1;
+    cfg.max_size = 1;
+    asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
+    asterorm::session db{pool};
+
+    auto lease = pool.acquire();
+    REQUIRE(lease.has_value());
+    REQUIRE((*lease)
+                ->execute("CREATE TEMP TABLE typed_projection_users ("
+                          "id INTEGER, email TEXT, active BOOLEAN, note TEXT)")
+                .has_value());
+    REQUIRE((*lease)
+                ->execute("INSERT INTO typed_projection_users VALUES "
+                          "(1, 'alice@example.com', true, NULL), "
+                          "(2, 'bob@example.com', false, 'retired')")
+                .has_value());
+    lease->release_to_pool();
+
+    auto selection = typed::select_cols(typed::col<&pg_projection_user::email>,
+                                        typed::col<&pg_projection_user::active>,
+                                        typed::col<&pg_projection_user::note>);
+    selection.order_by(typed::col<&pg_projection_user::id>);
+    auto rows = typed::query(db, selection);
+    using row_type = std::tuple<std::string, bool, std::optional<std::string>>;
+    STATIC_REQUIRE(std::is_same_v<typename decltype(rows)::value_type, std::vector<row_type>>);
+    REQUIRE(rows.has_value());
+    REQUIRE(rows->size() == 2);
+    REQUIRE(std::get<0>((*rows)[0]) == "alice@example.com");
+    REQUIRE(std::get<1>((*rows)[0]));
+    REQUIRE_FALSE(std::get<2>((*rows)[0]));
+    REQUIRE(std::get<0>((*rows)[1]) == "bob@example.com");
+    REQUIRE_FALSE(std::get<1>((*rows)[1]));
+    REQUIRE(std::get<2>((*rows)[1]) == std::optional<std::string>{"retired"});
+
+    auto explicit_rows =
+        typed::query(db, typed::select_cols<row_type>(typed::col<&pg_projection_user::email>,
+                                                      typed::col<&pg_projection_user::active>,
+                                                      typed::col<&pg_projection_user::note>)
+                             .order_by(typed::col<&pg_projection_user::id>));
+    REQUIRE(explicit_rows.has_value());
+    REQUIRE(*rows == *explicit_rows);
+
+    auto stats =
+        typed::query(db, typed::select_cols(typed::count_all(),
+                                            typed::count(typed::col<&pg_projection_user::note>),
+                                            typed::sum(typed::col<&pg_projection_user::id>),
+                                            typed::min(typed::col<&pg_projection_user::id>),
+                                            typed::max(typed::col<&pg_projection_user::id>),
+                                            typed::avg(typed::col<&pg_projection_user::id>)));
+    REQUIRE(stats.has_value());
+    REQUIRE(stats->size() == 1);
+    REQUIRE(
+        stats->front() ==
+        std::tuple<std::int64_t, std::int64_t, std::int64_t, int, int, double>{2, 1, 3, 1, 2, 1.5});
+
+    auto single_column =
+        typed::query(db, typed::select_cols(typed::col<&pg_projection_user::email>)
+                             .where(typed::col<&pg_projection_user::active> == typed::val(true)));
+    REQUIRE(single_column.has_value());
+    REQUIRE(single_column->size() == 1);
+    REQUIRE(std::get<0>(single_column->front()) == "alice@example.com");
+
+    auto empty_rows =
+        typed::query(db, typed::select_cols(typed::col<&pg_projection_user::email>)
+                             .where(typed::col<&pg_projection_user::id> > typed::val(2)));
+    REQUIRE(empty_rows.has_value());
+    REQUIRE(empty_rows->empty());
+}
 
 TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
