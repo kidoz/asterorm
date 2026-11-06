@@ -35,7 +35,7 @@ bool connection::is_open() const {
     return conn_ != nullptr && PQstatus(conn_) == CONNECTION_OK;
 }
 
-void connection::close() {
+void connection::close() noexcept {
     if (conn_) {
         PQfinish(conn_);
         conn_ = nullptr;
@@ -43,6 +43,31 @@ void connection::close() {
     prepared_statements_.clear();
     prepared_statement_order_.clear();
     next_stmt_id_ = 0;
+}
+
+asterorm::result<void> connection::advisory_lock(std::int64_t key) {
+    auto locked = execute_params("SELECT pg_catalog.pg_advisory_lock($1::bigint)",
+                                 {asterorm::encode_parameter(key)});
+    if (!locked) {
+        return std::unexpected(locked.error());
+    }
+    return {};
+}
+
+asterorm::result<void> connection::advisory_unlock(std::int64_t key) {
+    auto unlocked = execute_params("SELECT pg_catalog.pg_advisory_unlock($1::bigint)",
+                                   {asterorm::encode_parameter(key)});
+    if (!unlocked) {
+        return std::unexpected(unlocked.error());
+    }
+    if (unlocked->rows() != 1 || unlocked->columns() != 1 ||
+        unlocked->get_string(0, 0) != std::optional<std::string>{"t"}) {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Advisory lock was not released by this connection";
+        return std::unexpected(std::move(error));
+    }
+    return {};
 }
 
 static db_error make_error_from_pgresult(PGconn* conn, PGresult* res, db_error_kind fallback) {

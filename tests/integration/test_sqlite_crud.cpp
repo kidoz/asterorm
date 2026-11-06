@@ -15,6 +15,24 @@ TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][
     asterorm::test::check_typed_query_observer(asterorm::sqlite::driver{}, ":memory:");
 }
 
+TEST_CASE("SQLite Integration: advisory scopes reject before leasing", "[sqlite][advisory]") {
+    asterorm::pool_config config;
+    config.conninfo = ":memory:";
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, config};
+    asterorm::session db{pool};
+    bool invoked = false;
+    auto result = db.with_advisory_lock(1, [&](auto&) -> asterorm::result<void> {
+        invoked = true;
+        return {};
+    });
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().kind == asterorm::db_error_kind::query_failed);
+    REQUIRE_FALSE(invoked);
+    REQUIRE(pool.stats().total == 0);
+}
+
 struct sqlite_lock_row {
     int id{};
 };

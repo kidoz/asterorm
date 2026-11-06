@@ -11,6 +11,7 @@ core_tests = executable(
     'unit/test_typed_dsl.cpp',
     'unit/test_typed_query.cpp',
     'unit/test_select_locking.cpp',
+    'unit/test_advisory_lock.cpp',
     'unit/test_typed_query_header.cpp',
     'compile/test_typed_dsl.cpp',
   ],
@@ -71,6 +72,7 @@ if postgres_enabled
     [
       'integration/test_crud.cpp',
       'integration/test_transactions.cpp',
+      'integration/test_advisory_lock.cpp',
       'integration/test_pool.cpp',
       'integration/test_sql.cpp',
       'integration/test_extras.cpp',

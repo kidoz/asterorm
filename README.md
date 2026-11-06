@@ -35,6 +35,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - Typed SELECT filters, ordering, pagination, grouping, aggregates, and inferred
   tuple or named DTO projections.
 - Runtime SQL builders and native SQL with entity, scalar, or custom row mapping.
+- [Scoped advisory locks](docs/how-to/advisory-locking.md) on PostgreSQL, with
+  connection pinning, nested scopes, and cleanup on errors and exceptions.
 - [SELECT row locking](docs/how-to/select-locking.md) on PostgreSQL and MySQL,
   through both builders, with rejection on unsupported backends.
 - Exclusive connection leases, bounded prepared-statement caches, pool statistics,

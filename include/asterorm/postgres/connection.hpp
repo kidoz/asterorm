@@ -1,6 +1,7 @@
 #pragma once
 #include <libpq-fe.h>
 
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string>
@@ -29,7 +30,10 @@ class connection {
     ~connection();
 
     bool is_open() const;
-    void close();
+    void close() noexcept;
+
+    asterorm::result<void> advisory_lock(std::int64_t key);
+    asterorm::result<void> advisory_unlock(std::int64_t key);
 
     // Used by driver
     explicit connection(PGconn* conn);

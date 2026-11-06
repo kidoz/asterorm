@@ -6,6 +6,7 @@ Each addresses a specific task.
 - [Build, install, and link the library](build-and-install.md)
 - [Query and project data](query-data.md)
 - [Lock selected rows](select-locking.md)
+- [Scope an advisory lock](advisory-locking.md)
 - [Migrate string queries to the typed DSL](../typed-query-migration.md)
 - [Use transactions and retries](transactions.md)
 - [Apply and roll back schema migrations](migrations.md)

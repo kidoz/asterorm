@@ -91,6 +91,23 @@ TEST_CASE("MySQL Integration: typed query observation", "[mysql][typed-query][ob
     asterorm::test::check_typed_query_observer(asterorm::mysql::driver{}, conninfo());
 }
 
+TEST_CASE("MySQL Integration: advisory scopes reject before leasing", "[mysql][advisory]") {
+    asterorm::pool_config config;
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<asterorm::mysql::driver> pool{asterorm::mysql::driver{}, config};
+    asterorm::session db{pool};
+    bool invoked = false;
+    auto result = db.with_advisory_lock(1, [&](auto&) -> asterorm::result<void> {
+        invoked = true;
+        return {};
+    });
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().kind == asterorm::db_error_kind::query_failed);
+    REQUIRE_FALSE(invoked);
+    REQUIRE(pool.stats().total == 0);
+}
+
 TEST_CASE("MySQL Integration: SELECT locking", "[mysql][select-locking]") {
     asterorm::test::check_select_locking(asterorm::mysql::driver{}, conninfo());
 }

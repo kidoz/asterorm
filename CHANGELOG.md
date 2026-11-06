@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PostgreSQL `session::with_advisory_lock(key, callback)` with nested scopes,
+  independent transaction/lease ownership, and connection discard on failed cleanup.
 - Shared SELECT locking in runtime and typed builders: `for_update`, `for_share`,
   `nowait`, and `skip_locked`, with PostgreSQL/MySQL support and backend checks.
 - C++23 entity mapping for plain structs, including composite primary keys,

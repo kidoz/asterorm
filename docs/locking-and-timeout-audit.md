@@ -4,12 +4,58 @@ Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock 
 timeout feature is **partially implemented**. Existing transactions, native SQL,
 prepared execution, and backend error diagnostics provide useful foundations.
 Cancellation classification and typed-query observation are implemented in the
-follow-ups below. Shared SELECT locking is now available; scoped advisory locks,
-migration serialization, and timeout helpers remain planned.
+follow-ups below. Shared SELECT locking and scoped PostgreSQL advisory locks
+are now available; migration serialization and timeout helpers remain planned.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: scoped advisory locking (2026-11-07)
+
+`session::with_advisory_lock(int64_t key, callback)` now pins one connection
+through acquisition, a synchronous `result<T>` callback, and balanced release.
+The generic session detects adapter capabilities; PostgreSQL owns the bound
+`pg_catalog` function calls. Unsupported adapters reject before acquisition.
+See the [guide](how-to/advisory-locking.md) for the public contract.
+
+Transaction and advisory ownership are independent. Existing transactions are
+reused; beginning or completing a transaction inside a callback retains the
+scope's pin. Nested same-key acquisitions balance individually. Uncertain
+acquisition or failed cleanup closes/discards the connection, invalidates its
+transaction, and prevents reuse until enclosing scopes unwind. Callback errors
+retain their original diagnostics with cleanup detail; callback exceptions
+survive secondary cleanup exceptions.
+
+Unit tests cover nested keys, value/move-only results, transaction entry and
+completion, error/exception exits, uncertain acquisition, poisoned nested scopes,
+rollback failure, stale guards, and unsupported adapters. Live PostgreSQL cases
+use a separate peer and bounded server waits to prove exclusion and release,
+connection identity, aborted-transaction cleanup, lost ownership, and acquisition
+cancellation. SQLite/MySQL cases prove pre-lease rejection.
+
+Observed verification:
+
+- `meson test -C buildDir 'core unit tests' 'pg integration' 'sqlite integration' 'mysql integration' --test-args='[advisory]' --print-errorlogs`:
+  `Ok: 4`, `Fail: 0`.
+- `just test-pg` and `just test-sqlite`: each printed `Ok: 1`, `Fail: 0`.
+- Final `just test`: `Ok: 10`, `Fail: 0`, including all enabled backends, guide
+  checks, typed compile cases, and the added cleanup-exception regression.
+- `meson compile -C buildDir`: exit 0, rebuilding the remaining quickstart target.
+- `just format-check`: exit 0 after the cleanup-exception regression.
+- Standalone C++23 syntax checks: exit 0 for the guide's example instantiated
+  with a PostgreSQL session using its compilation-database flags, and for the
+  ClickHouse connection header with an unsupported-advisory capability assertion.
+- `just lint`: exit 0 across 43 translation units, with warnings. Three new
+  test-fixture attribute warnings were corrected and checked separately with
+  `clang-tidy -p buildDir tests/unit/test_advisory_lock.cpp`.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-advisory-standards.json`:
+  exit 1, retaining the 53 existing errors and 12 warnings; no findings concern
+  the three edited agent context files.
+
+The next task is migration serialization (item 5). It must reconcile the original
+transaction-lock criterion with the existing per-migration commit behavior.
 
 ## Follow-up: shared SELECT locking (2026-11-07)
 
@@ -64,8 +110,8 @@ Observed verification:
   exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
   three edited agent context files.
 
-The next task is scoped advisory locking and connection ownership (item 4).
-No advisory, migration-lock, or timeout helper is implemented in this slice.
+This SELECT-locking slice preceded the scoped advisory implementation above.
+Migration serialization and timeout helpers remain pending.
 
 ## Follow-up: typed-query observation (2026-11-07)
 
@@ -244,7 +290,8 @@ Consequently, session advisory cleanup must not rely on a transaction guard. A
 failed unlock must never return a connection with an unaccounted lock to the
 pool; an aborted transaction may prevent an unlock SQL statement from running.
 Lease pinning must also cover nested callback work and any transaction started
-inside an advisory scope. The current session pins only through `begin()`.
+inside an advisory scope. At the initial audit, the session pinned only through
+`begin()`; the advisory follow-up above now adds independent scope ownership.
 [PostgreSQL advisory lock lifetimes](https://www.postgresql.org/docs/16/explicit-locking.html#ADVISORY-LOCKS)
 
 `SET LOCAL` outside a transaction emits a warning and leaves the prior timeout
@@ -288,7 +335,7 @@ clause, and unsupported adapters must still fail clearly.
    repeated/conflicting calls, unsupported backends, and aggregate/grouping
    restrictions. Choose the backend validation boundary before implementation.
    Assert SQL/parameter parity and test competing transactions with bounded waits.
-4. **Add scoped advisory locking and lease ownership.** Define callback result
+4. **Add scoped advisory locking and lease ownership (implemented).** Define callback result
    and exception propagation, nested locks, transaction entry, and failed cleanup.
    Prove no lease/lock leaks on every exit path, including aborted transactions.
 5. **Serialize migrations.** Use a stable cross-process lock identity, acquire
@@ -302,7 +349,7 @@ clause, and unsupported adapters must still fail clearly.
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 4. Feature status stays planned until the original
+The immediate next task is item 5. Feature status stays planned until the original
 acceptance criteria and the cross-backend behavior have executable coverage.
 
 ## Verification
@@ -326,5 +373,6 @@ acceptance criteria and the cross-backend behavior have executable coverage.
   edited feature-expansion context files; this is not a repository-wide pass.
 
 Only PostgreSQL native lock/timeout semantics and PostgreSQL/SQLite observer
-routing were probed. Advisory-helper exception safety, future API behavior,
-real multi-process migrations, and MySQL locking remain unverified.
+routing were probed in the initial audit. The later follow-ups add advisory-helper
+exception safety and MySQL locking coverage. Real multi-process migrations and timeout-helper behavior remain
+unverified.

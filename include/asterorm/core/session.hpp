@@ -1,5 +1,7 @@
 #pragma once
 #include <chrono>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -40,6 +42,16 @@ enum class native_hydration : std::uint8_t {
 };
 
 namespace detail {
+
+template <typename> struct is_session_result : std::false_type {};
+template <typename Value> struct is_session_result<asterorm::result<Value>> : std::true_type {};
+
+template <typename Connection>
+concept has_advisory_scope = requires(Connection& connection, std::int64_t key) {
+    { connection.advisory_lock(key) } -> std::same_as<asterorm::result<void>>;
+    { connection.advisory_unlock(key) } -> std::same_as<asterorm::result<void>>;
+    { connection.close() } noexcept -> std::same_as<void>;
+};
 
 template <typename Conn>
 concept has_build_begin_sql = requires(const transaction_options& opts) {
@@ -192,6 +204,9 @@ template <typename Pool> class session {
         query_observer observer;
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
+            if (advisory_poisoned_) {
+                return std::unexpected(advisory_scope_error());
+            }
             if (transaction_invalidated_) {
                 return std::unexpected(invalidated_transaction_error());
             }
@@ -221,6 +236,9 @@ template <typename Pool> class session {
 
     asterorm::result<transaction_guard<session>> begin(transaction_options opts = {}) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (advisory_poisoned_) {
+            return std::unexpected(advisory_scope_error());
+        }
         if (in_transaction_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -228,11 +246,13 @@ template <typename Pool> class session {
             return std::unexpected(err);
         }
 
-        auto lease_res = pool_->acquire();
-        if (!lease_res)
-            return std::unexpected(lease_res.error());
-
-        active_lease_ = std::move(lease_res.value());
+        if (!active_lease_) {
+            auto lease_res = pool_->acquire();
+            if (!lease_res) {
+                return std::unexpected(lease_res.error());
+            }
+            active_lease_ = std::move(*lease_res);
+        }
 
         auto exec_res = [&]() -> asterorm::result<void> {
             if constexpr (requires(connection_type& connection) {
@@ -248,7 +268,9 @@ template <typename Pool> class session {
             }
         }();
         if (!exec_res) {
-            active_lease_.reset();
+            if (advisory_depth_ == 0) {
+                active_lease_.reset();
+            }
             return std::unexpected(exec_res.error());
         }
 
@@ -258,6 +280,69 @@ template <typename Pool> class session {
         if (next_transaction_id_ == 0)
             active_transaction_id_ = ++next_transaction_id_;
         return transaction_guard<session>{this, active_transaction_id_};
+    }
+
+    // Session-level exclusive advisory scope. Adapters opt in with lock/unlock
+    // operations and nonthrowing close. The callback returns result<T> by value.
+    template <typename Callback>
+        requires detail::is_session_result<std::invoke_result_t<Callback, session&>>::value
+    auto with_advisory_lock(std::int64_t key, Callback&& callback)
+        -> std::invoke_result_t<Callback, session&> {
+        using return_type = std::invoke_result_t<Callback, session&>;
+        if constexpr (!detail::has_advisory_scope<connection_type>) {
+            db_error error;
+            error.kind = db_error_kind::query_failed;
+            error.message = "This backend does not support scoped advisory locking";
+            return return_type{std::unexpected(std::move(error))};
+        } else {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            if (advisory_poisoned_) {
+                return return_type{std::unexpected(advisory_scope_error())};
+            }
+            if (transaction_invalidated_) {
+                return return_type{std::unexpected(invalidated_transaction_error())};
+            }
+            if (!active_lease_) {
+                auto lease = pool_->acquire();
+                if (!lease) {
+                    return return_type{std::unexpected(lease.error())};
+                }
+                active_lease_ = std::move(*lease);
+            }
+            ++advisory_depth_;
+            advisory_scope guard{*this, key};
+            try {
+                auto acquired = (*active_lease_)->advisory_lock(key);
+                if (!acquired) {
+                    // The server might have granted the lock before a response
+                    // failed; never return this connection to the idle pool.
+                    discard_advisory_connection();
+                    return return_type{std::unexpected(acquired.error())};
+                }
+            } catch (...) {
+                discard_advisory_connection();
+                throw;
+            }
+            guard.acquired = true;
+            auto result = std::invoke(std::forward<Callback>(callback), *this);
+            auto cleanup = guard.finish();
+            if (!cleanup) {
+                if (!result) {
+                    auto& diagnostic = result.error().detail;
+                    if (!diagnostic) {
+                        diagnostic = std::string{};
+                    }
+                    if (!diagnostic->empty()) {
+                        *diagnostic += '\n';
+                    }
+                    *diagnostic += "Advisory lock cleanup failed; connection discarded: ";
+                    *diagnostic += cleanup.error().message;
+                    return result;
+                }
+                return return_type{std::unexpected(cleanup.error())};
+            }
+            return result;
+        }
     }
 
     // Savepoint APIs. Must be called inside an active transaction. The
@@ -332,14 +417,21 @@ template <typename Pool> class session {
         return last_error;
     }
 
-    // Helper to safely run any query block utilizing the transaction's pinned connection
-    // or an ephemeral connection lease if no transaction is active.
+    // Run a query block on the transaction/advisory scope's pinned connection,
+    // or on an ephemeral lease when neither is active.
     // Invalidated transactions reject callbacks until rollback. Void callbacks
     // throw logic_error because their return type cannot carry a db_error.
     template <typename F>
     auto with_connection(F&& func) -> decltype(func(std::declval<connection_type&>())) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (in_transaction_ && active_lease_) {
+        if (advisory_poisoned_) {
+            if constexpr (std::is_void_v<decltype(func(std::declval<connection_type&>()))>) {
+                throw std::logic_error(advisory_scope_error().message);
+            } else {
+                return std::unexpected(advisory_scope_error());
+            }
+        }
+        if (active_lease_) {
             if (transaction_invalidated_) {
                 if constexpr (std::is_void_v<decltype(func(**active_lease_))>) {
                     throw std::logic_error(invalidated_transaction_error().message);
@@ -483,6 +575,86 @@ template <typename Pool> class session {
   private:
     template <typename> friend class transaction_guard;
 
+    class advisory_scope {
+      public:
+        advisory_scope(session& owner, std::int64_t key) : owner_(&owner), key_(key) {}
+        advisory_scope(const advisory_scope&) = delete;
+        advisory_scope& operator=(const advisory_scope&) = delete;
+        bool acquired{false};
+
+        asterorm::result<void> finish() {
+            auto* owner = std::exchange(owner_, nullptr);
+            return owner->finish_advisory_scope(key_, acquired);
+        }
+        ~advisory_scope() {
+            if (owner_) {
+                auto* owner = owner_;
+                try {
+                    (void)finish();
+                } catch (...) {
+                    // Keep the original callback exception during unwinding.
+                    owner->discard_advisory_connection();
+                }
+            }
+        }
+
+      private:
+        session* owner_;
+        std::int64_t key_;
+    };
+
+    void release_advisory_pin() {
+        --advisory_depth_;
+        if (advisory_depth_ == 0) {
+            advisory_poisoned_ = false;
+            if (!in_transaction_) {
+                active_lease_.reset();
+            }
+        }
+    }
+
+    void discard_advisory_connection() noexcept {
+        if (active_lease_) {
+            (*active_lease_)->close();
+        }
+        in_transaction_ = false;
+        transaction_invalidated_ = false;
+        active_transaction_id_ = 0;
+        advisory_poisoned_ = advisory_depth_ != 0;
+    }
+
+    asterorm::result<void> finish_advisory_scope(std::int64_t key, bool acquired) {
+        struct pin_release {
+            session& owner;
+            ~pin_release() {
+                owner.release_advisory_pin();
+            }
+        } release{*this};
+        if (!acquired) {
+            return {};
+        }
+        if (advisory_poisoned_) {
+            return std::unexpected(advisory_scope_error());
+        }
+        try {
+            auto unlocked = (*active_lease_)->advisory_unlock(key);
+            if (!unlocked) {
+                discard_advisory_connection();
+            }
+            return unlocked;
+        } catch (...) {
+            discard_advisory_connection();
+            throw;
+        }
+    }
+
+    static db_error advisory_scope_error() {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Advisory scope connection was discarded; unwind the scope before reuse";
+        return error;
+    }
+
     asterorm::result<void> commit_transaction(std::uint64_t expected_transaction_id) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!in_transaction_ || !active_lease_) {
@@ -508,7 +680,9 @@ template <typename Pool> class session {
         in_transaction_ = false;
         transaction_invalidated_ = false;
         active_transaction_id_ = 0;
-        active_lease_.reset();
+        if (advisory_depth_ == 0) {
+            active_lease_.reset();
+        }
         if (!detail::commit_confirmed(*res)) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -539,14 +713,19 @@ template <typename Pool> class session {
             in_transaction_ = false;
             transaction_invalidated_ = false;
             active_transaction_id_ = 0;
-            active_lease_.reset();
+            advisory_poisoned_ = advisory_depth_ != 0;
+            if (advisory_depth_ == 0) {
+                active_lease_.reset();
+            }
             return std::unexpected(res.error());
         }
 
         in_transaction_ = false;
         transaction_invalidated_ = false;
         active_transaction_id_ = 0;
-        active_lease_.reset();
+        if (advisory_depth_ == 0) {
+            active_lease_.reset();
+        }
         return {};
     }
 
@@ -580,6 +759,8 @@ template <typename Pool> class session {
     std::optional<lease_type> active_lease_;
     bool in_transaction_{false};
     bool transaction_invalidated_{false};
+    std::size_t advisory_depth_{0};
+    bool advisory_poisoned_{false};
     std::uint64_t active_transaction_id_{0};
     std::uint64_t next_transaction_id_{0};
     query_observer observer_;

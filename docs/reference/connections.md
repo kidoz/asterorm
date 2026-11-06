@@ -24,7 +24,8 @@ for outstanding leases up to an internal deadline.
 | Operation | Contract |
 | --- | --- |
 | `session db{pool}` | Borrows the pool |
-| `with_connection(callback)` | Uses the transaction's connection or obtains a temporary lease |
+| `with_connection(callback)` | Uses the transaction/advisory scope's pinned connection or obtains a temporary lease |
+| `with_advisory_lock(key, callback)` | PostgreSQL exclusive lock; callback returns `result<T>`; see [scope and cleanup](../how-to/advisory-locking.md) |
 | `native<T>(sql, args...)` | `result<vector<T>>`; strict hydration by mapped column name |
 | `native_as<T>(mode, sql, args...)` | Explicit strict or lenient hydration |
 | `native_scalar<T>(sql, args...)` | `result<optional<T>>`; first row, first column |

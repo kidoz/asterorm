@@ -5,6 +5,10 @@ available through both builders for PostgreSQL and MySQL's transactional tables.
 SQLite and ClickHouse reject the locking AST. See the
 [locking guide](../how-to/select-locking.md) for the restricted query shapes.
 
+Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
+`with_advisory_lock` before leasing; see the
+[advisory locking guide](../how-to/advisory-locking.md).
+
 ## Capability matrix
 
 | Capability | PostgreSQL | SQLite | MySQL | ClickHouse |
@@ -15,6 +19,7 @@ SQLite and ClickHouse reject the locking AST. See the
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
 | Bulk insert | Yes, no entity refresh | Yes, no entity refresh | Yes, no entity refresh | Experimental |
 | Bulk upsert with refresh | Yes | Yes | Rejected | Experimental |
+| Scoped advisory locks | Yes | Rejected | Rejected | Rejected |
 | Generic schema migrator | Yes | Yes | Rejected | Experimental |
 | PostgreSQL COPY helpers | Yes | No | No | No |
 
