@@ -254,9 +254,11 @@ just check
 
 An opt-in, database-free benchmark compares typed and string query construction,
 SQL compilation, and allocations in an optimized build. See
-[benchmark instructions and recorded results](benchmarks/README.md). The current
-baseline finds extra typed-builder construction allocations; it does not support
-a blanket claim of unchanged runtime cost.
+[benchmark instructions and recorded results](benchmarks/README.md). The recorded
+baseline found extra typed-builder construction allocations. Reserving known
+selection sizes removes those growth allocations; nullable projections still
+request more bytes than the string-column representation. The measurements do not
+establish a blanket claim of unchanged runtime cost.
 
 ## License
 

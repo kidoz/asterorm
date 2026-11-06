@@ -29,6 +29,11 @@ The [2026-11-06 typed/string baseline](results/typed-vs-string-dsl-2026-11-06/AN
 construction overhead and its allocation causes. It does not establish M8's
 unchanged-runtime-cost criterion.
 
+The [vector reservation results](results/typed-dsl-vector-reserve-2026-11-06/ANALYSIS.md)
+retain the same benchmark and remove the measured growth allocations. Simple and
+aggregate allocation counts/bytes match the string baseline; nullable projections
+still request more bytes because of their AST representation.
+
 The opt-in Meson option does not add timing thresholds to the normal test suite.
 The optimized build registers two fast correctness checks with Meson, including
 SQL/parameter parity for 32 inputs across three workloads and both dialects, and
