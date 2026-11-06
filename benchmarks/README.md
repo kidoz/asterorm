@@ -34,6 +34,12 @@ retain the same benchmark and remove the measured growth allocations. Simple and
 aggregate allocation counts/bytes match the string baseline; nullable projections
 still request more bytes because of their AST representation.
 
+The [plain-column storage results](results/typed-dsl-column-storage-2026-11-06/ANALYSIS.md)
+remove that remaining excess for the measured nullable projection. Built-in
+plain projections use the compact column list; aggregates and custom lowering
+retain select items. All tested cases fall within the original timing/allocation
+investigation screen, without establishing broader runtime equivalence.
+
 The opt-in Meson option does not add timing thresholds to the normal test suite.
 The optimized build registers two fast correctness checks with Meson, including
 SQL/parameter parity for 32 inputs across three workloads and both dialects, and

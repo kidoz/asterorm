@@ -128,6 +128,10 @@ least one mapped column or entity-bound aggregate to determine the table, and
 keep all entity-bound items on the same entity. Use `select_cols<DTO>(...)` when
 you want a named result struct instead.
 
+Plain built-in column projections lower to `select_ast::columns`. Aggregates,
+mixed projections, and custom selectables lower to `select_ast::items`, preserving
+custom `to_select_item()` aliases and expressions.
+
 ## Getting Started
 
 ### Prerequisites
@@ -256,9 +260,10 @@ An opt-in, database-free benchmark compares typed and string query construction,
 SQL compilation, and allocations in an optimized build. See
 [benchmark instructions and recorded results](benchmarks/README.md). The recorded
 baseline found extra typed-builder construction allocations. Reserving known
-selection sizes removes those growth allocations; nullable projections still
-request more bytes than the string-column representation. The measurements do not
-establish a blanket claim of unchanged runtime cost.
+selection sizes removes those growth allocations, and compact storage for plain
+typed projections removes the measured excess allocation bytes. All current
+benchmark cases are within the timing/allocation investigation screen; the
+measurements do not establish a blanket claim of unchanged runtime cost.
 
 ## License
 
