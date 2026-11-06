@@ -1,0 +1,17 @@
+# Meson build directories and generated compilation database
+/build*/
+/compile_commands.json
+
+# Downloaded Meson subprojects (keep wrap files tracked)
+/subprojects/packagecache/
+/subprojects/postgresql/
+/subprojects/Catch2-*/
+/subprojects/clickhouse-cpp/
+
+# IDE settings and operating system metadata
+/.idea/
+.DS_Store
+
+# Python caches from repository tools
+__pycache__/
+*.py[cod]
