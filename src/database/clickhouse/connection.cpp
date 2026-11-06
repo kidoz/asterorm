@@ -7,6 +7,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <limits>
 
 #include "asterorm/clickhouse/detail/params.hpp"
 #include "asterorm/core/error.hpp"
@@ -19,6 +20,7 @@ enum class sql_scan_state : std::uint8_t {
     normal,
     single_quoted_literal,
     double_quoted_identifier,
+    backtick_identifier,
     line_comment,
     block_comment,
 };
@@ -33,8 +35,9 @@ enum class sql_scan_state : std::uint8_t {
 //   - NUL bytes are refused outright.
 //   - control characters (< 0x20) other than \t/\n/\r are refused.
 //   - single quotes and backslashes are doubled/escaped.
-// Placeholder replacement only happens in normal SQL text. `$1` inside string
-// literals, quoted identifiers, or comments is left untouched.
+//   - `$n` outside literals, quoted identifiers (including backticks), and
+//     comments must name a supplied parameter. Overflow and `$0` fail closed.
+// Placeholder replacement only happens in normal SQL text.
 // Any parameter that cannot be safely encoded fails with parse_failed rather
 // than silently producing malformed SQL.
 asterorm::result<std::string> interpolate_params(std::string_view sql,
@@ -102,6 +105,15 @@ asterorm::result<std::string> interpolate_params(std::string_view sql,
                 scan_state = sql_scan_state::normal;
             }
             continue;
+        case sql_scan_state::backtick_identifier:
+            interpolated_sql += current_character;
+            if (current_character == '`' && next_character == '`') {
+                interpolated_sql += next_character;
+                ++sql_position;
+            } else if (current_character == '`') {
+                scan_state = sql_scan_state::normal;
+            }
+            continue;
         case sql_scan_state::line_comment:
             interpolated_sql += current_character;
             if (current_character == '\n' || current_character == '\r') {
@@ -130,6 +142,11 @@ asterorm::result<std::string> interpolate_params(std::string_view sql,
             scan_state = sql_scan_state::double_quoted_identifier;
             continue;
         }
+        if (current_character == '`') {
+            interpolated_sql += current_character;
+            scan_state = sql_scan_state::backtick_identifier;
+            continue;
+        }
         if (current_character == '-' && next_character == '-') {
             interpolated_sql += current_character;
             interpolated_sql += next_character;
@@ -150,25 +167,33 @@ asterorm::result<std::string> interpolate_params(std::string_view sql,
         if (current_character == '$' && std::isdigit(next_byte)) {
             std::size_t placeholder_end = sql_position + 1;
             std::size_t parameter_index = 0;
+            bool index_overflow = false;
             while (placeholder_end < sql.size() &&
                    std::isdigit(static_cast<unsigned char>(sql[placeholder_end]))) {
-                parameter_index =
-                    (parameter_index * 10) + static_cast<std::size_t>(sql[placeholder_end] - '0');
+                const auto digit = static_cast<std::size_t>(sql[placeholder_end] - '0');
+                if (parameter_index > (std::numeric_limits<std::size_t>::max() - digit) / 10)
+                    index_overflow = true;
+                else
+                    parameter_index = (parameter_index * 10) + digit;
                 placeholder_end++;
             }
-            if (parameter_index > 0 && parameter_index <= parameters.size()) {
-                if (parameters[parameter_index - 1].has_value()) {
-                    auto escape_result =
-                        escape_literal(*parameters[parameter_index - 1], interpolated_sql);
-                    if (!escape_result) {
-                        return std::unexpected(escape_result.error());
-                    }
-                } else {
-                    interpolated_sql += "NULL";
-                }
-                sql_position = placeholder_end - 1;
-                continue;
+            if (index_overflow || parameter_index == 0 || parameter_index > parameters.size()) {
+                db_error error;
+                error.kind = db_error_kind::parse_failed;
+                error.message = "ClickHouse parameter index is out of range";
+                return std::unexpected(error);
             }
+            if (parameters[parameter_index - 1].has_value()) {
+                auto escape_result =
+                    escape_literal(*parameters[parameter_index - 1], interpolated_sql);
+                if (!escape_result) {
+                    return std::unexpected(escape_result.error());
+                }
+            } else {
+                interpolated_sql += "NULL";
+            }
+            sql_position = placeholder_end - 1;
+            continue;
         }
         interpolated_sql += current_character;
     }

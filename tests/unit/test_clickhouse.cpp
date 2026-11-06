@@ -34,6 +34,26 @@ TEST_CASE("ClickHouse: parameter interpolation rejects unsafe bytes", "[clickhou
     REQUIRE(interpolated_sql.error().kind == asterorm::db_error_kind::parse_failed);
 }
 
+TEST_CASE("ClickHouse: parameter interpolation fails closed on indexes and backticks",
+          "[clickhouse]") {
+    query_parameters parameters{"safe"};
+
+    auto backtick_sql = asterorm::ch::detail::interpolate_params("SELECT `$1`, $1", parameters);
+    REQUIRE(backtick_sql.has_value());
+    REQUIRE(*backtick_sql == "SELECT `$1`, 'safe'");
+
+    auto missing = asterorm::ch::detail::interpolate_params("SELECT $2", parameters);
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().kind == asterorm::db_error_kind::parse_failed);
+
+    auto zero = asterorm::ch::detail::interpolate_params("SELECT $0", parameters);
+    REQUIRE_FALSE(zero.has_value());
+
+    const auto overflow_sql = std::string("SELECT $") + std::string(40, '9');
+    auto overflow = asterorm::ch::detail::interpolate_params(overflow_sql, parameters);
+    REQUIRE_FALSE(overflow.has_value());
+}
+
 TEST_CASE("ClickHouse: result converts numeric columns to strings", "[clickhouse]") {
     auto answer_column = std::make_shared<clickhouse::ColumnInt64>();
     answer_column->Append(42);
