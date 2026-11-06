@@ -8,6 +8,7 @@
 #include "asterorm/core/codecs.hpp"
 #include "asterorm/core/entity_traits.hpp"
 #include "asterorm/core/error.hpp"
+#include "asterorm/core/hydration.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/sql/compiler.hpp"
 #include "asterorm/sql/typed.hpp"

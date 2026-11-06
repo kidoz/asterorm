@@ -10,6 +10,7 @@
 
 #include "asterorm/core/codecs.hpp"
 #include "asterorm/core/entity_traits.hpp"
+#include "asterorm/core/hydration.hpp"
 #include "asterorm/core/session.hpp"
 #include "asterorm/sql/ast.hpp"
 #include "asterorm/sql/compiler.hpp"
@@ -309,30 +310,6 @@ void append_key_predicate(std::string& sql, std::vector<std::optional<std::strin
 template <typename T> void append_returning_all(std::string& sql) {
     sql += " RETURNING ";
     append_csv(sql, column_names<T>());
-}
-
-template <typename T, typename Result, std::size_t... Is>
-asterorm::result<void> hydrate_entity(const Result& res, int row, T& entity,
-                                      std::index_sequence<Is...> /*seq*/) {
-    using traits = entity_traits<T>;
-    asterorm::result<void> decode_err;
-    (..., [&]() {
-        if (!decode_err)
-            return;
-        auto col = std::get<Is>(traits::columns);
-        auto val_str = res.get_string(row, static_cast<int>(Is));
-        auto err = asterorm::decode(val_str, entity.*(col.member_ptr));
-        if (!err)
-            decode_err = std::move(err);
-    }());
-    return decode_err;
-}
-
-template <typename T, typename Result>
-asterorm::result<void> hydrate_entity(const Result& res, int row, T& entity) {
-    using traits = entity_traits<T>;
-    return hydrate_entity(res, row, entity,
-                          std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
 }
 
 inline db_error no_rows_affected_error() {
