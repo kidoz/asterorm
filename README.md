@@ -10,6 +10,12 @@
 
 AsterORM is a modern, data-mapper style Object Relational Mapper for C++23. By heavily leveraging modern C++ features like `std::expected` and compile-time reflection via pointer-to-members, it keeps your domain entities as plain structs without any intrusive inheritance or persistence logic.
 
+## Documentation
+
+Start with the [documentation guide](docs/README.md), or go directly to
+[tutorials](docs/tutorials/README.md), [how-to guides](docs/how-to/README.md),
+[reference](docs/reference/README.md), and [explanation](docs/explanation/README.md).
+
 ## Features
 
 * **Data Mapper Architecture:** Entities remain plain `C++` structs. No magic base classes.
