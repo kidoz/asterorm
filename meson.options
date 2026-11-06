@@ -4,4 +4,6 @@ option('clickhouse', type : 'feature', value : 'disabled',
   description : 'Experimental ClickHouse adapter (parameterization is emulated via string interpolation; not recommended for untrusted input)')
 option('tests', type : 'boolean', value : true)
 option('examples', type : 'boolean', value : true)
+option('benchmarks', type : 'boolean', value : false,
+  description : 'Build optimized, standalone SQL DSL timing and allocation benchmarks')
 option('mysql', type : 'feature', value : 'disabled', description : 'MySQL 8.0.19+ adapter using native prepared statements')
