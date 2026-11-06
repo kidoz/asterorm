@@ -1,5 +1,10 @@
 # Backend capabilities and connection settings
 
+SELECT row locking (`FOR UPDATE` / `FOR SHARE`, `NOWAIT`, `SKIP LOCKED`) is
+available through both builders for PostgreSQL and MySQL's transactional tables.
+SQLite and ClickHouse reject the locking AST. See the
+[locking guide](../how-to/select-locking.md) for the restricted query shapes.
+
 ## Capability matrix
 
 | Capability | PostgreSQL | SQLite | MySQL | ClickHouse |

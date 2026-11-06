@@ -14,6 +14,49 @@ db_error invalid_sql(std::string message) {
     return error;
 }
 
+asterorm::result<std::string> compile_select_lock(const select_ast& ast, dialect target) {
+    const auto& locking = ast.locking;
+    std::string suffix;
+    switch (locking.strength) {
+    case select_lock_strength::none:
+        if (locking.wait != select_lock_wait::block) {
+            return std::unexpected(
+                invalid_sql("SELECT lock wait policy requires FOR UPDATE or FOR SHARE"));
+        }
+        return suffix;
+    case select_lock_strength::update:
+        suffix = " FOR UPDATE";
+        break;
+    case select_lock_strength::share:
+        suffix = " FOR SHARE";
+        break;
+    default:
+        return std::unexpected(invalid_sql("Invalid SELECT lock strength"));
+    }
+    if (!supports_select_locking(target)) {
+        return std::unexpected(invalid_sql("This SQL dialect does not support SELECT locking"));
+    }
+    if (!ast.joins.empty() || !ast.group_bys.empty() || ast.having_clause ||
+        std::ranges::any_of(ast.items,
+                            [](const select_item& item) { return item.fn != nullptr; })) {
+        return std::unexpected(invalid_sql("SELECT locking requires a single table and column-only "
+                                           "projections without GROUP BY or HAVING"));
+    }
+    switch (locking.wait) {
+    case select_lock_wait::block:
+        break;
+    case select_lock_wait::nowait:
+        suffix += " NOWAIT";
+        break;
+    case select_lock_wait::skip_locked:
+        suffix += " SKIP LOCKED";
+        break;
+    default:
+        return std::unexpected(invalid_sql("Invalid SELECT lock wait policy"));
+    }
+    return suffix;
+}
+
 bool bare_function_name(std::string_view name) {
     if (name.empty())
         return false;
@@ -237,6 +280,10 @@ compiler::upsert_clause(std::string_view table, const std::vector<std::string>& 
 }
 
 asterorm::result<compiled_query> compiler::compile(const select_ast& ast) { // NOLINT
+    auto locking = compile_select_lock(ast, dialect_);
+    if (!locking) {
+        return std::unexpected(locking.error());
+    }
     compiled_query query;
 
     auto append_qualified = [&](std::string_view ident) -> asterorm::result<void> {
@@ -377,6 +424,8 @@ asterorm::result<compiled_query> compiler::compile(const select_ast& ast) { // N
         query.sql += " LIMIT 18446744073709551615";
     if (ast.offset_val)
         query.sql += " OFFSET " + std::to_string(*ast.offset_val);
+
+    query.sql += *locking;
 
     return query;
 }

@@ -96,6 +96,14 @@ template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
 query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder) {
     auto select_ast_value = builder.build();
+    if ((select_ast_value.locking.strength != select_lock_strength::none ||
+         select_ast_value.locking.wait != select_lock_wait::block) &&
+        !asterorm::sql::session_supports_select_locking<Session>()) {
+        db_error error;
+        error.kind = db_error_kind::parse_failed;
+        error.message = "SELECT locking requires an explicit supported connection SQL dialect";
+        return std::unexpected(std::move(error));
+    }
     asterorm::sql::compiler statement_compiler{asterorm::sql::dialect_for_session<Session>()};
     auto compiled_query = statement_compiler.compile(select_ast_value);
     if (!compiled_query)

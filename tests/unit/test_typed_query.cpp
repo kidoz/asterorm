@@ -100,7 +100,9 @@ struct query_driver {
 // Intentionally has neither connection_type nor observed_execute.
 struct direct_session {
     query_connection connection;
+    int lease_calls{};
     template <typename Callback> auto with_connection(Callback&& callback) {
+        ++lease_calls;
         return std::forward<Callback>(callback)(connection);
     }
 };
@@ -274,4 +276,27 @@ TEST_CASE("Typed query: incompatible custom helpers retain the direct fallback",
     unrelated_session db{{query_connection{.state = &state}}};
     REQUIRE(typed::query(db, typed::select<observed_user>()).has_value());
     REQUIRE(state.calls == 1);
+}
+
+TEST_CASE("SELECT locking: unknown custom backends reject before leasing", "[select-locking]") {
+    execution_state state;
+    SECTION("facade without a connection type") {
+        direct_session db{.connection = query_connection{.state = &state}};
+        auto result = typed::query(db, typed::select<observed_user>().for_update());
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error().kind == asterorm::db_error_kind::parse_failed);
+        REQUIRE(db.lease_calls == 0);
+    }
+    SECTION("connection type without an explicit dialect") {
+        asterorm::pool_config config;
+        config.min_size = 0;
+        config.max_size = 1;
+        asterorm::connection_pool<query_driver> pool{query_driver{.state = &state}, config};
+        asterorm::session db{pool};
+        auto result = typed::query(db, typed::select<observed_user>().for_share());
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error().kind == asterorm::db_error_kind::parse_failed);
+        REQUIRE(pool.stats().total == 0);
+    }
+    REQUIRE(state.calls == 0);
 }

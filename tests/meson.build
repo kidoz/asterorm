@@ -10,6 +10,7 @@ core_tests = executable(
     'unit/test_transactions.cpp',
     'unit/test_typed_dsl.cpp',
     'unit/test_typed_query.cpp',
+    'unit/test_select_locking.cpp',
     'unit/test_typed_query_header.cpp',
     'compile/test_typed_dsl.cpp',
   ],

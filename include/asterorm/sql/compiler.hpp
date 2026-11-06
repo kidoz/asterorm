@@ -8,7 +8,23 @@
 
 namespace asterorm::sql {
 
-enum class dialect { postgres, mysql };
+enum class dialect { postgres, mysql, sqlite, clickhouse };
+
+[[nodiscard]] constexpr bool supports_select_locking(dialect target) {
+    return target == dialect::postgres || target == dialect::mysql;
+}
+
+// Locking is opt-in for connection types; the legacy PostgreSQL-compatible
+// fallback for ordinary SQL is not evidence of row-lock support.
+template <typename Session> [[nodiscard]] constexpr bool session_supports_select_locking() {
+    if constexpr (requires { typename Session::connection_type; }) {
+        using connection_type = typename Session::connection_type;
+        if constexpr (requires { connection_type::sql_dialect; }) {
+            return supports_select_locking(connection_type::sql_dialect);
+        }
+    }
+    return false;
+}
 
 template <typename Connection> constexpr dialect dialect_for() {
     if constexpr (requires { Connection::sql_dialect; })

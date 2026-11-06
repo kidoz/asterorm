@@ -11,6 +11,7 @@
 
 #include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
+#include "asterorm/sql/compiler.hpp"
 #include "asterorm/sqlite/result.hpp"
 
 namespace asterorm {
@@ -21,6 +22,8 @@ namespace asterorm::sqlite {
 
 class connection {
   public:
+    static constexpr sql::dialect sql_dialect = sql::dialect::sqlite;
+
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
 

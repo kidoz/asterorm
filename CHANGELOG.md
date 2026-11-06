@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Shared SELECT locking in runtime and typed builders: `for_update`, `for_share`,
+  `nowait`, and `skip_locked`, with PostgreSQL/MySQL support and backend checks.
 - C++23 entity mapping for plain structs, including composite primary keys,
   generated values, optimistic locking, and explicit relationship loading.
 - Repository CRUD, bulk inserts and upserts, and raw SQL entity, scalar, and
@@ -29,6 +31,9 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- Added a lock clause to the public SELECT AST and explicit SQLite/ClickHouse
+  dialect tags. Rebuild the library and consumers together for the AST layout
+  change, and handle new dialect values in exhaustive switches.
 - Organized backend implementations under `src/database`.
 - Added typed query parameters and shared entity hydration across backends.
 - Made repository writes and schema migrations aware of backend capabilities.

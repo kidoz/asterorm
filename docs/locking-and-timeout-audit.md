@@ -1,14 +1,71 @@
 # Locking, statement timeout, and execution audit
 
 Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock and
-timeout feature is **not implemented**. Existing transactions, native SQL,
+timeout feature is **partially implemented**. Existing transactions, native SQL,
 prepared execution, and backend error diagnostics provide useful foundations.
 Cancellation classification and typed-query observation are implemented in the
-follow-ups below. Shared SELECT locking is next.
+follow-ups below. Shared SELECT locking is now available; scoped advisory locks,
+migration serialization, and timeout helpers remain planned.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: shared SELECT locking (2026-11-07)
+
+Both builders now lower `for_update`, `for_share`, `nowait`, and `skip_locked`
+into one `select_lock_clause` in the existing AST. The compiler emits the clause
+after pagination, preserving parameters. Strength and wait policy each use the
+last call. A wait modifier without strength, invalid enum values, and unsupported
+shapes return `parse_failed`.
+
+This slice supports one base table with whole entities, plain columns, aliases,
+or wildcard projections. Locking with joins, function projections (including
+scalar functions), grouping, or HAVING is rejected. See the
+[locking guide](how-to/select-locking.md) for transaction lifetime and API limits.
+The AST layout changed, so rebuild the library and its binary consumers together.
+
+PostgreSQL and MySQL support locking. SQLite/ClickHouse now declare explicit
+dialect tags and reject it. Typed locking also requires a session connection type
+with an explicit supported dialect; unknown custom facades retain unlocked reads
+but cannot infer locking support from the legacy PostgreSQL-compatible fallback.
+These rejections occur before leasing or observer callbacks. Native SQL remains
+caller-owned. Unlocked SQLite/ClickHouse lowering retains its prior common SQL.
+
+Unit coverage exercises strengths/wait policies on both supported compiler
+dialects, typed/string SQL and parameter parity, pagination order, repeated
+methods, aliases/wildcards, malformed AST state, and unsupported cases. Live
+PostgreSQL/MySQL tests use two sessions and private table names. They verify
+distinct SKIP LOCKED claims, NOWAIT errors through observed execution, shared
+readers, blocked exclusive upgrades, and release on commit/rollback. Server
+timeouts bound waits; no timed sleeps coordinate the test. SQLite proves rejection
+before connection creation; a ClickHouse header-only check proves its disabled
+capability without enabling that experimental adapter.
+
+Observed verification:
+
+- Before implementation, `meson compile -C buildDir core_tests` failed on the
+  new methods and dialect tags required by the test fixture.
+- `meson test -C buildDir 'core unit tests' --test-args='[select-locking]' --print-errorlogs`:
+  `Ok: 1`, `Fail: 0` after implementation.
+- `meson test -C buildDir 'pg integration' 'mysql integration' 'sqlite integration' --test-args='[select-locking]' --print-errorlogs`:
+  `Ok: 3`, `Fail: 0`.
+- `c++ -std=c++23 -Iinclude -x c++ -fsyntax-only -` with the ClickHouse connection
+  header and static assertions for its dialect/unsupported capability: exit 0.
+- `just test-pg` and `just test-sqlite`: each printed `Ok: 1`, `Fail: 0`.
+- `just test`: `Ok: 10`, `Fail: 0`, including all backends, guide checks, and
+  all 18 typed compile cases.
+- `meson compile -C buildDir`: exit 0, rebuilding all normal targets including
+  the remaining quickstart binary after the AST layout change.
+- `just format-check`: exit 0.
+- `just lint`: exit 0 across 41 translation units, with warnings.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-select-locking-standards.json`:
+  exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
+  three edited agent context files.
+
+The next task is scoped advisory locking and connection ownership (item 4).
+No advisory, migration-lock, or timeout helper is implemented in this slice.
 
 ## Follow-up: typed-query observation (2026-11-07)
 
@@ -55,7 +112,7 @@ Verification for this follow-up:
 
 The original audit probe and benchmark artifacts remain unchanged snapshots of
 their recorded versions. No timeout or locking API is introduced by this fix.
-The next task is item 3 below, including an explicit backend capability boundary.
+That next task is now addressed by the later SELECT-locking follow-up above.
 
 ## Follow-up: cancellation classification (2026-11-07)
 
@@ -95,7 +152,7 @@ unchanged. It records the pre-fix behavior and source hashes, not a result for t
 current implementation. Typed-query observation is addressed in the later
 follow-up above.
 
-## Acceptance inventory
+## Initial acceptance inventory
 
 | Planned requirement | Observed implementation | Work remaining |
 |---|---|---|
@@ -111,7 +168,7 @@ Relevant implementation: [AST/builders](../include/asterorm/sql/ast.hpp),
 [pool](../include/asterorm/pool/connection_pool.hpp), and
 [migrator](../include/asterorm/core/migration.hpp).
 
-## Findings reproduced
+## Initial findings reproduced
 
 The retained [probe](evidence/locks-and-timeouts/probe.cpp),
 [stdout](evidence/locks-and-timeouts/output.txt),
@@ -205,12 +262,11 @@ entire C++ callback. A callback with multiple queries does not acquire one share
 wall-clock budget merely by setting this parameter.
 [PostgreSQL statement timeout](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-STATEMENT-TIMEOUT)
 
-The compiler currently distinguishes PostgreSQL and MySQL; SQLite uses the
-PostgreSQL-compatible default. That default cannot serve as a row-lock capability
-check. SQLite has no `FOR UPDATE` SELECT clause. MySQL has locking reads with its
-own transaction/backend rules, but this audit did not run MySQL locking probes.
-Add an explicit backend capability or SQLite dialect boundary before advertising
-generic builder support; unsupported adapters must fail clearly.
+At the initial audit, the compiler distinguished PostgreSQL and MySQL while
+SQLite used the PostgreSQL-compatible default. That fallback was not a row-lock
+capability check. The later SELECT-locking follow-up adds explicit dialect tags
+and checks, including MySQL locking tests. SQLite has no `FOR UPDATE` SELECT
+clause, and unsupported adapters must still fail clearly.
 [SQLite SELECT grammar](https://www.sqlite.org/lang_select.html),
 [MySQL locking reads](https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html)
 
@@ -227,7 +283,7 @@ generic builder support; unsupported adapters must fail clearly.
    Preserve a deliberate compatibility path for existing custom session facades
    that only provide `with_connection`; document what that fallback guarantees.
    Verify PostgreSQL, SQLite, and enabled MySQL behavior.
-3. **Add shared SELECT locking.** Model strength and wait policy once in the AST;
+3. **Add shared SELECT locking (implemented with the documented shape limits).** Model strength and wait policy once in the AST;
    expose the planned methods on both builders. Specify modifier-only misuse,
    repeated/conflicting calls, unsupported backends, and aggregate/grouping
    restrictions. Choose the backend validation boundary before implementation.
@@ -246,7 +302,7 @@ generic builder support; unsupported adapters must fail clearly.
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 3. Feature status stays planned until the original
+The immediate next task is item 4. Feature status stays planned until the original
 acceptance criteria and the cross-backend behavior have executable coverage.
 
 ## Verification

@@ -457,6 +457,23 @@ template <typename Entity, typename Result, typename... Items> class typed_selec
         return *this;
     }
 
+    typed_select_builder& for_update() {
+        ast_.locking.strength = select_lock_strength::update;
+        return *this;
+    }
+    typed_select_builder& for_share() {
+        ast_.locking.strength = select_lock_strength::share;
+        return *this;
+    }
+    typed_select_builder& nowait() {
+        ast_.locking.wait = select_lock_wait::nowait;
+        return *this;
+    }
+    typed_select_builder& skip_locked() {
+        ast_.locking.wait = select_lock_wait::skip_locked;
+        return *this;
+    }
+
     // Moves the underlying AST out — the builder is single-shot once built.
     select_ast build() {
         return std::move(ast_);

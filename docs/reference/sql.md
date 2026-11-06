@@ -39,6 +39,8 @@ Execution header: `sql/typed_query.hpp`.
 | `.order_by(column, asc/desc)` | Sort expression |
 | `.limit(count)`, `.offset(count)` | Pagination |
 | `.group_by(columns...)`, `.having(predicate)` | Grouping and group filter |
+| `.for_update()`, `.for_share()` | Exclusive/shared SELECT locking on supported backends |
+| `.nowait()`, `.skip_locked()` | Fail or skip on conflicting row locks |
 | `.build()` | Lower to a runtime SELECT AST |
 | `query(db, builder)` | Execute and return `result<vector<Result>>` |
 
@@ -74,3 +76,9 @@ queries use native SQL with a nullable result type or an explicit SQL default.
 
 Typed SELECT currently has no typed joins or mutation builders, and results
 are materialized in memory. Native SQL text is not compile-time checked.
+
+Locking is shared by runtime and typed builders. It supports single-table,
+column-only SELECTs on PostgreSQL and MySQL; SQLite and ClickHouse reject it.
+An explicit supported connection dialect is required for typed locking queries.
+See [locking selected rows](../how-to/select-locking.md) for transaction lifetime,
+method precedence, restrictions, and the custom-adapter contract.

@@ -9,6 +9,7 @@
 #include "asterorm/mysql/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/select_locking.hpp"
 #include "support/typed_query_observer.hpp"
 
 struct MysqlUser {
@@ -88,6 +89,10 @@ void take(asterorm::result<void> result) {
 
 TEST_CASE("MySQL Integration: typed query observation", "[mysql][typed-query][observer]") {
     asterorm::test::check_typed_query_observer(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: SELECT locking", "[mysql][select-locking]") {
+    asterorm::test::check_select_locking(asterorm::mysql::driver{}, conninfo());
 }
 
 TEST_CASE("MySQL native statements, bindings, results and cache", "[mysql][integration]") {

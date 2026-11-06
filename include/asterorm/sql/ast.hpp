@@ -168,6 +168,14 @@ struct select_item {
     std::optional<std::string> alias;
 };
 
+enum class select_lock_strength : std::uint8_t { none, update, share };
+enum class select_lock_wait : std::uint8_t { block, nowait, skip_locked };
+
+struct select_lock_clause {
+    select_lock_strength strength{select_lock_strength::none};
+    select_lock_wait wait{select_lock_wait::block};
+};
+
 struct select_ast {
     std::string table;
     std::optional<std::string> table_alias;
@@ -180,6 +188,7 @@ struct select_ast {
     std::vector<order_by_ast> order_bys;
     std::optional<size_t> limit_val;
     std::optional<size_t> offset_val;
+    select_lock_clause locking{};
 };
 
 // Value source for an INSERT/UPDATE assignment: either a literal value or a
@@ -292,6 +301,23 @@ class select_builder {
 
     select_ast build() {
         return std::move(ast_);
+    }
+
+    select_builder& for_update() {
+        ast_.locking.strength = select_lock_strength::update;
+        return *this;
+    }
+    select_builder& for_share() {
+        ast_.locking.strength = select_lock_strength::share;
+        return *this;
+    }
+    select_builder& nowait() {
+        ast_.locking.wait = select_lock_wait::nowait;
+        return *this;
+    }
+    select_builder& skip_locked() {
+        ast_.locking.wait = select_lock_wait::skip_locked;
+        return *this;
     }
 
   private:

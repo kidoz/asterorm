@@ -8,6 +8,7 @@
 #include "asterorm/clickhouse/result.hpp"
 #include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
+#include "asterorm/sql/compiler.hpp"
 
 namespace clickhouse {
 class Client;
@@ -19,6 +20,8 @@ class connection {
     std::unique_ptr<clickhouse::Client> client_;
 
   public:
+    static constexpr sql::dialect sql_dialect = sql::dialect::clickhouse;
+
     connection();
     ~connection();
 

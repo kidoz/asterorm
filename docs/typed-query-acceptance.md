@@ -96,4 +96,5 @@ The next planned feature is locks and timeouts. The
 [implementation audit](locking-and-timeout-audit.md) now records the existing
 paths, live probes, and ordered work. Cancellation classification and typed-query
 observer routing are corrected with regression coverage. Shared SELECT locking
+now has a restricted supported surface and backend checks; scoped advisory locking
 is next.

@@ -12,11 +12,14 @@
 #include "asterorm/core/result.hpp"
 #include "asterorm/postgres/copy.hpp"
 #include "asterorm/postgres/result.hpp"
+#include "asterorm/sql/compiler.hpp"
 
 namespace asterorm::pg {
 
 class connection {
   public:
+    static constexpr sql::dialect sql_dialect = sql::dialect::postgres;
+
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
 

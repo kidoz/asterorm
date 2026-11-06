@@ -15,6 +15,38 @@ TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][
     asterorm::test::check_typed_query_observer(asterorm::sqlite::driver{}, ":memory:");
 }
 
+struct sqlite_lock_row {
+    int id{};
+};
+template <> struct asterorm::entity_traits<sqlite_lock_row> {
+    static constexpr const char* table = "never_opened";
+    static constexpr auto columns = std::make_tuple(asterorm::column<&sqlite_lock_row::id>("id"));
+};
+
+TEST_CASE("SQLite Integration: SELECT locking rejects before leasing", "[sqlite][select-locking]") {
+    STATIC_REQUIRE(asterorm::sql::dialect_for<asterorm::sqlite::connection>() ==
+                   asterorm::sql::dialect::sqlite);
+    asterorm::pool_config config;
+    config.conninfo = ":memory:";
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, config};
+    asterorm::session db{pool};
+    bool observed = false;
+    db.set_observer([&](const asterorm::query_event&) { observed = true; });
+    auto ast = asterorm::sql::select({"id"}).from("never_opened").for_update().build();
+    auto rejected =
+        asterorm::sql::compiler{asterorm::sql::dialect_for_session<decltype(db)>()}.compile(ast);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error().kind == asterorm::db_error_kind::parse_failed);
+    auto typed_rejected = asterorm::sql::typed::query(
+        db, asterorm::sql::typed::select<sqlite_lock_row>().for_update());
+    REQUIRE_FALSE(typed_rejected.has_value());
+    REQUIRE(typed_rejected.error().kind == asterorm::db_error_kind::parse_failed);
+    REQUIRE(pool.stats().total == 0);
+    REQUIRE_FALSE(observed);
+}
+
 namespace {
 
 struct sqlite_user {
