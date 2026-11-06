@@ -34,9 +34,48 @@ successful migrations remain applied if a later migration fails. Keep each
 SQLite SQL string to one statement; its adapter rejects trailing statements.
 
 The default history table is `asterorm_schema_migrations`. Supply a second
-constructor argument to choose another table. Run migrations from one controlled
-process; this runner does not coordinate concurrent migration executors or
-verify content checksums.
+constructor argument to choose another table. This runner does not verify content
+checksums.
+
+## Coordinate PostgreSQL executors
+
+PostgreSQL `apply()`, `rollback_to()`, and `current_version()` automatically take
+one exclusive session advisory lock before history-table creation or version
+reads. They hold the same connection and lock across all per-migration commits,
+then release it on success, error, or exception. A waiting executor reads the
+current version after acquiring the lock. Separate processes are coordinated by
+the server; no process-local mutex or table-name hash determines lock identity.
+
+The reserved signed-bigint key is `0x41535445524f524d` (ASCII `ASTERORM`). All
+AsterORM migration histories in one database share it, including custom schemas,
+unqualified names, and differing search paths. This intentionally serializes
+unrelated histories too. Reserve this key for migration control. Every executor
+must use this locking protocol; older library versions and external schema tools
+need their own coordination.
+
+A session-level lock spans the existing per-migration commits. PostgreSQL
+transaction advisory locks end when their transaction ends, so they cannot span
+this operation without changing commit behavior.
+[PostgreSQL advisory lock lifetimes](https://www.postgresql.org/docs/16/explicit-locking.html#ADVISORY-LOCKS)
+
+Use a dedicated session without an active transaction for these PostgreSQL
+operations. A caller-owned transaction is rejected with `query_failed` before
+history setup or waiting for the lock; it remains active. Do not invoke migration
+operations recursively from a query observer. Migration SQL must leave transaction
+control to the migrator. A lock wait can be bounded by the connection's server
+timeout settings; the helper adds no separate timeout option.
+
+If a later migration fails, earlier commits remain. The failed migration rolls
+back before the advisory scope releases the lock. Observer exceptions also unwind
+that transaction. The [advisory scope cleanup rules](advisory-locking.md) apply if
+rollback or unlock cannot complete, including connection discard. A cleanup
+failure can be reported after earlier migrations have committed; inspect history
+before retrying.
+
+SQLite keeps its existing per-migration transaction behavior and does not acquire
+an advisory lock. Coordinate SQLite migration executors externally. Custom
+sessions with advisory-capable connections must provide `with_advisory_lock` and
+`has_active_transaction()` with the standard session contracts.
 
 ## Inspect or roll back
 

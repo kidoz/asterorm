@@ -84,6 +84,20 @@ if postgres_enabled
 
   test('pg integration', pg_tests)
 
+  migration_worker = executable(
+    'migration_worker',
+    'support/migration_worker.cpp',
+    dependencies : [asterorm_pg_dep],
+  )
+  test(
+    'migration serialization',
+    python_program,
+    args : [files('check_migration_serialization.py'), migration_worker.full_path()],
+    depends : migration_worker,
+    is_parallel : false,
+    timeout : 60,
+  )
+
   add_test_setup(
     'postgres',
     env : [

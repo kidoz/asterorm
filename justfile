@@ -33,10 +33,10 @@ db-up:
 db-down:
     docker compose down -v
 
-# Run only the PG integration suite, ensuring the test database is up first.
+# Run PostgreSQL integration and migration process tests with the database up.
 # Leaves the database running for repeated runs.
 test-pg: setup db-up
-    meson test -C {{build_dir}} --suite asterorm "pg integration" --print-errorlogs
+    meson test -C {{build_dir}} --suite asterorm "pg integration" "migration serialization" --print-errorlogs
 
 # End-to-end: bring DB up, run the full test suite, tear DB down on success.
 test-all: setup db-up

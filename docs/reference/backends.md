@@ -20,7 +20,7 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Bulk insert | Yes, no entity refresh | Yes, no entity refresh | Yes, no entity refresh | Experimental |
 | Bulk upsert with refresh | Yes | Yes | Rejected | Experimental |
 | Scoped advisory locks | Yes | Rejected | Rejected | Rejected |
-| Generic schema migrator | Yes | Yes | Rejected | Experimental |
+| Generic schema migrator | Yes, serialized | Yes, externally coordinated | Rejected | Experimental |
 | PostgreSQL COPY helpers | Yes | No | No | No |
 
 Use PostgreSQL 16+ for the supplied development service, SQLite 3.35+ for

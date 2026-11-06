@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "asterorm/core/result.hpp"
@@ -33,12 +34,52 @@ template <typename Session> class schema_migrator {
           table_sql_(quote_qualified_identifier(table_name_)) {}
 
     asterorm::result<migration_status> apply(std::vector<migration> migrations) {
-        auto ensure = ensure_table();
-        if (!ensure)
-            return std::unexpected(ensure.error());
+        return serialized([&] { return apply_unlocked(std::move(migrations)); });
+    }
 
+    asterorm::result<migration_status> rollback_to(std::int64_t target_version,
+                                                   std::vector<migration> migrations) {
+        return serialized(
+            [&] { return rollback_to_unlocked(target_version, std::move(migrations)); });
+    }
+
+    asterorm::result<std::int64_t> current_version() {
+        return serialized([&] { return current_version_unlocked(); });
+    }
+
+  private:
+    // Stable across processes, table spellings, and search paths. Reserve the
+    // bigint key spelling "ASTERORM" for all migrators in the same database.
+    static constexpr std::int64_t migration_lock_key = 0x41535445524f524d;
+
+    template <typename Callback> auto serialized(Callback&& callback) -> decltype(callback()) {
+        using return_type = decltype(callback());
+        auto supported = validate_backend_and_table();
+        if (!supported) {
+            return return_type{std::unexpected(supported.error())};
+        }
+        using connection_type = typename Session::connection_type;
+        if constexpr (detail::has_advisory_scope<connection_type>) {
+            if (session_->has_active_transaction()) {
+                return return_type{std::unexpected(active_transaction_error())};
+            }
+            return session_->with_advisory_lock(
+                migration_lock_key, [&](auto& locked) -> return_type {
+                    // A caller-owned transaction could retain uncommitted DDL or
+                    // an old snapshot beyond release of the migration lock.
+                    if (locked.has_active_transaction()) {
+                        return std::unexpected(active_transaction_error());
+                    }
+                    return std::forward<Callback>(callback)();
+                });
+        } else {
+            return std::forward<Callback>(callback)();
+        }
+    }
+
+    asterorm::result<migration_status> apply_unlocked(std::vector<migration> migrations) {
         std::ranges::sort(migrations, {}, &migration::version);
-        auto current = current_version();
+        auto current = current_version_unlocked();
         if (!current)
             return std::unexpected(current.error());
 
@@ -65,17 +106,13 @@ template <typename Session> class schema_migrator {
         return status;
     }
 
-    asterorm::result<migration_status> rollback_to(std::int64_t target_version,
-                                                   std::vector<migration> migrations) {
-        auto ensure = ensure_table();
-        if (!ensure)
-            return std::unexpected(ensure.error());
-
+    asterorm::result<migration_status> rollback_to_unlocked(std::int64_t target_version,
+                                                            std::vector<migration> migrations) {
         std::ranges::sort(migrations, [](const migration& lhs, const migration& rhs) {
             return lhs.version > rhs.version;
         });
 
-        auto current = current_version();
+        auto current = current_version_unlocked();
         if (!current)
             return std::unexpected(current.error());
 
@@ -106,14 +143,14 @@ template <typename Session> class schema_migrator {
             ++status.applied_count;
         }
 
-        auto refreshed = current_version();
+        auto refreshed = current_version_unlocked();
         if (!refreshed)
             return std::unexpected(refreshed.error());
         status.current_version = *refreshed;
         return status;
     }
 
-    asterorm::result<std::int64_t> current_version() {
+    asterorm::result<std::int64_t> current_version_unlocked() {
         auto ensure = ensure_table();
         if (!ensure)
             return std::unexpected(ensure.error());
@@ -125,8 +162,7 @@ template <typename Session> class schema_migrator {
         return version->value_or(0);
     }
 
-  private:
-    asterorm::result<void> ensure_table() {
+    [[nodiscard]] asterorm::result<void> validate_backend_and_table() const {
         using connection_type = typename Session::connection_type;
         if constexpr (requires { connection_type::supports_atomic_migrations; }) {
             if constexpr (!connection_type::supports_atomic_migrations) {
@@ -139,7 +175,10 @@ template <typename Session> class schema_migrator {
         }
         if (!table_sql_)
             return std::unexpected(invalid_table_error());
+        return {};
+    }
 
+    asterorm::result<void> ensure_table() {
         std::string sql = "CREATE TABLE IF NOT EXISTS ";
         sql += *table_sql_;
         sql += " (version BIGINT PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL "
@@ -238,6 +277,13 @@ template <typename Session> class schema_migrator {
             pos = dot + 1;
         }
         return out.empty() ? std::nullopt : std::optional<std::string>{out};
+    }
+
+    static db_error active_transaction_error() {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Schema migrations require a session without an active transaction";
+        return error;
     }
 
     static db_error invalid_table_error() {

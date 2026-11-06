@@ -234,6 +234,11 @@ template <typename Pool> class session {
         return res;
     }
 
+    [[nodiscard]] bool has_active_transaction() {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        return in_transaction_;
+    }
+
     asterorm::result<transaction_guard<session>> begin(transaction_options opts = {}) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (advisory_poisoned_) {

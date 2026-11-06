@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Automatic PostgreSQL migration serialization across processes, covering history
+  setup, apply, rollback, and version reads while preserving per-migration commits.
 - PostgreSQL `session::with_advisory_lock(key, callback)` with nested scopes,
   independent transaction/lease ownership, and connection discard on failed cleanup.
 - Shared SELECT locking in runtime and typed builders: `for_update`, `for_share`,
@@ -33,6 +35,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- PostgreSQL migration operations reject caller-owned transactions before history
+  setup, preserving the caller transaction and per-migration commit behavior.
 - Added a lock clause to the public SELECT AST and explicit SQLite/ClickHouse
   dialect tags. Rebuild the library and consumers together for the AST layout
   change, and handle new dialect values in exhaustive switches.

@@ -571,6 +571,17 @@ TEST_CASE("SQLite Integration: migrations use SQLite-compatible defaults", "[sql
     REQUIRE(applied.has_value());
     REQUIRE(applied->current_version == 1);
     REQUIRE(applied->applied_count == 1);
+    auto version = migrator.current_version();
+    REQUIRE(version.has_value());
+    REQUIRE(*version == 1);
+    auto reapplied = migrator.apply(migrations);
+    REQUIRE(reapplied.has_value());
+    REQUIRE(reapplied->applied_count == 0);
+    auto rolled_back = migrator.rollback_to(0, migrations);
+    REQUIRE(rolled_back.has_value());
+    REQUIRE(rolled_back->current_version == 0);
+    REQUIRE(rolled_back->applied_count == 1);
+    REQUIRE_FALSE(db.has_active_transaction());
 }
 
 TEST_CASE("SQLite Integration: bounded prepared statement cache evicts LRU", "[sqlite][cache]") {

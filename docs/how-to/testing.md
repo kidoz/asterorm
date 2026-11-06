@@ -27,12 +27,17 @@ PostgreSQL tests use `ASTERORM_TEST_CONNINFO`, falling back to the Compose
 database (`orm_test` user/password/database at `127.0.0.1:5432`). Use a disposable
 database: integration tests create and drop tables.
 
-To select one registered test:
+To select the relevant registered tests:
 
 ```sh
-meson test -C build-test-pg 'pg integration' --print-errorlogs
+meson test -C build-test-pg 'pg integration' 'migration serialization' --print-errorlogs
 meson test -C build-test-pg 'sqlite integration' --print-errorlogs
 ```
+
+The PostgreSQL migration serialization test starts independent client processes
+and observes server lock waits before releasing its gate. `just test-pg` includes
+both this test and the PostgreSQL integration executable. Both use
+`ASTERORM_TEST_CONNINFO` or the default local PostgreSQL service.
 
 ## Test MySQL
 

@@ -5,11 +5,69 @@ timeout feature is **partially implemented**. Existing transactions, native SQL,
 prepared execution, and backend error diagnostics provide useful foundations.
 Cancellation classification and typed-query observation are implemented in the
 follow-ups below. Shared SELECT locking and scoped PostgreSQL advisory locks
-are now available; migration serialization and timeout helpers remain planned.
+are now available. PostgreSQL migration serialization is implemented; timeout
+scope and pool-default semantics remain to be settled.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: migration serialization (2026-11-07)
+
+PostgreSQL `apply`, `rollback_to`, and `current_version` now acquire the reserved
+bigint advisory key `0x41535445524f524d` before history setup or version reads.
+One pinned connection holds the lock across all per-migration transactions. A
+waiting executor re-reads history after acquiring ownership. The fixed database-wide
+key avoids process-specific hashes, search-path aliases, and history-creation races;
+all histories within a database intentionally share the lock. Other built-in
+backend behavior is retained: SQLite requires external executor coordination and
+MySQL rejects atomic schema migrations before leasing.
+
+**Design revision:** the original criterion proposed a transaction advisory lock.
+That would end at the first existing per-migration commit. The implementation uses
+a session advisory scope to retain those commits and partial-progress behavior.
+PostgreSQL operations reject caller-owned transactions before history setup or lock
+waiting; they leave those transactions active. `has_active_transaction()` exposes
+a thread-safe snapshot, and the scoped callback checks it again under the session
+mutex. Recursive migration operations from observers remain unsupported.
+
+A new Meson test launches independent client processes. A gate process holds the
+reserved key until both workers appear as waiting advisory-lock requests in
+`pg_locks`; history must still be absent. Apply/apply, apply/rollback, and
+apply/version-read pairs then verify committed history and fresh version decisions.
+Server statements and subprocess waits are bounded. Separate PostgreSQL integration
+cases verify later-migration failure, partial rollback, observer exceptions, caller
+transaction rejection, lock release, and retries with one-connection pools.
+
+Observed verification:
+
+- Against the pre-change migration header,
+  `meson test -C buildDir 'migration serialization' --print-errorlogs`:
+  `Ok: 0`, `Fail: 1`; workers did not wait for the reserved lock. The working
+  implementation was restored immediately after that baseline check.
+- With serialization implemented, that command printed `Ok: 1`, `Fail: 0`.
+- `meson test -C buildDir 'migration serialization' --repeat=5 --print-errorlogs`:
+  `Ok: 5`, `Fail: 0`, covering all three worker pairs on each iteration.
+- Updated `just test-pg`: `Ok: 2`, `Fail: 0`, including the process regression
+  alongside the full PostgreSQL integration executable.
+- `just test-sqlite`: `Ok: 1`, `Fail: 0`. Expanded SQLite migration coverage also
+  checks version reads, reapplication, rollback, and transaction release.
+- `just test` and the final `meson test -C buildDir --print-errorlogs`:
+  each printed `Ok: 11`, `Fail: 0`, including enabled backends and compile checks.
+- Final `meson compile -C buildDir` and `just format-check`: exit 0.
+- `just lint`: exit 0 across 44 translation units, with warnings. New fixture
+  warnings were corrected; final
+  `clang-tidy -p buildDir tests/integration/test_migrations.cpp tests/support/migration_worker.cpp`:
+  exit 0, with remaining diagnostics confined to Catch2 headers.
+- After fixture cleanup, the PostgreSQL integration/process selection again
+  printed `Ok: 2`, `Fail: 0`.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-migration-standards.json`:
+  exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
+  three edited agent context files.
+
+The next task is timeout scope and pool-default design (item 6), followed by its
+implementation and regression coverage.
 
 ## Follow-up: scoped advisory locking (2026-11-07)
 
@@ -54,8 +112,8 @@ Observed verification:
   exit 1, retaining the 53 existing errors and 12 warnings; no findings concern
   the three edited agent context files.
 
-The next task is migration serialization (item 5). It must reconcile the original
-transaction-lock criterion with the existing per-migration commit behavior.
+This advisory slice preceded migration serialization above. The later follow-up
+records the session-lock decision that preserves per-migration commits.
 
 ## Follow-up: shared SELECT locking (2026-11-07)
 
@@ -111,7 +169,7 @@ Observed verification:
   three edited agent context files.
 
 This SELECT-locking slice preceded the scoped advisory implementation above.
-Migration serialization and timeout helpers remain pending.
+Migration serialization is addressed above; timeout helpers remain pending.
 
 ## Follow-up: typed-query observation (2026-11-07)
 
@@ -338,7 +396,7 @@ clause, and unsupported adapters must still fail clearly.
 4. **Add scoped advisory locking and lease ownership (implemented).** Define callback result
    and exception propagation, nested locks, transaction entry, and failed cleanup.
    Prove no lease/lock leaks on every exit path, including aborted transactions.
-5. **Serialize migrations.** Use a stable cross-process lock identity, acquire
+5. **Serialize migrations (implemented on PostgreSQL).** Use a stable cross-process lock identity, acquire
    before history setup/read decisions, and recheck versions under the lock on
    the same connection. Coordinate apply and rollback. Preserve per-migration
    commits unless a batch-atomic API change is explicitly designed. Test two
@@ -349,7 +407,7 @@ clause, and unsupported adapters must still fail clearly.
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 5. Feature status stays planned until the original
+The immediate next task is item 6. Feature status stays planned until the original
 acceptance criteria and the cross-backend behavior have executable coverage.
 
 ## Verification
@@ -374,5 +432,5 @@ acceptance criteria and the cross-backend behavior have executable coverage.
 
 Only PostgreSQL native lock/timeout semantics and PostgreSQL/SQLite observer
 routing were probed in the initial audit. The later follow-ups add advisory-helper
-exception safety and MySQL locking coverage. Real multi-process migrations and timeout-helper behavior remain
-unverified.
+exception safety, MySQL locking coverage, and real multi-process PostgreSQL
+migration coverage. Timeout-helper behavior remains unverified.

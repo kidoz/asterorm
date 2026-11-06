@@ -42,7 +42,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - Exclusive connection leases, bounded prepared-statement caches, pool statistics,
   and query-observer callbacks.
 - Scoped transactions, savepoints, transaction retries, and a schema migration
-  runner for PostgreSQL and SQLite.
+  runner for PostgreSQL and SQLite, with automatic PostgreSQL executor
+  serialization.
 - PostgreSQL codecs for JSONB, arrays, UUID, bytea, date/time, exact numeric values,
   and enum labels, plus raw and structured COPY helpers.
 

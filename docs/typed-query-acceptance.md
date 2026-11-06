@@ -97,5 +97,5 @@ The next planned feature is locks and timeouts. The
 paths, live probes, and ordered work. Cancellation classification and typed-query
 observer routing are corrected with regression coverage. Shared SELECT locking
 now has a restricted supported surface and backend checks. Scoped PostgreSQL
-advisory locking and safe lease ownership are implemented; migration serialization
-is next.
+advisory locking, safe lease ownership, and PostgreSQL migration serialization
+are implemented. Timeout scope and pool-default semantics are next.
