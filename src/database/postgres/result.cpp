@@ -40,6 +40,10 @@ int result::affected_rows() const {
     return ec == std::errc{} ? out : 0;
 }
 
+std::string_view result::command_tag() const {
+    return res_ ? PQcmdStatus(res_) : "";
+}
+
 int result::columns() const {
     return res_ ? PQnfields(res_) : 0;
 }

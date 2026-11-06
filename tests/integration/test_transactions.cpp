@@ -89,6 +89,24 @@ TEST_CASE("PG Integration: Transactions", "[pg][transactions]") {
         REQUIRE(select_res.value().rows() == 0);
     }
 
+    SECTION("Commit fails after PostgreSQL has aborted the transaction") {
+        auto transaction = db.begin();
+        REQUIRE(transaction.has_value());
+        auto inserted = db.with_connection([](auto& conn) {
+            return conn.execute("INSERT INTO test_tx (id, val) VALUES (4, 'aborted')");
+        });
+        REQUIRE(inserted.has_value());
+        auto failed_query =
+            db.with_connection([](auto& conn) { return conn.execute("SELECT 1/0"); });
+        REQUIRE_FALSE(failed_query.has_value());
+
+        REQUIRE_FALSE(transaction->commit().has_value());
+        auto selected = db.with_connection(
+            [](auto& conn) { return conn.execute("SELECT id FROM test_tx WHERE id = 4"); });
+        REQUIRE(selected.has_value());
+        REQUIRE(selected->rows() == 0);
+    }
+
     // Teardown test table cleanly
     auto cleanup_lease = pool.acquire();
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS test_tx;");

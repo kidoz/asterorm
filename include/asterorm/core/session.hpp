@@ -4,6 +4,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -95,17 +96,29 @@ inline std::optional<std::string> quote_savepoint(std::string_view name) {
     out += '"';
     return out;
 }
+
+template <typename Result> bool commit_confirmed(const Result& result_set) {
+    if constexpr (requires {
+                      { result_set.command_tag() } -> std::convertible_to<std::string_view>;
+                  }) {
+        return result_set.command_tag() == "COMMIT";
+    }
+    return true;
+}
 } // namespace detail
 
 template <typename Session> class transaction_guard {
   public:
-    explicit transaction_guard(Session* s) : session_(s) {}
+    explicit transaction_guard(Session* s, std::uint64_t transaction_id)
+        : session_(s), transaction_id_(transaction_id) {}
 
     transaction_guard(const transaction_guard&) = delete;
     transaction_guard& operator=(const transaction_guard&) = delete;
 
-    transaction_guard(transaction_guard&& other) noexcept : session_(other.session_) {
+    transaction_guard(transaction_guard&& other) noexcept
+        : session_(other.session_), transaction_id_(other.transaction_id_) {
         other.session_ = nullptr;
+        other.transaction_id_ = 0;
     }
 
     transaction_guard& operator=(transaction_guard&& other) noexcept {
@@ -114,7 +127,9 @@ template <typename Session> class transaction_guard {
                 auto _ = rollback();
             }
             session_ = other.session_;
+            transaction_id_ = other.transaction_id_;
             other.session_ = nullptr;
+            other.transaction_id_ = 0;
         }
         return *this;
     }
@@ -128,9 +143,10 @@ template <typename Session> class transaction_guard {
     asterorm::result<void> commit() {
         if (!session_)
             return {};
-        auto res = session_->commit_transaction();
+        auto res = session_->commit_transaction(transaction_id_);
         if (res) {
             session_ = nullptr;
+            transaction_id_ = 0;
         }
         return res;
     }
@@ -138,15 +154,17 @@ template <typename Session> class transaction_guard {
     asterorm::result<void> rollback() {
         if (!session_)
             return {};
-        auto res = session_->rollback_transaction();
+        auto res = session_->rollback_transaction(transaction_id_);
         if (res) {
             session_ = nullptr;
+            transaction_id_ = 0;
         }
         return res;
     }
 
   private:
     Session* session_;
+    std::uint64_t transaction_id_;
 };
 
 template <typename Pool> class session {
@@ -167,20 +185,29 @@ template <typename Pool> class session {
     // query_event if an observer is installed. Used by CRUD and native<T>; can
     // also be called directly.
     template <typename Conn>
-    auto observed_execute(Conn& conn, std::string_view sql,
-                          const std::vector<std::optional<std::string>>& params)
+    auto observed_execute(Conn& conn, std::string_view sql, const query_parameters& params)
         -> decltype(conn.execute_prepared(sql, params)) {
         query_observer observer;
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
+            if (transaction_invalidated_) {
+                return std::unexpected(invalidated_transaction_error());
+            }
             observer = observer_;
         }
 
         if (!observer) {
-            return conn.execute_prepared(sql, params);
+            auto res = conn.execute_prepared(sql, params);
+            if (!res) {
+                record_transaction_error(res.error());
+            }
+            return res;
         }
         const auto start = std::chrono::steady_clock::now();
         auto res = conn.execute_prepared(sql, params);
+        if (!res) {
+            record_transaction_error(res.error());
+        }
         const auto elapsed = std::chrono::steady_clock::now() - start;
         query_event ev{sql, params.size(),
                        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed), nullptr};
@@ -205,15 +232,30 @@ template <typename Pool> class session {
 
         active_lease_ = std::move(lease_res.value());
 
-        const auto sql = detail::build_begin_sql_for<connection_type>(opts);
-        auto exec_res = (*active_lease_)->execute(sql);
+        auto exec_res = [&]() -> asterorm::result<void> {
+            if constexpr (requires(connection_type& connection) {
+                              connection.begin_transaction(opts);
+                          }) {
+                return (*active_lease_)->begin_transaction(opts);
+            } else {
+                const auto sql = detail::build_begin_sql_for<connection_type>(opts);
+                auto executed = (*active_lease_)->execute(sql);
+                if (!executed)
+                    return std::unexpected(executed.error());
+                return {};
+            }
+        }();
         if (!exec_res) {
             active_lease_.reset();
             return std::unexpected(exec_res.error());
         }
 
         in_transaction_ = true;
-        return transaction_guard<session>{this};
+        transaction_invalidated_ = false;
+        active_transaction_id_ = ++next_transaction_id_;
+        if (next_transaction_id_ == 0)
+            active_transaction_id_ = ++next_transaction_id_;
+        return transaction_guard<session>{this, active_transaction_id_};
     }
 
     // Savepoint APIs. Must be called inside an active transaction. The
@@ -236,45 +278,12 @@ template <typename Pool> class session {
 
     asterorm::result<void> commit_transaction() {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (!in_transaction_ || !active_lease_) {
-            db_error err;
-            err.kind = db_error_kind::query_failed;
-            err.message = "No active transaction to commit";
-            return std::unexpected(err);
-        }
-
-        auto res = (*active_lease_)->execute("COMMIT");
-        if (!res) {
-            return std::unexpected(res.error());
-        }
-
-        in_transaction_ = false;
-        active_lease_.reset();
-
-        return {};
+        return commit_transaction(active_transaction_id_);
     }
 
     asterorm::result<void> rollback_transaction() {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (!in_transaction_ || !active_lease_) {
-            db_error err;
-            err.kind = db_error_kind::query_failed;
-            err.message = "No active transaction to rollback";
-            return std::unexpected(err);
-        }
-
-        auto res = (*active_lease_)->execute("ROLLBACK");
-        if (!res) {
-            (*active_lease_)->close(); // Force close on failed rollback so pool discards it
-            in_transaction_ = false;
-            active_lease_.reset();
-            return std::unexpected(res.error());
-        }
-
-        in_transaction_ = false;
-        active_lease_.reset();
-
-        return {};
+        return rollback_transaction(active_transaction_id_);
     }
 
     template <typename F>
@@ -323,11 +332,34 @@ template <typename Pool> class session {
 
     // Helper to safely run any query block utilizing the transaction's pinned connection
     // or an ephemeral connection lease if no transaction is active.
+    // Invalidated transactions reject callbacks until rollback. Void callbacks
+    // throw logic_error because their return type cannot carry a db_error.
     template <typename F>
     auto with_connection(F&& func) -> decltype(func(std::declval<connection_type&>())) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (in_transaction_ && active_lease_) {
-            return func(**active_lease_);
+            if (transaction_invalidated_) {
+                if constexpr (std::is_void_v<decltype(func(**active_lease_))>) {
+                    throw std::logic_error(invalidated_transaction_error().message);
+                } else {
+                    return std::unexpected(invalidated_transaction_error());
+                }
+            }
+            if constexpr (std::is_void_v<decltype(func(**active_lease_))>) {
+                func(**active_lease_);
+                return;
+            } else {
+                auto res = func(**active_lease_);
+                if constexpr (requires {
+                                  res.error();
+                                  static_cast<bool>(res);
+                              }) {
+                    if (!res) {
+                        record_transaction_error(res.error());
+                    }
+                }
+                return res;
+            }
         } else {
             auto lease_res = pool_->acquire();
             if (!lease_res) {
@@ -346,8 +378,8 @@ template <typename Pool> class session {
     template <typename T, typename... Args>
     asterorm::result<std::vector<T>> native_as(native_hydration hydration, std::string_view sql,
                                                Args&&... args) {
-        std::vector<std::optional<std::string>> params;
-        (params.push_back(asterorm::encode(std::forward<Args>(args))), ...);
+        query_parameters params;
+        (params.push_back(asterorm::encode_parameter(std::forward<Args>(args))), ...);
 
         auto res = with_connection([&](auto& conn) { return observed_execute(conn, sql, params); });
 
@@ -358,7 +390,7 @@ template <typename Pool> class session {
         using traits = entity_traits<T>;
 
         for (int r = 0; r < res->rows(); ++r) {
-            T entity;
+            T entity{};
             asterorm::result<void> decode_err;
             auto populate = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                 (..., [&]() {
@@ -428,8 +460,8 @@ template <typename Pool> class session {
 
     template <typename Mapper, typename... Args>
     auto native_map(std::string_view sql, Mapper&& mapper, Args&&... args) {
-        std::vector<std::optional<std::string>> params;
-        (params.push_back(asterorm::encode(std::forward<Args>(args))), ...);
+        query_parameters params;
+        (params.push_back(asterorm::encode_parameter(std::forward<Args>(args))), ...);
 
         auto res = with_connection([&](auto& conn) { return observed_execute(conn, sql, params); });
         using mapped_type = std::invoke_result_t<Mapper&, decltype(*res), int>;
@@ -447,12 +479,84 @@ template <typename Pool> class session {
     }
 
   private:
+    template <typename> friend class transaction_guard;
+
+    asterorm::result<void> commit_transaction(std::uint64_t expected_transaction_id) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!in_transaction_ || !active_lease_) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "No active transaction to commit";
+            return std::unexpected(err);
+        }
+        if (expected_transaction_id != active_transaction_id_) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "Transaction guard does not match the active transaction";
+            return std::unexpected(err);
+        }
+        if (transaction_invalidated_) {
+            return std::unexpected(invalidated_transaction_error());
+        }
+
+        auto res = (*active_lease_)->execute("COMMIT");
+        if (!res)
+            return std::unexpected(res.error());
+
+        in_transaction_ = false;
+        transaction_invalidated_ = false;
+        active_transaction_id_ = 0;
+        active_lease_.reset();
+        if (!detail::commit_confirmed(*res)) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "Transaction was rolled back instead of committed";
+            return std::unexpected(err);
+        }
+        return {};
+    }
+
+    asterorm::result<void> rollback_transaction(std::uint64_t expected_transaction_id) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!in_transaction_ || !active_lease_) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "No active transaction to rollback";
+            return std::unexpected(err);
+        }
+        if (expected_transaction_id != active_transaction_id_) {
+            db_error err;
+            err.kind = db_error_kind::query_failed;
+            err.message = "Transaction guard does not match the active transaction";
+            return std::unexpected(err);
+        }
+
+        auto res = (*active_lease_)->execute("ROLLBACK");
+        if (!res) {
+            (*active_lease_)->close(); // Force close on failed rollback so pool discards it
+            in_transaction_ = false;
+            transaction_invalidated_ = false;
+            active_transaction_id_ = 0;
+            active_lease_.reset();
+            return std::unexpected(res.error());
+        }
+
+        in_transaction_ = false;
+        transaction_invalidated_ = false;
+        active_transaction_id_ = 0;
+        active_lease_.reset();
+        return {};
+    }
+
     asterorm::result<void> emit_savepoint_locked(std::string_view verb, std::string_view name) {
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
             err.message = "Savepoint requires an active transaction";
             return std::unexpected(err);
+        }
+        if (transaction_invalidated_) {
+            return std::unexpected(invalidated_transaction_error());
         }
         auto quoted = detail::quote_savepoint(name);
         if (!quoted) {
@@ -473,7 +577,25 @@ template <typename Pool> class session {
     std::recursive_mutex mutex_;
     std::optional<lease_type> active_lease_;
     bool in_transaction_{false};
+    bool transaction_invalidated_{false};
+    std::uint64_t active_transaction_id_{0};
+    std::uint64_t next_transaction_id_{0};
     query_observer observer_;
+
+    static db_error invalidated_transaction_error() {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Transaction was invalidated by a deadlock or serialization failure; "
+                        "rollback is required";
+        return error;
+    }
+
+    void record_transaction_error(const db_error& err) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (in_transaction_ && is_retryable_transaction_error(err)) {
+            transaction_invalidated_ = true;
+        }
+    }
 
     static bool is_retryable_transaction_error(const db_error& err) {
         return err.kind == db_error_kind::serialization_failure ||
