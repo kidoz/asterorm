@@ -1,0 +1,124 @@
+{
+  "started_utc": "2026-11-06T20:08:00.760174+00:00",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "cpu_model": "Apple M4 Max",
+  "compiler": {
+    "host": {
+      "cpp": {
+        "id": "clang",
+        "exelist": [
+          "c++"
+        ],
+        "linker_exelist": [
+          "c++"
+        ],
+        "file_suffixes": [
+          "cpp",
+          "cppm",
+          "cc",
+          "cp",
+          "cxx",
+          "c++",
+          "hh",
+          "hp",
+          "hpp",
+          "ipp",
+          "hxx",
+          "h++",
+          "ino",
+          "ixx",
+          "CPP",
+          "C",
+          "HPP",
+          "H"
+        ],
+        "default_suffix": "cpp",
+        "version": "21.0.0",
+        "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+        "linker_id": "ld64"
+      }
+    },
+    "build": {
+      "cpp": {
+        "id": "clang",
+        "exelist": [
+          "c++"
+        ],
+        "linker_exelist": [
+          "c++"
+        ],
+        "file_suffixes": [
+          "cpp",
+          "cppm",
+          "cc",
+          "cp",
+          "cxx",
+          "c++",
+          "hh",
+          "hp",
+          "hpp",
+          "ipp",
+          "hxx",
+          "h++",
+          "ino",
+          "ixx",
+          "CPP",
+          "C",
+          "HPP",
+          "H"
+        ],
+        "default_suffix": "cpp",
+        "version": "21.0.0",
+        "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+        "linker_id": "ld64"
+      }
+    }
+  },
+  "build_options": {
+    "buildtype": "release",
+    "debug": false,
+    "default_library": "static",
+    "optimization": "3",
+    "b_lto": false,
+    "cpp_args": [],
+    "cpp_link_args": [],
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "benchmarks": true,
+    "mysql": "enabled"
+  },
+  "runs": 3,
+  "samples": 21,
+  "target_rows_per_batch": 8192,
+  "row_counts": [
+    1,
+    256,
+    16384
+  ],
+  "material_timing_ratio": 1.1,
+  "git_commit": "c33f7e8de611ef3e1c1bcc374efeaa12d2452869",
+  "tracked_worktree_dirty": true,
+  "source_sha256": {
+    "benchmarks/row_decode_benchmark.cpp": "a02450ef44ea4a65cc14ab541e950f796d4c3e009778dfa7e9a7c5e462e3f1d1",
+    "benchmarks/run_row_decode_benchmark.py": "02fdf65de47ec0e5c100a8a0a0a5911df6ebaec3acdbc7533ba70514f2b492d4",
+    "benchmarks/measurement_support.cpp": "19fe50c5ae2ed5fcbe8aa142ba41f852c604fde2a8cd01870fbb89d231c3405c",
+    "benchmarks/measurement_support.hpp": "2505f86a58f22feb50fcea3bbe0defeae6e57da9d5a362d5274b01160f0dd80d",
+    "benchmarks/allocation_probe.cpp": "4a3ef9f57801708c39cf08e959a5926b11a0b2c359b2ea5edbc8f7e6ea5ae424",
+    "benchmarks/meson.build": "58482301412176b63ec922606f1182681cdd9dcbc95d5cafefb5459ca2b430ef",
+    "include/asterorm/core/repository.hpp": "7447e4e73b316cfc485aa9b515a98669d542e811de8799dcfce7546a998914c7",
+    "include/asterorm/sql/typed_query.hpp": "090fab70b22b2c12c6707dca0bcaae95866af1576df26044e125ccf842c32f92",
+    "include/asterorm/sql/typed.hpp": "b5e000b02a77770bad8b09e1f383496803ce38a7cdabbf8d7653a4c9e1896904",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004",
+    "include/asterorm/core/types.hpp": "fade685d84b5002422f72441e190e5db05a36e9bb79bc1c0f88993cbf5fd0766",
+    "include/asterorm/core/result.hpp": "04998f129a85e8bf2e8c9f257e6229e7323ce3fc00460d5e61ff13ddbefbc0c9",
+    "include/asterorm/postgres/result.hpp": "89f1bdc9937046004eef2ec8c6ace7586d695e3c80c8167d33c0d3bb460599b9",
+    "include/asterorm/sqlite/result.hpp": "4047ec9c25cb2e776233dd4d0c6a7735d929dff0ef508806120006b22ac465a6",
+    "include/asterorm/mysql/result.hpp": "8836aa2e7efcb6d38a989da2abc85a225bd20eab989aacee13ebb6efb31a51b8",
+    "src/database/postgres/result.cpp": "975ca929c3805ef95e708da70168467c86cfb07eb754e5c4150de955876666bb",
+    "src/database/sqlite/result.cpp": "0a0fdcb60526898246573d12edc041c2ac3b6f9295f5a1cfb9f5fe01179730fb",
+    "src/database/mysql/result.cpp": "bcb616d38b1cd7ccb8dcf42929d9b7a757e139ea7a6b367c13da12d035a9abf7"
+  },
+  "completed_utc": "2026-11-06T20:08:06.577491+00:00"
+}

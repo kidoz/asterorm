@@ -1,0 +1,2 @@
+Verified native PostgreSQL/SQLite/MySQL fixtures: all values, empty results, NULL/invalid required-field errors; sizes 1, 256, 16384; libpq=180006
+Verified native PostgreSQL/SQLite/MySQL fixtures: all values, empty results, NULL/invalid required-field errors; sizes 1, 256, 16384; libpq=180006
