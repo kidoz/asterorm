@@ -127,13 +127,25 @@ template <typename Session> class schema_migrator {
 
   private:
     asterorm::result<void> ensure_table() {
+        using connection_type = typename Session::connection_type;
+        if constexpr (requires { connection_type::supports_atomic_migrations; }) {
+            if constexpr (!connection_type::supports_atomic_migrations) {
+                db_error error;
+                error.kind = db_error_kind::query_failed;
+                error.message = "This backend cannot guarantee atomic schema migrations; use "
+                                "native SQL with explicit migration tracking";
+                return std::unexpected(error);
+            }
+        }
         if (!table_sql_)
             return std::unexpected(invalid_table_error());
 
         std::string sql = "CREATE TABLE IF NOT EXISTS ";
         sql += *table_sql_;
         sql += " (version BIGINT PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL "
-               "DEFAULT now())";
+               "DEFAULT ";
+        sql += migration_timestamp_default();
+        sql += ")";
         return session_->with_connection([&](auto& conn) -> asterorm::result<void> {
             auto res = conn.execute(sql);
             if (!res)
@@ -154,8 +166,8 @@ template <typename Session> class schema_migrator {
 
     template <typename TxSession>
     asterorm::result<void> record_migration(TxSession& session, const migration& m) {
-        std::vector<std::optional<std::string>> params{asterorm::encode(m.version),
-                                                       asterorm::encode(m.name)};
+        query_parameters params{asterorm::encode_parameter(m.version),
+                                asterorm::encode_parameter(m.name)};
         std::string sql = "INSERT INTO ";
         sql += *table_sql_;
         sql += " (version, name) VALUES ($1, $2)";
@@ -169,7 +181,7 @@ template <typename Session> class schema_migrator {
 
     template <typename TxSession>
     asterorm::result<void> remove_migration(TxSession& session, std::int64_t version) {
-        std::vector<std::optional<std::string>> params{asterorm::encode(version)};
+        query_parameters params{asterorm::encode_parameter(version)};
         std::string sql = "DELETE FROM ";
         sql += *table_sql_;
         sql += " WHERE version = $1";
@@ -184,6 +196,15 @@ template <typename Session> class schema_migrator {
     static bool is_identifier_start(char c) {
         auto ch = static_cast<unsigned char>(c);
         return std::isalpha(ch) || c == '_';
+    }
+
+    static std::string migration_timestamp_default() {
+        using connection_type = typename Session::connection_type;
+        if constexpr (requires { connection_type::migration_timestamp_default(); }) {
+            return connection_type::migration_timestamp_default();
+        } else {
+            return "now()";
+        }
     }
 
     static bool is_identifier_continue(char c) {

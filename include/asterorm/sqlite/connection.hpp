@@ -58,6 +58,7 @@ class connection {
     // so REPEATABLE READ / SERIALIZABLE upgrade to BEGIN IMMEDIATE; lower
     // levels and read_only/deferrable are ignored.
     static std::string build_begin_sql(const transaction_options& opts);
+    static std::string migration_timestamp_default();
 
   private:
     void evict_one_prepared_statement();

@@ -353,4 +353,8 @@ std::string connection::build_begin_sql(const transaction_options& opts) {
     // PRAGMA query_only; deferrable is PostgreSQL-specific).
 }
 
+std::string connection::migration_timestamp_default() {
+    return "CURRENT_TIMESTAMP";
+}
+
 } // namespace asterorm::sqlite
