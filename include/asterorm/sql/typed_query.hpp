@@ -1,4 +1,5 @@
 #pragma once
+#include <concepts>
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
@@ -21,6 +22,20 @@
 namespace asterorm::sql::typed {
 
 namespace detail {
+
+template <typename Session, typename Connection>
+auto execute_select(Session& session, Connection& connection, const compiled_query& statement) {
+    if constexpr (requires {
+                      {
+                          session.observed_execute(connection, statement.sql, statement.params)
+                      } -> std::same_as<decltype(connection.execute_prepared(statement.sql,
+                                                                             statement.params))>;
+                  }) {
+        return session.observed_execute(connection, statement.sql, statement.params);
+    } else {
+        return connection.execute_prepared(statement.sql, statement.params);
+    }
+}
 
 template <typename Entity, typename Result, typename Res>
 asterorm::result<void> hydrate_whole_entity(const Res& result_set, int row, Result& out) {
@@ -68,6 +83,9 @@ asterorm::result<DTO> hydrate_dto(const Res& result_set, int row) {
 // Accept the builder by either rvalue (temporary chain) or lvalue (named).
 // The lvalue overload forwards to the rvalue one; both branch on the typelist
 // to pick whole-entity vs. DTO hydration.
+// Prefer a compatible session observed_execute helper for query events.
+// Custom facades without that helper retain direct
+// prepared execution through their with_connection callback.
 template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
 query(Session& session, typed_select_builder<Entity, Result, Items...>& builder) {
@@ -84,7 +102,7 @@ query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder
         return std::unexpected(compiled_query.error());
 
     auto execution_result = session.with_connection([&](auto& connection) {
-        return connection.execute_prepared(compiled_query->sql, compiled_query->params);
+        return detail::execute_select(session, connection, *compiled_query);
     });
     if (!execution_result) {
         return std::unexpected(execution_result.error());

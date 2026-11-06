@@ -3,12 +3,59 @@
 Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock and
 timeout feature is **not implemented**. Existing transactions, native SQL,
 prepared execution, and backend error diagnostics provide useful foundations.
-The cancellation-classification follow-up below completes the first groundwork
-slice. Typed-query observer routing is next.
+Cancellation classification and typed-query observation are implemented in the
+follow-ups below. Shared SELECT locking is next.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: typed-query observation (2026-11-07)
+
+`typed::query` now calls a compatible `session.observed_execute` inside the
+existing `with_connection` callback. Standard sessions emit one execution event
+for success (including empty results) or failure, before row decoding. SQL,
+parameter values/types, hydration, and transaction pinning are retained.
+
+Custom facades remain supported without adding a session base class or requiring
+`connection_type`. An accessible observer helper is used only if its result type
+exactly matches `connection.execute_prepared`; facades without a compatible
+helper keep direct execution. The fallback adds no observer behavior. Observer
+exceptions propagate, with ephemeral leases released by the existing scope.
+
+New unit coverage checks string-AST SQL/parameter parity, no-observer execution,
+tuple and whole-entity hydration, copied error diagnostics, transaction
+invalidation, observer-exception cleanup, and custom facade compatibility. A
+shared integration fixture runs on PostgreSQL, SQLite, and MySQL: whole entities,
+named tuple builders, nullable values, empty results, events while a lease is
+held, reads in an active one-connection transaction, missing-table errors, and
+observers being cleared. The isolated typed-query header compile check remains.
+
+Verification for this follow-up:
+
+- Before the fix,
+  `meson test -C buildDir 'core unit tests' --test-args='[typed-query]' --print-errorlogs`
+  failed three of five unit cases: session success/failure events and custom
+  helper dispatch. The direct-fallback cases passed.
+- Before the fix,
+  `meson test -C buildDir 'pg integration' 'sqlite integration' 'mysql integration' --test-args='[typed-query]' --print-errorlogs`
+  printed `Ok: 0`, `Fail: 3`; all three returned rows but emitted zero events.
+- After the fix,
+  `meson test -C buildDir 'core unit tests' 'pg integration' 'sqlite integration' 'mysql integration' --test-args='[typed-query]' --print-errorlogs`
+  printed `Ok: 4`, `Fail: 0`, including the added observer-exception case.
+- `just test-pg`: `Ok: 1`, `Fail: 0`.
+- `just test`: `Ok: 10`, `Fail: 0`, including all backends, guide checks, and
+  the 18 typed compile cases.
+- `just format-check`: exit 0.
+- `just lint`: exit 0 across 40 translation units, with warnings.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-typed-observer-standards.json`:
+  exit 1 after build completion, with the existing 53 errors and 12 warnings;
+  no findings concern the two edited feature-expansion context files.
+
+The original audit probe and benchmark artifacts remain unchanged snapshots of
+their recorded versions. No timeout or locking API is introduced by this fix.
+The next task is item 3 below, including an explicit backend capability boundary.
 
 ## Follow-up: cancellation classification (2026-11-07)
 
@@ -45,7 +92,8 @@ Verification for this follow-up:
 
 The original [probe snapshot](evidence/locks-and-timeouts/README.md) remains
 unchanged. It records the pre-fix behavior and source hashes, not a result for the
-current implementation. The next task is item 2 in the ordered work below.
+current implementation. Typed-query observation is addressed in the later
+follow-up above.
 
 ## Acceptance inventory
 
@@ -174,7 +222,7 @@ generic builder support; unsupported adapters must fail clearly.
    errors. Add live prepared-execution cancellation coverage proving SQLSTATE,
    observer error delivery, rollback, and connection reuse. Avoid new enum values
    or pool-acquisition changes in this slice.
-2. **Route typed queries through session observation.** Cover success and error
+2. **Route typed queries through session observation (implemented).** Cover success and error
    events, SQL/parameter identity, no-observer behavior, and transaction pinning.
    Preserve a deliberate compatibility path for existing custom session facades
    that only provide `with_connection`; document what that fallback guarantees.
@@ -198,7 +246,7 @@ generic builder support; unsupported adapters must fail clearly.
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 2. Feature status stays planned until the original
+The immediate next task is item 3. Feature status stays planned until the original
 acceptance criteria and the cross-backend behavior have executable coverage.
 
 ## Verification

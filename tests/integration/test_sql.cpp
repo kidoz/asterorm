@@ -10,6 +10,16 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/typed_query_observer.hpp"
+
+TEST_CASE("PG Integration: typed query observation", "[pg][typed-query][observer]") {
+    const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_typed_query_observer(
+        asterorm::pg::driver{}, configured
+                                    ? configured
+                                    : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
+                                      "password=orm_test sslmode=disable");
+}
 
 struct native_user {
     std::optional<int> id;

@@ -35,6 +35,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Fixed
 
+- Routed typed query execution through session observation, retaining direct
+  prepared execution for custom sessions without a compatible observer helper.
 - Classified PostgreSQL query cancellation (`57014`) as a query failure while
   preserving SQLSTATE and diagnostics, rather than reporting a connection failure.
 - Prevented stale transaction guards and failed transactions from committing.

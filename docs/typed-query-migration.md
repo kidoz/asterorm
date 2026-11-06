@@ -239,11 +239,19 @@ contract; the caller must preserve valid SQL and result order/types and provide
 the execution/mapping path. A runtime AST cannot be passed back to
 `typed::query` as a typed builder.
 
-The current `typed::query` calls the connection's `execute_prepared` through
-`session.with_connection`; it does not use the session's observed-execute helper.
-Check observer/timeout requirements before moving a query that depends on that
-helper. Connection-level behavior still applies. This guide does not change
-that execution contract.
+With an `asterorm::session`, `typed::query` uses `observed_execute` inside
+`with_connection`, so successful and failed prepared executions emit the same
+observer events as repository and native queries. An active transaction keeps
+its pinned connection. Events cover execution, before result decoding; a later
+decoding error is returned to the caller separately. Observer exceptions propagate
+as they do for native queries, so keep callbacks short and non-throwing.
+
+Custom session facades remain supported. If an accessible
+`observed_execute(connection, sql, params)` returns exactly the connection's
+`execute_prepared` result type, the typed query uses it. Otherwise it calls
+`execute_prepared` directly inside the facade's `with_connection` callback.
+That fallback does not add session observer behavior. No timeout helper is
+introduced by this execution change.
 
 ## What compilation checks
 

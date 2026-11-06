@@ -9,6 +9,7 @@
 #include "asterorm/mysql/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/typed_query_observer.hpp"
 
 struct MysqlUser {
     std::optional<std::int64_t> id;
@@ -84,6 +85,10 @@ void take(asterorm::result<void> result) {
     REQUIRE(result.has_value());
 }
 } // namespace
+
+TEST_CASE("MySQL Integration: typed query observation", "[mysql][typed-query][observer]") {
+    asterorm::test::check_typed_query_observer(asterorm::mysql::driver{}, conninfo());
+}
 
 TEST_CASE("MySQL native statements, bindings, results and cache", "[mysql][integration]") {
     auto connection = take(asterorm::mysql::driver{}.connect(conninfo()));

@@ -51,6 +51,7 @@ AsterORM v0.1 covers a small but production-shaped surface:
   boolean operands, and text columns accept string literals as bound text parameters
 * inferred tuple projections through `sql::typed::select_cols(...)`, including
   optional columns and aggregate projected types, alongside explicit DTO projections
+* session query-observer events for repository, native, and typed query execution
 * an [incremental typed-query migration guide](docs/typed-query-migration.md) with
   executable examples for PostgreSQL, SQLite, and MySQL
 

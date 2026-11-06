@@ -9,6 +9,11 @@
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
+#include "support/typed_query_observer.hpp"
+
+TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][observer]") {
+    asterorm::test::check_typed_query_observer(asterorm::sqlite::driver{}, ":memory:");
+}
 
 namespace {
 

@@ -45,11 +45,13 @@ includes vector collection and destruction, but excludes SQL execution, network,
 pooling, arbitrary DTO constructors, and error-path timing. Raw samples, build
 settings, machine details, and source hashes remain with each result set.
 
-No production source changed for this guide/review. All 18 source hashes in the
-row-decoding metadata still match. In the earlier column-storage metadata,
-production source hashes still match; `allocation_probe.cpp` and benchmark Meson
-definitions subsequently changed to add the decoding benchmark. Those historical
-artifacts are preserved. Verification was rerun without repeating timings.
+No production source changed for the original guide/review. At that review,
+all 18 source hashes in the row-decoding metadata matched. The earlier
+column-storage production hashes also matched; the allocation probe and benchmark
+build definitions had changed to add decoding measurements. Later fixes,
+including typed observation routing, are recorded in the linked runtime audit.
+The benchmark artifacts remain historical measurements of their recorded source
+versions; no new timings are claimed here.
 
 ## Remaining API limits
 
@@ -58,11 +60,11 @@ aggregate-result predicate operators, nonoptional aggregate projections even for
 nullable SQL outputs, no SQL grouping-legality checks, and single-use builders.
 Native/string queries remain the migration fallback for unsupported constructs.
 
-`typed::query` currently calls `execute_prepared` through `with_connection` and
-bypasses the session observed-execute helper. Observer-dependent callers must
-account for this before migrating; this review does not claim instrumentation or
-session-helper timeout parity. That integration concern belongs in the next
-runtime/timeout design review, alongside the existing planned locks/timeouts work.
+As of the 2026-11-07 runtime follow-up, `typed::query` uses the session
+observed-execute helper inside `with_connection`. Success/error events and
+transaction pinning have unit and PostgreSQL/SQLite/MySQL coverage. Custom
+facades without a helper returning the native prepared result type retain direct
+execution. Timeout scopes remain planned; see the runtime audit for those limits.
 
 ## Checks run for this review
 
@@ -92,5 +94,6 @@ runtime/timeout design review, alongside the existing planned locks/timeouts wor
 
 The next planned feature is locks and timeouts. The
 [implementation audit](locking-and-timeout-audit.md) now records the existing
-paths, live probes, and ordered work. Cancellation error classification is now
-corrected with regression coverage; typed-query observer routing is next.
+paths, live probes, and ordered work. Cancellation classification and typed-query
+observer routing are corrected with regression coverage. Shared SELECT locking
+is next.

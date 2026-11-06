@@ -50,9 +50,11 @@ Copy error details during the callback if you need to retain them; `error` is
 a borrowed pointer.
 
 The observer covers paths using `session::observed_execute()`, including
-repository CRUD and native session queries. Typed `query()` currently executes
-prepared statements directly, so it does not emit these events. Direct
-`connection::execute()` calls and transaction control SQL also bypass this hook.
+repository CRUD, native session queries, and typed `query()` calls. Direct
+`connection::execute()` calls and transaction control SQL bypass this hook.
+Events describe execution before decoding; copy error details during the callback.
+Custom session facades without a compatible `observed_execute` helper retain
+direct typed execution and do not gain these events automatically.
 
 Keep callbacks short and non-throwing. They run while the connection lease is
 held; calling `pool.close()` there waits for outstanding leases and can stall.

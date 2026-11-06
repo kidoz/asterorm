@@ -47,6 +47,11 @@ checks cover member mappings, operand compatibility, entity consistency, and
 projection construction. SQL validity beyond those checks remains a database
 responsibility, including GROUP BY and HAVING semantics.
 
+Typed execution uses `session::observed_execute()` within `with_connection()`,
+emitting success/error events before hydration and retaining transaction pinning.
+For custom facades, the helper must return exactly the connection's prepared
+execution result type; otherwise the existing direct execution fallback applies.
+
 A projection must contain at least one entity-bound item and all such items
 must identify the same entity. `count_all()` is not entity-bound, so pair it
 with a column or bound aggregate. Plain column projection types preserve
