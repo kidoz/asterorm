@@ -1,0 +1,10 @@
+WARNING:  SET LOCAL can only be used in transaction blocks
+NOTICE:  relation "history" already exists, skipping
+NOTICE:  relation "history" already exists, skipping
+NOTICE:  relation "history" already exists, skipping
+NOTICE:  relation "history" already exists, skipping
+WARNING:  there is no transaction in progress
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to table asterorm_runtime_audit_113110304176750.jobs
+drop cascades to table asterorm_runtime_audit_113110304176750.history
+drop cascades to table asterorm_runtime_audit_113110304176750.effects

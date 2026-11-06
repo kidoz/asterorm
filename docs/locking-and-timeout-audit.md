@@ -1,0 +1,189 @@
+# Locking, statement timeout, and execution audit
+
+Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock and
+timeout feature is **not implemented**. Existing transactions, native SQL,
+prepared execution, and backend error diagnostics provide useful foundations.
+The first implementation slice should correct query-cancellation classification,
+followed by typed-query observer routing.
+
+This audit adds a reproducible probe and records implementation work. It changes
+no production API or runtime behavior. Previous staged migration-guide work and
+the separate documentation changes remain intact.
+
+## Acceptance inventory
+
+| Planned requirement | Observed implementation | Work remaining |
+|---|---|---|
+| `for_update()`, `for_share()`, `nowait()`, `skip_locked()` | Absent from both string and typed builders. `select_ast` has no locking node; the SELECT compiler ends after pagination. | One shared AST representation, lowering from both builders, dialect/capability validation, compiler tests, and real competing-transaction tests. |
+| `session::with_advisory_lock(key, callback)` | Absent. Raw PostgreSQL advisory SQL is available through native/connection APIs. | A scope that pins one connection through acquisition, callback, and release, with error and exception cleanup. |
+| Migration apply serializes through a transaction-scoped advisory lock | Absent. `apply()` ensures the history table and reads its maximum version before entering a separate transaction for each migration. | Lock before history initialization/version decisions; recheck under the lock, coordinate rollback too, and preserve or explicitly revise per-migration commit behavior. |
+| Pool default and scoped statement timeout | Neither `pool_config::statement_timeout` nor `session::with_statement_timeout` exists. `acquire_timeout` limits waiting for a pool lease. | Define transaction, nesting, restoration, unsupported-backend, and autocommit semantics before adding setters. |
+| Queue consumption with `SKIP LOCKED` and a limit | No existing automated locking-specific integration case. The live raw-SQL probe returns different jobs to two transactions. | Exercise generated SQL, transaction lifetime, rollback/commit release, and incompatible modes in the regular suite. |
+
+Relevant implementation: [AST/builders](../include/asterorm/sql/ast.hpp),
+[typed builder](../include/asterorm/sql/typed.hpp),
+[compiler](../src/sql/compiler.cpp), [session](../include/asterorm/core/session.hpp),
+[pool](../include/asterorm/pool/connection_pool.hpp), and
+[migrator](../include/asterorm/core/migration.hpp).
+
+## Findings reproduced
+
+The retained [probe](evidence/locks-and-timeouts/probe.cpp),
+[stdout](evidence/locks-and-timeouts/output.txt),
+[stderr](evidence/locks-and-timeouts/stderr.txt), and
+[provenance](evidence/locks-and-timeouts/metadata.json) are audit evidence. The
+probe uses PostgreSQL 16.14 and SQLite; it is not a newly passing feature suite.
+
+### Query cancellation is reported as connection failure
+
+An explicit PostgreSQL transaction sets a 50 ms statement timeout and executes
+`pg_sleep(0.2)` through the production `execute_prepared` path. It returns SQLSTATE
+`57014` with `kind == connection_failed`. The connection is still open; after
+rollback, its previous timeout is restored and `SELECT 1` succeeds.
+
+`classify_sqlstate` maps all class-57 codes to connection failure. The existing
+[unit test](../tests/unit/test_core.cpp) explicitly expects that result for
+`57014`, so a green suite currently preserves this defect. PostgreSQL identifies
+`57014` as query cancellation, which can also result from explicit cancellation;
+it is not proof of a broken connection or exclusively of a timeout.
+[PostgreSQL error codes](https://www.postgresql.org/docs/16/errcodes-appendix.html)
+
+Use `query_failed` for this code in the first fix, retaining `sqlstate` and server
+diagnostics. The existing `timeout` enum value is already used by the
+[MySQL adapter](../src/database/mysql/connection.cpp) for error 1205. Preserve
+that mapping; do not label every PostgreSQL query cancellation a timeout. Pool
+acquisition expiry also currently returns `connection_failed`; changing that
+separate contract is outside the first fix.
+
+### Typed reads bypass the observer helper
+
+On both PostgreSQL and SQLite, a native scalar read and a repository read each
+emit one event. An equivalent typed read emits zero. A failing native read emits
+one event containing its error; the typed failure emits zero.
+
+`typed::query` invokes `connection.execute_prepared` directly inside
+`session.with_connection`. Repository reads and native helpers call
+`session.observed_execute`. Transaction pinning and error recording in
+`with_connection` still apply to typed queries; the observation is an observer
+bypass, not evidence that typed queries escape active transactions.
+
+Migration history reads/inserts/deletes use observed execution, while migration
+DDL and setup call raw `execute`. BEGIN/COMMIT/ROLLBACK, savepoints, direct
+connection callbacks, and COPY are also outside that prepared-query observer
+helper. A future timeout design must account for these paths explicitly.
+
+### Concurrent migrators can race on the same version
+
+The probe precreates an isolated history table and synchronizes two sessions
+after both read version zero. Both attempt migration one. One succeeds and one
+returns `23505` on the duplicate history version. Only one migration side effect
+is committed, so this probe demonstrates a serialization gap rather than lost
+transaction atomicity. It does not test the separate history-table creation race.
+
+Each worker has its own session and connection. The observer rendezvous forces
+the interleaving without sleeps; statements have a five-second server timeout.
+The probe removes its unique schema on exit. This rendezvous is a fixture for
+the current unlocked implementation: replace it when testing a future lock,
+since waiting at that point while holding the new lock would obstruct the peer.
+
+## Scope and lifecycle constraints
+
+The raw queue probe holds job 1 in one transaction and obtains job 2 in another
+using `ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`. `NOWAIT` on job 1 returns
+`55P03`. Row locks require an explicit transaction for a useful multi-statement
+claim/update operation. PostgreSQL permits locking after pagination; aggregate
+and grouped queries have restrictions. `SKIP LOCKED` is suitable for queues and
+does not promise a complete consistent view.
+[PostgreSQL SELECT](https://www.postgresql.org/docs/16/sql-select.html)
+
+The advisory probe confirms that a session lock survives rollback and needs
+matching explicit release, while a transaction lock disappears on rollback.
+Consequently, session advisory cleanup must not rely on a transaction guard. A
+failed unlock must never return a connection with an unaccounted lock to the
+pool; an aborted transaction may prevent an unlock SQL statement from running.
+Lease pinning must also cover nested callback work and any transaction started
+inside an advisory scope. The current session pins only through `begin()`.
+[PostgreSQL advisory lock lifetimes](https://www.postgresql.org/docs/16/explicit-locking.html#ADVISORY-LOCKS)
+
+`SET LOCAL` outside a transaction emits a warning and leaves the prior timeout
+unchanged in the probe. Inside a transaction, the timeout takes effect and
+rollback restores the baseline. The original “per-lease ... emit SET LOCAL”
+proposal therefore needs reconciliation for autocommit leases. A connection
+baseline can use a session-level setting with checkout/reset rules; a scoped
+local override needs an explicit transaction policy. Restore prior settings on
+normal and exception exits, define nested scope behavior, and handle failed
+transactions without leaking settings or silently committing callback work.
+[PostgreSQL SET](https://www.postgresql.org/docs/16/sql-set.html)
+
+Statement timeout limits server statement execution, not pool acquisition or the
+entire C++ callback. A callback with multiple queries does not acquire one shared
+wall-clock budget merely by setting this parameter.
+[PostgreSQL statement timeout](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-STATEMENT-TIMEOUT)
+
+The compiler currently distinguishes PostgreSQL and MySQL; SQLite uses the
+PostgreSQL-compatible default. That default cannot serve as a row-lock capability
+check. SQLite has no `FOR UPDATE` SELECT clause. MySQL has locking reads with its
+own transaction/backend rules, but this audit did not run MySQL locking probes.
+Add an explicit backend capability or SQLite dialect boundary before advertising
+generic builder support; unsupported adapters must fail clearly.
+[SQLite SELECT grammar](https://www.sqlite.org/lang_select.html),
+[MySQL locking reads](https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html)
+
+## Ordered implementation work
+
+1. **Correct cancellation classification.** Special-case `57014` before the
+   class-57 fallback. Update the existing unit expectation and add controls for
+   connection failures/shutdown, deadlock, serialization, and ordinary query
+   errors. Add live prepared-execution cancellation coverage proving SQLSTATE,
+   observer error delivery, rollback, and connection reuse. Avoid new enum values
+   or pool-acquisition changes in this slice.
+2. **Route typed queries through session observation.** Cover success and error
+   events, SQL/parameter identity, no-observer behavior, and transaction pinning.
+   Preserve a deliberate compatibility path for existing custom session facades
+   that only provide `with_connection`; document what that fallback guarantees.
+   Verify PostgreSQL, SQLite, and enabled MySQL behavior.
+3. **Add shared SELECT locking.** Model strength and wait policy once in the AST;
+   expose the planned methods on both builders. Specify modifier-only misuse,
+   repeated/conflicting calls, unsupported backends, and aggregate/grouping
+   restrictions. Choose the backend validation boundary before implementation.
+   Assert SQL/parameter parity and test competing transactions with bounded waits.
+4. **Add scoped advisory locking and lease ownership.** Define callback result
+   and exception propagation, nested locks, transaction entry, and failed cleanup.
+   Prove no lease/lock leaks on every exit path, including aborted transactions.
+5. **Serialize migrations.** Use a stable cross-process lock identity, acquire
+   before history setup/read decisions, and recheck versions under the lock on
+   the same connection. Coordinate apply and rollback. Preserve per-migration
+   commits unless a batch-atomic API change is explicitly designed. Test two
+   migrators, initial history creation, later-migration failure, and lock release.
+6. **Implement timeout scopes and pool defaults.** First settle the autocommit
+   mismatch above. Cover zero/negative/out-of-range durations, nested restoration,
+   callback errors/exceptions, query cancellation, failed cleanup, transaction
+   completion inside callbacks, and connection reuse across leases. State which
+   raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
+
+The immediate next task is item 1. Feature status stays planned until the original
+acceptance criteria and the cross-backend behavior have executable coverage.
+
+## Verification
+
+- `just db-up`: database healthy.
+- `just test-pg`: `Ok: 1`, `Fail: 0`.
+- `just test`: `Ok: 10`, `Fail: 0`, including PostgreSQL, SQLite, MySQL, guide
+  checks, and all 18 typed compile cases. These existing checks are a baseline;
+  they do not establish the missing lock/timeout feature.
+- Audit probe compiled with C++23, `-Wall -Wextra -Werror`, against the current
+  core, PostgreSQL, and SQLite libraries; exit 0. Its run exited 0 with the
+  observations above. Exact commands and hashes are retained with the evidence.
+- Standalone `clang-tidy` on the probe: exit 0; no user-code warnings.
+- `just format-check`: exit 0, including the standalone probe source.
+- `just lint`: exit 0 across the 39 configured translation units, with existing
+  warnings. The probe is outside the compilation database and was checked
+  separately as described above.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --json-out /tmp/asterorm-runtime-audit-standards.json`:
+  exit 1, retaining 52 existing errors and 12 warnings. None concern the two
+  edited feature-expansion context files; this is not a repository-wide pass.
+
+Only PostgreSQL native lock/timeout semantics and PostgreSQL/SQLite observer
+routing were probed. Advisory-helper exception safety, future API behavior,
+real multi-process migrations, and MySQL locking remain unverified.

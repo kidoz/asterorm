@@ -1,0 +1,19 @@
+string_builder: for_update=false for_share=false nowait=false skip_locked=false
+typed_builder: for_update=false for_share=false nowait=false skip_locked=false
+runtime: advisory_helper=false timeout_helper=false pool_statement_timeout=false
+postgres native_success: events=1
+postgres repository_success: events=1
+postgres typed_success: events=0
+postgres native_error: events=1 errors=1
+postgres typed_error: events=0 errors=0
+sqlite native_success: events=1
+sqlite repository_success: events=1
+sqlite typed_success: events=0
+sqlite native_error: events=1 errors=1
+sqlite typed_error: events=0 errors=0
+postgres_version=16.14
+queue: held=1 skipped=2 nowait_sqlstate=55P03
+advisory: session_survives_rollback=true explicit_unlock_releases=true xact_released_on_rollback=true
+timeout: sqlstate=57014 classified_connection_failed=true connection_open=true
+timeout: autocommit_local_ignored=true rollback_restores=true connection_reusable=true
+migration_race: successful=1 failure_sqlstate=23505 committed_effects=1

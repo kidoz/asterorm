@@ -1,0 +1,135 @@
+{
+  "captured_utc": "2026-11-06T20:46:42.068276+00:00",
+  "purpose": "Pre-feature audit snapshot; successful probe execution is not feature acceptance",
+  "git_commit": "d79d9ff9392405eb6da617f4274f8a7c930ac3d7",
+  "tracked_worktree_dirty": true,
+  "repository_root": "/Users/apavlov/Projects/AsterORM",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+  "meson_build_options": {
+    "buildtype": "debug",
+    "default_library": "shared",
+    "optimization": "0",
+    "b_lto": false,
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "tests": true,
+    "examples": true,
+    "mysql": "enabled"
+  },
+  "postgres_server_version": "16.14",
+  "postgres_connection_configuration": "ASTERORM_TEST_CONNINFO or compose defaults; values not captured",
+  "sqlite_connection_configuration": ":memory:",
+  "compile_argv": [
+    "c++",
+    "-std=c++23",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Iinclude",
+    "-I/opt/homebrew/opt/libpq/include",
+    "docs/evidence/locks-and-timeouts/probe.cpp",
+    "buildDir/src/libasterorm_core.dylib",
+    "buildDir/src/database/libasterorm_pg.dylib",
+    "buildDir/src/database/libasterorm_sqlite.dylib",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src/database",
+    "-o",
+    "/tmp/asterorm-locks-and-timeouts-probe"
+  ],
+  "compile_exit_code": 0,
+  "run_argv": [
+    "/tmp/asterorm-locks-and-timeouts-probe"
+  ],
+  "run_exit_code": 0,
+  "stdout_path": "docs/evidence/locks-and-timeouts/output.txt",
+  "stderr_path": "docs/evidence/locks-and-timeouts/stderr.txt",
+  "audited_source_sha256": {
+    "docs/evidence/locks-and-timeouts/probe.cpp": "15880cdd1b6ca62d1b15fcb37624b85469a8216a1590a0292f2ab185f92a696b",
+    "include/asterorm/core/error.hpp": "18967418922e7a5beafc1b970f54303f1434c1c3c20458e92852cc4a531e9a2d",
+    "src/core/error.cpp": "02de75a6976ed61ad9b25b10e70f2320032039383a4fe4054791c46f46496df7",
+    "include/asterorm/core/session.hpp": "108578ae10dd88f61e376397e136482333153e88d8bd9dcef40592e2b82234f9",
+    "include/asterorm/core/observer.hpp": "e2952012f127d1b9b0da3fc99abeebf8de6e9ef470f637c6ab6d2e41647d1077",
+    "include/asterorm/core/migration.hpp": "38906e39b571dfb7a681eb534561fbb54de83f590aaee7f09dfe1b1483747f4f",
+    "include/asterorm/pool/connection_pool.hpp": "4527fa2d1559904a9829441d8ec31de1a58397a7d8fe573b7c517a7b2e7164ef",
+    "include/asterorm/core/repository.hpp": "7447e4e73b316cfc485aa9b515a98669d542e811de8799dcfce7546a998914c7",
+    "include/asterorm/sql/ast.hpp": "145fd0fd1fd20b93b45dec1bf38d3bb542c737b53d6ed9690125438f12063560",
+    "include/asterorm/sql/typed.hpp": "b5e000b02a77770bad8b09e1f383496803ce38a7cdabbf8d7653a4c9e1896904",
+    "include/asterorm/sql/typed_query.hpp": "090fab70b22b2c12c6707dca0bcaae95866af1576df26044e125ccf842c32f92",
+    "include/asterorm/sql/compiler.hpp": "0b5ae659b23123c22a1993ae5d777d6fb43ea8b874fec13ac05a085d3aeead38",
+    "src/sql/compiler.cpp": "e69111260cf4c7f9d47b405c04621a5c1e16eb8e8498e0aacdacd0abbfd35bfe",
+    "src/database/postgres/connection.cpp": "5770377df7c8086e2251080c82b0e3ec70a3e2ffe5b8678074773bc2567ccf1c",
+    "src/database/sqlite/connection.cpp": "f6e28a7185bc0a853987f143e6b79f5abab049270db36aa4c2688539e8c91ebc",
+    "tests/unit/test_core.cpp": "f9532cb59b02109783918e395ce3b805d4792161ebc10a2702ac69820a31ba57",
+    "tests/unit/test_transactions.cpp": "7d6458156da8d5f4b87718139d64bc6c2112e09e68d8b0942772c7c0cdc355ff",
+    "tests/integration/test_migrations.cpp": "bea759945d4fbdde74b93c740060fcfa0fce27a0556ba81a9c5f0ca41eb0798b",
+    "src/database/mysql/connection.cpp": "681489749e061db5658f41be657e613441813e746de87177f83b8d88a3ee84b8"
+  },
+  "artifact_sha256": {
+    "buildDir/src/libasterorm_core.dylib": "32e4ccaeea14c2ee692ddbba731bcc548a40929befb71096aaaf9b4435bf3f58",
+    "buildDir/src/database/libasterorm_pg.dylib": "31789921612c28f897f8cd80a7d23307da93aedf6b0caff49672db43afd5d13b",
+    "buildDir/src/database/libasterorm_sqlite.dylib": "588ddf37345e337825fc225141421b112706982261b37cfb5d2d44a1ec3587e6",
+    "/tmp/asterorm-locks-and-timeouts-probe": "f29d38c694712c742905b6b3418dea55f43eb4a8a335e8577c2b1628e7337d82"
+  },
+  "output_sha256": {
+    "output.txt": "d46a8c958384c07ba5ee8bd5319fac361773f6e9479cae139c3b7e2893d37ec7",
+    "stderr.txt": "6684a1f2b77125d48a396180c90a695146f40486caa7dfa4184c307bc633fdd1"
+  },
+  "checks": {
+    "just db-up": {
+      "exit_code": 0,
+      "observed": "database healthy"
+    },
+    "just test-pg": {
+      "exit_code": 0,
+      "observed": "Ok: 1, Fail: 0"
+    },
+    "just test": {
+      "exit_code": 0,
+      "observed": "Ok: 10, Fail: 0; 18 compile cases"
+    },
+    "just format-check": {
+      "exit_code": 0
+    },
+    "standalone clang-tidy probe": {
+      "exit_code": 0,
+      "argv": [
+        "clang-tidy",
+        "docs/evidence/locks-and-timeouts/probe.cpp",
+        "--",
+        "-std=c++23",
+        "-Iinclude",
+        "-I/opt/homebrew/opt/libpq/include"
+      ],
+      "observed": "no user-code warnings"
+    },
+    "just lint": {
+      "exit_code": 0,
+      "observed": "39 configured translation units; existing warnings"
+    },
+    "strict standards validation": {
+      "argv": [
+        "uv",
+        "run",
+        "--no-project",
+        "--with",
+        "pyyaml",
+        "--with",
+        "jsonschema",
+        "python",
+        ".agents/tools/validate_standards_package.py",
+        "--root",
+        ".",
+        "--mode",
+        "strict-governance",
+        "--workspace",
+        "--json-out",
+        "/tmp/asterorm-runtime-audit-standards.json"
+      ],
+      "exit_code": 1,
+      "observed": "52 pre-existing errors, 12 warnings; no findings on the two edited context files"
+    }
+  }
+}
