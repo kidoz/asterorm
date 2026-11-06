@@ -230,6 +230,68 @@ TEST_CASE("Typed DSL: explicit selectable DTOs remain unambiguous",
                                   std::tuple<std::string>>);
 }
 
+TEST_CASE("Typed DSL: custom column aliases and functions preserve their lowering",
+          "[typed][projection][custom]") {
+    namespace typed = asterorm::sql::typed;
+    namespace sql = asterorm::sql;
+    struct contact_column : typed::typed_col<&typed_user::email> {
+        static sql::select_item to_select_item() {
+            auto item = typed::typed_col<&typed_user::email>::to_select_item();
+            item.alias = "contact";
+            return item;
+        }
+    };
+    struct email_length : typed::typed_col<&typed_user::email> {
+        using projected_type = std::int64_t;
+        static sql::select_item to_select_item() {
+            return {.column_name = std::nullopt,
+                    .fn = sql::as(sql::func("length", {sql::col("email")}), "email_length"),
+                    .alias = std::nullopt};
+        }
+    };
+
+    auto selection =
+        typed::select_cols(contact_column{}, email_length{}, typed::col<&typed_user::active>);
+    STATIC_REQUIRE(std::is_same_v<typename decltype(selection)::result_type,
+                                  std::tuple<std::string, std::int64_t, bool>>);
+    auto ast = selection.where(typed::col<&typed_user::active> == typed::val(true)).build();
+    for (auto target : {sql::dialect::postgres, sql::dialect::mysql}) {
+        sql::compiler compiler{target};
+        auto compiled = compiler.compile(ast).value();
+        if (target == sql::dialect::postgres) {
+            REQUIRE(
+                compiled.sql ==
+                R"(SELECT "email" AS "contact", length("email") AS "email_length", "active" FROM "typed_users" WHERE "active" = $1)");
+        } else {
+            REQUIRE(compiled.sql ==
+                    "SELECT `email` AS `contact`, length(`email`) AS `email_length`, "
+                    "`active` FROM `typed_users` WHERE `active` = ?");
+        }
+        REQUIRE(compiled.params.size() == 1);
+        REQUIRE(compiled.params[0].type == asterorm::parameter_type::boolean);
+        REQUIRE(compiled.params[0].value == std::optional<std::string>{"t"});
+    }
+}
+
+TEST_CASE("Typed DSL: mixed columns and aggregates retain projection order",
+          "[typed][projection][aggregate]") {
+    using namespace asterorm::sql::typed;
+    auto selection =
+        select_cols(col<&typed_user::email>, count(col<&typed_user::id>), col<&typed_user::active>);
+    STATIC_REQUIRE(std::is_same_v<typename decltype(selection)::result_type,
+                                  std::tuple<std::string, std::int64_t, bool>>);
+    auto ast = selection.where(col<&typed_user::active> == val(true))
+                   .group_by(col<&typed_user::email>, col<&typed_user::active>)
+                   .build();
+    asterorm::sql::compiler compiler;
+    auto compiled = compiler.compile(ast).value();
+    REQUIRE(
+        compiled.sql ==
+        R"(SELECT "email", count("id"), "active" FROM "typed_users" WHERE "active" = $1 GROUP BY "email", "active")");
+    REQUIRE(compiled.params.size() == 1);
+    REQUIRE(compiled.params[0].type == asterorm::parameter_type::boolean);
+}
+
 namespace {
 struct typed_user_stats {
     std::int64_t total;

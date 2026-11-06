@@ -482,11 +482,21 @@ template <typename Entity> select_ast make_entity_select_ast() {
     return initial_ast;
 }
 
+// Custom selectables (including derived columns) can override to_select_item()
+// with aliases or expressions. Only exact built-in columns can bypass it.
+template <typename Item> struct is_plain_typed_column : std::false_type {};
+template <auto MemberPtr> struct is_plain_typed_column<typed_col<MemberPtr>> : std::true_type {};
+
 template <typename Entity, typename... Items> select_ast make_projection_select_ast() {
     select_ast initial_ast;
     initial_ast.table = entity_traits<Entity>::table;
-    initial_ast.items.reserve(sizeof...(Items));
-    (initial_ast.items.emplace_back(Items::to_select_item()), ...);
+    if constexpr ((is_plain_typed_column<Items>::value && ...)) {
+        initial_ast.columns.reserve(sizeof...(Items));
+        (initial_ast.columns.emplace_back(Items::column_name()), ...);
+    } else {
+        initial_ast.items.reserve(sizeof...(Items));
+        (initial_ast.items.emplace_back(Items::to_select_item()), ...);
+    }
     return initial_ast;
 }
 
