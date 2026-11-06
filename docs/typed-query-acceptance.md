@@ -98,4 +98,5 @@ paths, live probes, and ordered work. Cancellation classification and typed-quer
 observer routing are corrected with regression coverage. Shared SELECT locking
 now has a restricted supported surface and backend checks. Scoped PostgreSQL
 advisory locking, safe lease ownership, and PostgreSQL migration serialization
-are implemented. Timeout scope and pool-default semantics are next.
+are implemented. The [timeout contract](statement-timeout-design.md) is defined;
+pool baseline and adapter implementation are next, then transaction-bound scopes.

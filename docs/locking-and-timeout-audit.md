@@ -6,11 +6,49 @@ prepared execution, and backend error diagnostics provide useful foundations.
 Cancellation classification and typed-query observation are implemented in the
 follow-ups below. Shared SELECT locking and scoped PostgreSQL advisory locks
 are now available. PostgreSQL migration serialization is implemented; timeout
-scope and pool-default semantics remain to be settled.
+scope and pool-default behavior is now specified, with implementation pending.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: timeout contract (2026-11-07)
+
+The [statement timeout contract](statement-timeout-design.md) now settles the
+remaining design questions. No timeout API is implemented by this follow-up.
+The optional pool baseline uses a session setting on new connections and every
+checkout; absent configuration preserves existing behavior. Explicit zero disables
+timeouts, values above 2,147,483,647 ms or below zero fail before connecting, and
+unsupported backends reject explicit configuration even on lazy pools.
+
+Scopes require an existing transaction and use local settings with actual prior
+value snapshots. They pin the connection independently, permit commit/full rollback,
+and reject further managed work until completed frames unwind. Failed restoration
+discards the connection and invalidates transaction ownership. Savepoint rollback
+within a live timeout scope is rejected in v1: native rollback can remove an active
+override or resurrect a finished inner one. The contract includes observer, COPY,
+raw SQL, cancellation, capability, error, and cross-scope ownership rules plus an
+testable acceptance matrix for the later implementation.
+
+Observed evidence and verification:
+
+- `just db-up`: database healthy.
+- `python3 docs/evidence/statement-timeout-design/capture.py`: exit 0, nine native
+  semantic checks on PostgreSQL 16.14. The [capture](evidence/statement-timeout-design/README.md)
+  records source/output hashes and a redacted invocation; it proves server semantics,
+  not future API acceptance. The original audit artifacts remain unchanged.
+- Local documentation-link and capture-integrity checks: exit 0; four recorded
+  SHA-256 hashes matched, nine PASS markers were present, and Python syntax compiled.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-timeout-design-standards.json`:
+  exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
+  three edited agent context files.
+- No production source or build targets changed; product suites were not rerun
+  for this design-only slice.
+
+The next task is implementing the optional pool baseline and PostgreSQL adapter
+protocol from the contract, followed by transaction-bound scope implementation.
+The original blanket per-lease `SET LOCAL` proposal is superseded by this split.
 
 ## Follow-up: migration serialization (2026-11-07)
 
@@ -66,8 +104,8 @@ Observed verification:
   exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
   three edited agent context files.
 
-The next task is timeout scope and pool-default design (item 6), followed by its
-implementation and regression coverage.
+The later timeout-contract follow-up above resolves item 6's design. Pool/adapter
+implementation is next; scope implementation and regression coverage follow.
 
 ## Follow-up: scoped advisory locking (2026-11-07)
 
@@ -401,8 +439,10 @@ clause, and unsupported adapters must still fail clearly.
    the same connection. Coordinate apply and rollback. Preserve per-migration
    commits unless a batch-atomic API change is explicitly designed. Test two
    migrators, initial history creation, later-migration failure, and lock release.
-6. **Implement timeout scopes and pool defaults.** First settle the autocommit
-   mismatch above. Cover zero/negative/out-of-range durations, nested restoration,
+6. **Implement timeout scopes and pool defaults (design settled, implementation pending).**
+   Use the [contract](statement-timeout-design.md): optional session baseline at
+   checkout first, then transaction-bound local scopes with explicit savepoint rules.
+   Cover zero/negative/out-of-range durations, nested restoration,
    callback errors/exceptions, query cancellation, failed cleanup, transaction
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
