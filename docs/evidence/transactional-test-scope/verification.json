@@ -1,0 +1,223 @@
+{
+  "recorded_at_utc": "2026-11-07T20:02:42.517171+00:00",
+  "review_date": "2026-11-07",
+  "scope": "Generic transactional test scope and session ownership; Catch2 adapter, reference providers, CRUD migration and combined harness acceptance remain planned.",
+  "git_base": "31f6d0bd9a2a2384604ed79a6397c1e327b9c1ef",
+  "reviewed_tree": "Working tree; hashes bind selected source/test/build/document inputs below.",
+  "limitations": [
+    "Unsigned local verification, not independent execution attestation or release provenance.",
+    "Not remote CI, a performance claim, or a full-project sanitizer build.",
+    "Prior evidence captures remain historical; .gitignore and build outputs are excluded.",
+    "Logs under /tmp are local and may expire; no connection settings are published."
+  ],
+  "platform": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "machine": "arm64"
+  },
+  "compiler": [
+    "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "Target: arm64-apple-darwin27.2.0"
+  ],
+  "build_options": {
+    "buildtype": "debug",
+    "warning_level": "3",
+    "werror": false,
+    "b_sanitize": [],
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "clickhouse": "disabled",
+    "tests": true,
+    "examples": true,
+    "mysql": "enabled"
+  },
+  "sqlite_only_options": {
+    "postgres": "disabled",
+    "mysql": "disabled",
+    "clickhouse": "disabled",
+    "sqlite": "enabled",
+    "tests": true,
+    "examples": false
+  },
+  "sources_and_documents_sha256": {
+    "CHANGELOG.md": "bee3e890b33be51aecc359a66552f374f4a70b7cf6abb0fcbd37f2bafa9fe177",
+    "README.md": "e6c27c85f76475870a903cafc7641e1d76b1a094f4772b19eb354503483e5285",
+    "docs/evidence/transactional-test-scope/README.md": "49d830a78ed639cf30ac3af23c764d5f1be363fbf6540ff6990b7a9db9863da1",
+    "docs/evidence/transactional-test-scope/check_consumers.py": "3b7d377ae0243509377a9645610a54b7d4792edf2505ae69d452e874029f27c5",
+    "docs/explanation/README.md": "697364e6cc5ea5c9e3e2a33ce95de3e76a7897fd215c6231b7a346881045e0dc",
+    "docs/how-to/README.md": "99762e70d393f9203027b79801db14e51e637ce42ffa835eb1ed4bba7fefe42f",
+    "docs/how-to/transactional-test-scopes.md": "38f85f5f2f9e2484dec5960b4b466ae4f0f935d167201f268152e6d0551bad1d",
+    "docs/reference/backends.md": "7f3b3a64b4a8d8ded471a382f3084402e97b206f816dd7b68367174935c24819",
+    "docs/reference/connections.md": "0c464edc9db849a649f193e5b52342555a45e75fd318bd51161c6c6c870bed44",
+    "docs/transactional-test-harness-design.md": "99a1e8f70b1823a778616e766b5e2a3dd10e0c91292701ba2740de319973a756",
+    "include/asterorm/core/observer.hpp": "c335fa07bc095471848e3fa99cd95ca8c3901db92b4b09c355570f88983e5774",
+    "include/asterorm/core/session.hpp": "b272f89d037dffd432c22a0b736502756754c384a13cfe1631ce8f47d7333cc9",
+    "include/asterorm/core/stream_reservation.hpp": "66aae5d768cf9bcef18a21f38c97ce0820caed1c82792f313314f02add70f291",
+    "include/asterorm/core/testing_scope.hpp": "9ec78bdc4e799057acc3234ff00a76a482604a9e6083b74ef422e7d7966d2aba",
+    "include/asterorm/pool/connection_pool.hpp": "c1aee2769f8b2ae6d44245bcfee95a9246627723b1d2f9b47ffc5a4b389737f2",
+    "include/asterorm/postgres/connection.hpp": "140e0f5f6916ba6749ffa938af49314a000b10912c091a91f2481b25d7a5f4bb",
+    "include/asterorm/sqlite/connection.hpp": "57f80abc2417640c2837d41ee85b5d446fdf6038ee81c556ab007778f19f9ca3",
+    "include/asterorm/testing/transactional_session.hpp": "bc401cff9fa2a3c210e59dccaf06835fc2f950d2efe2ba2371166a26c58345ca",
+    "justfile": "d20e5cc4e66bdaf40fc14f23f7dc2c25bb7d36c3976938a61fe4ebf8f4c36218",
+    "meson.build": "015a926b42e2fe06e45acd4d593d3decd89408ce898efaa5ae4a89d0e35ad5f6",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    "src/database/sqlite/connection.cpp": "fbc8054f7d20a79ec22ebdc90f211e3df1f40197ac2c1d343d33556372d7b036",
+    "tests/check_transactional_guide.py": "b2957b835713a069c6cb91097cac97b894e80512f8c05adb872ce99e2404f232",
+    "tests/integration/test_sqlite_crud.cpp": "98e82a139b8e95189a14a52d475fbbc0d1544a04e783e00902aa9a4bde606a24",
+    "tests/integration/test_transactional_session.cpp": "68ab8d37f32b2e1c9bb48d13e741ec88beb1f68b29b7c8bba1b0decaff6268ce",
+    "tests/meson.build": "19c60d1d79d15e90260e7321c3afd21dfb6495986ee4bb1990d2755902bfea55",
+    "tests/support/transactional_session.hpp": "017906da496e2c342dd5d9e305e8cd7395453458668babf76fc5ed6eb1f9e980",
+    "tests/unit/test_transactional_session.cpp": "307c1ca666ed7d0f89b38ed9a2fc00dbfe2abd348096c3ce95612ae42d5ac8c9"
+  },
+  "ignored_canonical_contexts_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "911a1974a7956f2f213a9729090a5dbfc5f6f89af55dd1d436a78855fb8daaf9",
+    ".agents/contexts/specs/feature-expansion/README.md": "3a3a6dde03c03c0b4868cb6adb9d81344a3f8796f1f61e0534cad5f6c9412c32",
+    ".agents/contexts/specs/feature-expansion/TESTING_MIGRATIONS_AND_OBSERVABILITY.md": "868a12b4e3e553f00450dff76b1391122e064e7508fa6d188dc777d928452f10"
+  },
+  "standards_comparison": {
+    "baseline_local_report": "/tmp/asterorm-transactional-harness-standards.json",
+    "baseline_sha256": "d5ba2a2aada607b1951a3ce2789d0883af9083ef9a1d1540def659f806e93a30",
+    "current_local_report": "/tmp/asterorm-test-scope-standards.json",
+    "current_sha256": "d5ba2a2aada607b1951a3ce2789d0883af9083ef9a1d1540def659f806e93a30",
+    "errors_warnings_infos_identical": true
+  },
+  "verification": [
+    {
+      "check": "tests",
+      "command": "just test",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 20,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-test-scope-tests.log",
+      "log_sha256": "92c2d15ae26525000a3a9d64cd6437832509563348360d0ccdab5e868617de1d"
+    },
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-test-scope-build.log",
+      "log_sha256": "2f1f8ca23637b69a35a753fc201f3ea98e4caa4d5e151fc60308ad712a8bdf5e"
+    },
+    {
+      "check": "format",
+      "command": "just format-check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-test-scope-format.log",
+      "log_sha256": "23fa13205f711b80f5c68fdd3363e649217d592821f23d967f45ec1978c04eef"
+    },
+    {
+      "check": "lint",
+      "command": "just lint",
+      "exit_code": 0,
+      "result": {
+        "translation_units": 58,
+        "diagnostics_retained": true
+      },
+      "local_log": "/tmp/asterorm-test-scope-lint.log",
+      "log_sha256": "e402539d8e3bd46d9b37de1214cde2a31a4e7f4b3580631546c7814e470c2208"
+    },
+    {
+      "check": "targeted-lint",
+      "command": "clang-tidy -p buildDir --extra-arg=-isysroot --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk tests/unit/test_transactional_session.cpp tests/integration/test_transactional_session.cpp tests/integration/test_sqlite_crud.cpp",
+      "exit_code": 0,
+      "result": {
+        "translation_units": 3
+      },
+      "local_log": "/tmp/asterorm-test-scope-targeted-lint.log",
+      "log_sha256": "78e5743474524acc3787b7ab017b82f8b6cb841b0cf0d070f852cb1db20c7fce"
+    },
+    {
+      "check": "unit",
+      "command": "buildDir/tests/core_tests '[transactional-testing]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 19,
+        "assertions": 304
+      },
+      "local_log": "/tmp/asterorm-test-scope-unit.log",
+      "log_sha256": "0cda041c0ebb5f667d830950aa1889a568ddb46ae33ccd8b96ceeee0bdc8450b"
+    },
+    {
+      "check": "pg",
+      "command": "buildDir/tests/pg_integration '[transactional-testing]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 3,
+        "assertions": 79
+      },
+      "local_log": "/tmp/asterorm-test-scope-pg.log",
+      "log_sha256": "06b5c214766a75c79dd9a0d9abad0f4c9c300c4ad93c2f9d3da2372fc9c19bf4"
+    },
+    {
+      "check": "sqlite",
+      "command": "buildDir/tests/sqlite_integration '[transactional-testing]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 2,
+        "assertions": 71
+      },
+      "local_log": "/tmp/asterorm-test-scope-sqlite.log",
+      "log_sha256": "a66c5f0021d553056b6095411ecfcdafdfa582645a93c1e244c0ede695d273a8"
+    },
+    {
+      "check": "sqlite-only",
+      "command": "meson test -C /tmp/asterorm-test-scope-sqlite.MDy3Mc --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 7,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-test-scope-sqlite-only.log",
+      "log_sha256": "f53d4405fa10e8ded71f8ab456869157c0813b8cc84b6ce54d54bbaea14397d7"
+    },
+    {
+      "check": "consumers",
+      "command": "python3 docs/evidence/transactional-test-scope/check_consumers.py",
+      "exit_code": 0,
+      "result": {
+        "clients": [
+          "CMake",
+          "shared pkg-config"
+        ],
+        "backends": [
+          "PostgreSQL",
+          "SQLite"
+        ],
+        "catch2_dependency": false
+      },
+      "local_log": "/tmp/asterorm-test-scope-consumers.log",
+      "log_sha256": "2ed9e045b68d9a32830067fe0ef5c0bfccf8d86449c222b1365ca0085a0dfc83"
+    },
+    {
+      "check": "asan",
+      "command": "/tmp/asterorm-test-scope-asan '[transactional-testing]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 19,
+        "assertions": 304,
+        "instrumentation": "Scope unit translation unit compiled with configured C++23 flags plus -fsanitize=address -fno-omit-frame-pointer; links existing core and Catch2 binaries. Not a full-project sanitizer build.",
+        "executable_sha256": "703816c7e7459d6ebbd9d22462c871d078583aad436a2f4f55f90f6b48515160"
+      },
+      "local_log": "/tmp/asterorm-test-scope-asan.log",
+      "log_sha256": "6cf66642bcf725dcfd8b506acb1fe981d81dcb56356f09c06fd258cd336f91ee"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-test-scope-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0,
+        "findings_unchanged": true
+      },
+      "local_log": "/tmp/asterorm-test-scope-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ]
+}
