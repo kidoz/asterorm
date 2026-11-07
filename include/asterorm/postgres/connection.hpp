@@ -20,6 +20,7 @@ namespace asterorm::pg {
 
 class connection {
   public:
+    static constexpr bool supports_bulk_predicate_dml = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::postgres;
 
     connection(const connection&) = delete;

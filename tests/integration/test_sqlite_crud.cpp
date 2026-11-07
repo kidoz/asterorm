@@ -9,6 +9,7 @@
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
+#include "support/bulk_predicate.hpp"
 #include "support/typed_query_observer.hpp"
 
 TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][observer]") {
@@ -638,4 +639,8 @@ TEST_CASE("SQLite Integration: timeout scopes reject before leasing", "[sqlite][
     REQUIRE(result.error().kind == asterorm::db_error_kind::query_failed);
     REQUIRE_FALSE(called);
     REQUIRE(pool.stats().total == 0);
+}
+
+TEST_CASE("sqlite Integration: bulk predicate mutations", "[sqlite][bulk-dml]") {
+    asterorm::test::check_bulk_predicate(asterorm::sqlite::driver{}, ":memory:");
 }

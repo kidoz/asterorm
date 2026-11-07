@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "asterorm/postgres/driver.hpp"
+#include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
 
@@ -32,6 +33,90 @@ asterorm::pool_config pg_timeout_config() {
     return config;
 }
 } // namespace
+
+struct bulk_timeout_row {
+    int id{};
+    bool active{true};
+};
+template <> struct asterorm::entity_traits<bulk_timeout_row> {
+    static constexpr const char* table = "bulk_timeout_rows";
+    static constexpr auto primary_key = asterorm::pk<&bulk_timeout_row::id>("id");
+    static constexpr auto columns =
+        std::make_tuple(asterorm::column<&bulk_timeout_row::id>("id"),
+                        asterorm::column<&bulk_timeout_row::active>("active"));
+};
+
+TEST_CASE("PG Integration: bulk predicate mutations honor pool and scoped timeouts",
+          "[pg][bulk-dml][statement-timeout]") {
+    const bool scoped = GENERATE(false, true);
+    const bool deleting = GENERATE(false, true);
+    auto config = pg_timeout_config();
+    config.statement_timeout = milliseconds{scoped ? 1000 : 100};
+    asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, config};
+    asterorm::session db{pool};
+    asterorm::repository repo{db};
+    timeout_take(db.with_connection([](auto& connection) -> asterorm::result<void> {
+        for (const auto* statement : {
+                 "CREATE TEMPORARY TABLE bulk_timeout_rows (id INTEGER PRIMARY KEY, active BOOLEAN "
+                 "NOT NULL)",
+                 "INSERT INTO bulk_timeout_rows VALUES (1,TRUE)",
+                 "CREATE FUNCTION pg_temp.bulk_timeout_delay() RETURNS trigger LANGUAGE plpgsql AS "
+                 "$$ BEGIN PERFORM pg_sleep(0.3); IF TG_OP='DELETE' THEN RETURN OLD; END IF; "
+                 "RETURN NEW; END $$",
+                 "CREATE TRIGGER bulk_timeout_delay BEFORE UPDATE OR DELETE ON bulk_timeout_rows "
+                 "FOR EACH ROW EXECUTE FUNCTION pg_temp.bulk_timeout_delay()",
+             }) {
+            auto executed = connection.execute(statement);
+            if (!executed) {
+                return std::unexpected(executed.error());
+            }
+        }
+        return {};
+    }));
+    const auto original_pid = timeout_take(db.with_connection([](auto& connection) {
+                                  return connection.execute("SELECT pg_backend_pid()");
+                              })).get_int64(0, 0);
+    int events = 0;
+    int errors = 0;
+    db.set_observer([&](const asterorm::query_event& event) {
+        ++events;
+        if (event.error) {
+            ++errors;
+            REQUIRE(event.error->sqlstate == "57014");
+        }
+    });
+    auto transaction = timeout_take(db.begin());
+    auto cancel_and_rollback = [&](auto&) -> asterorm::result<void> {
+        auto cancelled = deleting ? repo.delete_where<bulk_timeout_row>(asterorm::sql::col("id") ==
+                                                                        asterorm::sql::val(1))
+                                  : repo.update_where<bulk_timeout_row>(
+                                        asterorm::sql::col("id") == asterorm::sql::val(1),
+                                        {{"active", asterorm::sql::val(false)}});
+        REQUIRE_FALSE(cancelled.has_value());
+        REQUIRE(cancelled.error().sqlstate == "57014");
+        REQUIRE(cancelled.error().kind == asterorm::db_error_kind::query_failed);
+        return transaction.rollback();
+    };
+    if (scoped) {
+        timeout_take(db.with_statement_timeout(milliseconds{20}, cancel_and_rollback));
+    } else {
+        timeout_take(cancel_and_rollback(db));
+    }
+    REQUIRE(events == 1);
+    REQUIRE(errors == 1);
+    auto restored = timeout_take(db.with_connection([](auto& connection) {
+        return connection.execute(
+            "SELECT pg_backend_pid(),COUNT(*) FROM bulk_timeout_rows WHERE active=TRUE");
+    }));
+    REQUIRE(restored.get_int64(0, 0) == original_pid);
+    REQUIRE(restored.get_int64(0, 1) == 1);
+    timeout_take(db.with_connection([](auto& connection) {
+        return connection.execute("DROP TRIGGER bulk_timeout_delay ON bulk_timeout_rows");
+    }));
+    REQUIRE(repo.update_where<bulk_timeout_row>(asterorm::sql::col("id") == asterorm::sql::val(1),
+                                                {{"active", asterorm::sql::val(false)}}) == 1);
+    REQUIRE(events == 2);
+}
 
 TEST_CASE("PG Integration: statement timeout adapter validates context and exact values",
           "[pg][pool-timeout]") {

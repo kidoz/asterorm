@@ -23,6 +23,7 @@ namespace asterorm::mysql {
 
 class connection {
   public:
+    static constexpr bool supports_bulk_predicate_dml = true;
     connection() = default;
     explicit connection(MYSQL* handle);
     connection(const connection&) = delete;

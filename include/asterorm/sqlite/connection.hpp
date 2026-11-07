@@ -22,6 +22,7 @@ namespace asterorm::sqlite {
 
 class connection {
   public:
+    static constexpr bool supports_bulk_predicate_dml = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::sqlite;
 
     connection(const connection&) = delete;

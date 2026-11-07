@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <optional>
@@ -12,6 +13,7 @@
 #include "asterorm/core/codecs.hpp"
 #include "asterorm/core/entity_traits.hpp"
 #include "asterorm/core/hydration.hpp"
+#include "asterorm/core/row_count.hpp"
 #include "asterorm/core/session.hpp"
 #include "asterorm/sql/ast.hpp"
 #include "asterorm/sql/compiler.hpp"
@@ -220,6 +222,129 @@ template <typename T> bool mapped_column_exists(std::string_view column_name) {
         };
     inspect_columns(std::make_index_sequence<std::tuple_size_v<decltype(traits::columns)>>{});
     return column_was_found;
+}
+
+inline db_error bulk_mutation_error(std::string message,
+                                    db_error_kind kind = db_error_kind::parse_failed) {
+    db_error error;
+    error.kind = kind;
+    error.message = std::move(message);
+    return error;
+}
+
+template <typename Session> constexpr bool supports_bulk_predicate_dml() {
+    if constexpr (requires { typename Session::connection_type; }) {
+        using connection = typename Session::connection_type;
+        if constexpr (requires {
+                          connection::supports_bulk_predicate_dml;
+                          connection::sql_dialect;
+                      }) {
+            return connection::supports_bulk_predicate_dml &&
+                   (connection::sql_dialect == sql::dialect::postgres ||
+                    connection::sql_dialect == sql::dialect::sqlite ||
+                    connection::sql_dialect == sql::dialect::mysql);
+        }
+    }
+    return false;
+}
+
+template <typename T> result<void> validate_bulk_column(std::string_view name) {
+    if (name.empty() || name.find_first_of(".*") != std::string_view::npos ||
+        name.find('\0') != std::string_view::npos || !mapped_column_exists<T>(name)) {
+        return std::unexpected(
+            bulk_mutation_error("Invalid bulk mutation column: " + std::string{name}));
+    }
+    return {};
+}
+
+template <typename T> result<void> validate_bulk_operand(const sql::expr_ast& expression) {
+    if (const auto* column = std::get_if<sql::column_expr>(&expression)) {
+        return validate_bulk_column<T>(column->name);
+    }
+    if (const auto* parameter = std::get_if<sql::param_expr>(&expression)) {
+        if (parameter->encoded_value.error) {
+            return std::unexpected(*parameter->encoded_value.error);
+        }
+        return {};
+    }
+    return std::unexpected(
+        bulk_mutation_error("Bulk mutation predicates do not support functions"));
+}
+
+template <typename T> result<void> validate_bulk_predicate(const sql::predicate_ast& predicate) {
+    if (const auto* comparison = std::get_if<sql::comparison_predicate>(&predicate.val)) {
+        switch (comparison->op) {
+        case sql::op_kind::eq:
+        case sql::op_kind::neq:
+        case sql::op_kind::lt:
+        case sql::op_kind::gt:
+        case sql::op_kind::le:
+        case sql::op_kind::ge:
+            break;
+        default:
+            return std::unexpected(bulk_mutation_error("Invalid bulk comparison operator"));
+        }
+        auto left = validate_bulk_operand<T>(comparison->left);
+        if (!left) {
+            return left;
+        }
+        return validate_bulk_operand<T>(comparison->right);
+    }
+    if (const auto* unary = std::get_if<sql::unary_predicate>(&predicate.val)) {
+        if (unary->op != sql::unary_op_kind::is_null &&
+            unary->op != sql::unary_op_kind::is_not_null) {
+            return std::unexpected(bulk_mutation_error("Invalid bulk NULL operator"));
+        }
+        return validate_bulk_operand<T>(unary->operand);
+    }
+    const auto& binary = std::get<sql::binary_predicate>(predicate.val);
+    if (!binary.left || !binary.right ||
+        (binary.op != sql::op_kind::and_ && binary.op != sql::op_kind::or_)) {
+        return std::unexpected(bulk_mutation_error("Invalid bulk logical predicate"));
+    }
+    auto left = validate_bulk_predicate<T>(*binary.left);
+    if (!left) {
+        return left;
+    }
+    return validate_bulk_predicate<T>(*binary.right);
+}
+
+template <typename T>
+result<void> validate_bulk_assignments(
+    const std::vector<std::pair<std::string, sql::value_source>>& assignments) {
+    if (assignments.empty()) {
+        return std::unexpected(
+            bulk_mutation_error("update_where requires at least one assignment"));
+    }
+    std::vector<std::string_view> seen;
+    for (const auto& [name, value] : assignments) {
+        auto valid = validate_bulk_column<T>(name);
+        if (!valid) {
+            return valid;
+        }
+        if (std::find(seen.begin(), seen.end(), name) != seen.end()) {
+            return std::unexpected(bulk_mutation_error("Duplicate bulk assignment: " + name));
+        }
+        seen.push_back(name);
+        bool writable = true;
+        if constexpr (requires { entity_traits<T>::primary_key; }) {
+            writable = !is_primary_key_column<T>(name);
+        }
+        std::apply(
+            [&](const auto&... column) {
+                ((writable = writable && !(column.name == name && column.gen == generated::always)),
+                 ...);
+            },
+            entity_traits<T>::columns);
+        if (!writable) {
+            return std::unexpected(bulk_mutation_error("Bulk assignment is not writable: " + name));
+        }
+        if (const auto* parameter = std::get_if<sql::param_expr>(&value);
+            parameter && parameter->encoded_value.error) {
+            return std::unexpected(*parameter->encoded_value.error);
+        }
+    }
+    return {};
 }
 
 template <typename T, auto MemberPointer> asterorm::result<std::string> column_name_for_member() {
@@ -566,7 +691,7 @@ template <typename Session> class repository {
             [&](auto& conn) { return session_->observed_execute(conn, *sql, params); });
         if (!res)
             return std::unexpected(res.error());
-        return static_cast<std::size_t>(res->affected_rows());
+        return detail::checked_row_count<std::size_t>(res->affected_rows());
     }
 
     // Partial update. Only the columns in `changed` (names from entity_traits)
@@ -1106,6 +1231,52 @@ template <typename Session> class repository {
             std::optional<related_entity_type>{std::move((*related_rows)[0])}};
     }
 
+    template <typename T>
+    asterorm::result<std::size_t>
+    update_where(sql::predicate_ast predicate,
+                 std::vector<std::pair<std::string, sql::value_source>> assignments) {
+        if constexpr (!detail::supports_bulk_predicate_dml<Session>() ||
+                      detail::has_version_column<T>::value) {
+            return std::unexpected(
+                detail::bulk_mutation_error("Bulk predicate DML requires an explicit supported "
+                                            "capability and an unversioned entity",
+                                            db_error_kind::query_failed));
+        } else {
+            auto valid = detail::validate_bulk_assignments<T>(assignments);
+            if (!valid) {
+                return std::unexpected(valid.error());
+            }
+            valid = detail::validate_bulk_predicate<T>(predicate);
+            if (!valid) {
+                return std::unexpected(valid.error());
+            }
+            sql::update_ast mutation;
+            mutation.table = entity_traits<T>::table;
+            mutation.assignments = std::move(assignments);
+            mutation.where_clause = std::move(predicate);
+            return execute_bulk_mutation(mutation);
+        }
+    }
+
+    template <typename T> asterorm::result<std::size_t> delete_where(sql::predicate_ast predicate) {
+        if constexpr (!detail::supports_bulk_predicate_dml<Session>() ||
+                      detail::has_version_column<T>::value) {
+            return std::unexpected(
+                detail::bulk_mutation_error("Bulk predicate DML requires an explicit supported "
+                                            "capability and an unversioned entity",
+                                            db_error_kind::query_failed));
+        } else {
+            auto valid = detail::validate_bulk_predicate<T>(predicate);
+            if (!valid) {
+                return std::unexpected(valid.error());
+            }
+            sql::delete_ast mutation;
+            mutation.table = entity_traits<T>::table;
+            mutation.where_clause = std::move(predicate);
+            return execute_bulk_mutation(mutation);
+        }
+    }
+
     template <typename T> asterorm::result<void> update(T& entity) {
         if constexpr (detail::has_version_column<T>::value) {
             return update_versioned(entity);
@@ -1146,6 +1317,22 @@ template <typename Session> class repository {
     }
 
   private:
+    template <typename Mutation>
+    asterorm::result<std::size_t> execute_bulk_mutation(const Mutation& mutation) {
+        sql::compiler compiler{sql::dialect_for_session<Session>()};
+        auto compiled = compiler.compile(mutation);
+        if (!compiled) {
+            return std::unexpected(compiled.error());
+        }
+        auto written = session_->with_connection([&](auto& connection) {
+            return session_->observed_execute(connection, compiled->sql, compiled->params);
+        });
+        if (!written) {
+            return std::unexpected(written.error());
+        }
+        return detail::checked_row_count<std::size_t>(written->affected_rows());
+    }
+
     static constexpr bool supports_returning = [] {
         if constexpr (requires { typename Session::connection_type; })
             return detail::supports_returning_for<typename Session::connection_type>();

@@ -17,6 +17,7 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Client | libpq | sqlite3 | mysqlclient or bundled Connector/C | clickhouse-cpp |
 | Value binding | Native parameters | Native parameters | Native prepared statements | Interpolated literals |
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
+| Predicate UPDATE/DELETE | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
 | Bulk insert | Yes, no entity refresh | Yes, no entity refresh | Yes, no entity refresh | Experimental |
 | Bulk upsert with refresh | Yes | Yes | Rejected | Experimental |
 | Transaction-bound statement timeout scopes | Yes | Rejected | Rejected | Rejected |
@@ -25,8 +26,13 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Generic schema migrator | Yes, serialized | Yes, externally coordinated | Rejected | Experimental |
 | PostgreSQL COPY helpers | Yes | No | No | No |
 
-Use PostgreSQL 16+ for the supplied development service, SQLite 3.35+ for
-`RETURNING`, and MySQL 8.0.19+ for the MySQL adapter. CI uses MySQL 8.4.
+Use PostgreSQL 16+ for the supplied development service, SQLite 3.37+ for
+64-bit change counts and `RETURNING`, and MySQL 8.0.19+ for the MySQL adapter. CI uses MySQL 8.4.
+
+Relational result `affected_rows()` getters return `std::uint64_t`. Rebuild the
+library and consumers together after this public type/layout change. See the
+[predicate mutation guide](../how-to/bulk-predicate-mutations.md) for mapping,
+versioned-entity, capability, and query-shape limits.
 
 ## PostgreSQL
 

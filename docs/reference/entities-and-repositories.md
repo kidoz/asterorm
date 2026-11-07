@@ -31,6 +31,8 @@ Construct `asterorm::repository repo{db}` with an existing session.
 | `insert(entity)` | `void` | Inserts and refreshes the mutable entity |
 | `find<T>(key)` | `T` | Fetches one row; missing row is `query_failed` |
 | `update(entity)` | `void` | Updates by primary key; mutable overload refreshes fields |
+| `update_where<T>(predicate, assignments)` | `size_t` | One predicate update; zero matches succeeds |
+| `delete_where<T>(predicate)` | `size_t` | One predicate delete; zero matches succeeds |
 | `erase<T>(key)` | `void` | Deletes by primary key; zero affected rows is an error |
 | `patch(entity, changed_columns)` | `void` | Updates named mapped fields; does not refresh the entity |
 | `upsert(entity)` | `void` | Inserts or updates by conflict handling and refreshes the entity |
@@ -42,7 +44,9 @@ Construct `asterorm::repository repo{db}` with an existing session.
 
 All payloads are wrapped in `asterorm::result<...>`. Composite keys passed to
 `find` and `erase` use a tuple matching the mapping order. Bulk insert rows must
-agree on the set of included generated columns.
+agree on the set of included generated columns. Predicate mutations have
+[explicit mapping and version-policy limits](../how-to/bulk-predicate-mutations.md)
+and do not refresh entities or implicitly start transactions.
 
 `query_options` contains `order_by` (`vector<query_order>`), optional `limit`,
 and optional `offset`. Each `query_order` has a mapped `column` name and

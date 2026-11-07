@@ -12,8 +12,8 @@ The [local locking/timeout review](../locking-timeout-acceptance.md) records acc
 scope, current evidence, and release boundaries.
 
 The [bulk predicate DML contract](../bulk-predicate-dml-design.md) records the
-current implementation inventory and the next repository mutation work. Those
-APIs remain planned.
+implemented predicate UPDATE/DELETE slice and its limits. Structured bound
+arithmetic and INSERT-from-SELECT remain planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

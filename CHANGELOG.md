@@ -6,6 +6,9 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Repository `update_where` and `delete_where` with checked counts, explicit
+  backend admission, mapping/predicate validation, and observed execution.
+
 - No-server PostgreSQL adapter unit coverage and a source-bound local acceptance
   review for locking and timeout behavior.
 - PostgreSQL `session::with_statement_timeout` with nested local restoration,

@@ -1,12 +1,13 @@
 # Bulk predicate DML: inventory and implementation contract
 
-Reviewed on 2026-11-07 against the working tree. The evidence records its Git base
-and inspected source hashes. **Inventory complete; implementation remains
-planned.** `update_where`, `delete_where`, and `insert_select` are absent.
-This contract defines the next feature's boundaries and implementation sequence;
-it does not establish API acceptance or release readiness.
+Reviewed on 2026-11-07. **Partially implemented:** checked 64-bit affected-row
+transport, literal `update_where`, and `delete_where` are implemented under the
+bounded contract below. Structured arithmetic and `insert_select` remain planned.
+See the [mutation guide](how-to/bulk-predicate-mutations.md) and implementation
+verification below. This does not establish acceptance of the whole feature or
+release readiness.
 
-## Current implementation
+## Inventory before implementation
 
 | Area | Observed code | Consequence |
 | --- | --- | --- |
@@ -21,21 +22,29 @@ it does not establish API acceptance or release readiness.
 | Optimistic locking | Entity updates compare/increment `version_column` and report `stale_write` | Bulk methods must define their own policy instead of silently bypassing that protection |
 | Experimental backend | [ClickHouse results](../src/database/clickhouse/result.cpp) equate affected count with returned rows | Do not expose these bulk methods on ClickHouse under a relational affected-row contract |
 
+This table records the initial inventory, before the implementation below.
 The [reproducible probe](evidence/bulk-predicate-dml-inventory/README.md) verifies
 the existing compiler and adapter execution path. It uses temporary tables and
 native INSERT-from-SELECT SQL, not the proposed repository APIs. Its compile-time
 checks also confirm the three proposed entry points are absent for the proposed
 argument types.
 
-## Count transport is a prerequisite
+## Count transport prerequisite: implemented
 
-PostgreSQL currently parses `PQcmdTuples` into `int` and returns zero on parse
-failure, including overflow. SQLite reads `sqlite3_changes`, whose result is
-undefined above `INT_MAX`. MySQL detects oversized counts but returns an execution
+At inventory time PostgreSQL parsed `PQcmdTuples` into `int` and returns zero on parse
+failure, including overflow. SQLite read `sqlite3_changes`, whose result is
+undefined above `INT_MAX`. MySQL detected oversized counts but returned an execution
 error after the server may already have applied the write. These are source
 findings; the probe does not execute billions of mutations.
 
-Before publishing bulk affected-row results:
+The implementation now uses `uint64_t` storage/getters on relational results,
+checked PostgreSQL count parsing through `result::from_native`, SQLite 3.37+
+`sqlite3_changes64` / `sqlite3_total_changes64`, and MySQL's native unsigned count
+without the former `int` cap. New bulk methods and `insert_many` check conversion
+to `size_t`. Constructor/result layouts and exact getter types changed; rebuild
+consumers. The legacy PostgreSQL raw-result constructor throws on invalid counts;
+the execution adapter uses the factory to return structured errors instead.
+The following requirements guided that implementation:
 
 - Carry an unsigned 64-bit count through relational adapter results. Keep row and
   column indices separate; changing mutation count transport does not require
@@ -64,7 +73,7 @@ See [PostgreSQL UPDATE](https://www.postgresql.org/docs/16/sql-update.html),
 
 ## First repository slice
 
-The proposed runtime signatures are:
+The implemented runtime signatures are:
 
 ```cpp
 template <typename T>
@@ -77,19 +86,18 @@ asterorm::result<std::size_t> delete_where(
     asterorm::sql::predicate_ast predicate);
 ```
 
-These are member-template declarations for the future `repository<Session>`;
-they are not available calls today. A descriptive assignment-list alias may be
-added if it improves the public header. Keep the core header independent of the
+These are member templates on `repository<Session>`. Keep the core header independent of the
 heavy typed-query bridge. Callers can explicitly lower an existing
 `typed_predicate<T>` through its `inner` member; a dedicated typed-assignment
 facade is a later convenience, not a prerequisite for this runtime API.
 
-The first slice includes checked counts, both methods, and these rules:
+The first slice implements checked counts, both methods, and these rules:
 
 1. Take the table from `entity_traits<T>`. Require at least one assignment for
    UPDATE. Reject duplicate, unknown, empty, NUL-containing, wildcard, and
    qualified assignment targets. Initial repository assignments use bare mapped
    column names; mappings with dots in writable names are outside this slice.
+   Primary-key mappings are optional for these set-based operations.
 2. Reject primary-key and `generated::always` assignments. Ordinary non-key
    `generated::by_default` columns remain explicitly writable, consistent with
    entity updates. Do not fetch generated values or refresh in-memory entities.
@@ -111,7 +119,8 @@ The first slice includes checked counts, both methods, and these rules:
 7. Preserve the existing explicit `raw_expr` escape hatch on assignment values:
    caller-owned SQL, never auto-created from ordinary strings, with embedded NUL
    rejection. It does not provide type checking or parameterize its fragment.
-8. Validation failures use `parse_failed`; unsupported backends/version policy
+8. Mapping/shape validation failures use `parse_failed`; codec diagnostics are
+   preserved. Unsupported backends/version policy
    use `query_failed`, without fabricated SQLSTATEs. No lease, observer event, or
    mutation occurs for these local rejections.
 
@@ -126,7 +135,7 @@ pool wait, the callback, or an end-to-end deadline. MySQL and SQLite retain thei
 existing backend timeout behavior.
 
 Target the existing supported [backend baselines](reference/backends.md):
-PostgreSQL 16+, SQLite 3.35+ in the project's current support surface, and MySQL
+PostgreSQL 16+, SQLite 3.37+ for the required 64-bit change-count functions, and MySQL
 8.0.19+ (local/CI service 8.4). New bulk repository methods must explicitly reject
 ClickHouse and unknown custom connection capabilities before acquisition; a
 PostgreSQL-compatible dialect fallback alone does not prove mutation support.
@@ -184,12 +193,12 @@ typed source alone does not establish compatible target fields.
 | Timeout/capability integration | PostgreSQL delayed UPDATE/DELETE/INSERT-from-SELECT under pool/scoped timeout: SQLSTATE 57014 and explicit rollback recovery; disabled/custom/ClickHouse rejection before leasing, plus unchanged ordinary queries |
 | Combined acceptance | Updated README inventory, guides that compile, backend limits and public count/AST ABI notes; fresh unit/integration, normal build, format and lint checks, with separate standards findings |
 
-**Next implementation:** checked affected-row transport together with validated
-literal `update_where` and `delete_where`. Keep bound arithmetic and
-INSERT-from-SELECT as subsequent deliveries; the feature remains planned until
-code exists and is partial until its required methods and acceptance checks close.
+**Next implementation:** structured bound arithmetic assignment values (addition
+and multiplication), followed by INSERT-from-SELECT. Checked counts and literal
+UPDATE/DELETE are implemented; the feature remains partial until the required
+remaining APIs and combined acceptance checks close.
 
-## Observed verification for this inventory
+## Historical verification for the initial inventory
 
 - `python3 docs/evidence/bulk-predicate-dml-inventory/capture.py`: compile exit 0,
   probe exit 0. Three dialects compiled. Each live backend reported UPDATE 2,
@@ -209,7 +218,61 @@ code exists and is partial until its required methods and acceptance checks clos
   --today 2026-11-07`: exit 1 with the existing 53 errors and 12 warnings, no
   findings on the three edited context documents. These are not waived.
 
-This is a local baseline and implementation contract. No new repository API,
-large-count workload, ClickHouse runtime behavior, remote CI, or release result
-is claimed. The locking/timeout evidence remains a historical snapshot and is
+That capture is the historical baseline: it does not test the later repository
+APIs or large-count workloads. Its absence assertions intentionally no longer
+compile after implementation; do not rewrite the frozen evidence. No ClickHouse
+runtime behavior, remote CI, or release result is claimed. The locking/timeout evidence remains a historical snapshot and is
 not rewritten by this review.
+
+## Implementation follow-up: predicate UPDATE/DELETE (2026-11-07)
+
+The [repository](../include/asterorm/core/repository.hpp) now validates target
+mapping, assignment lists, predicate operator categories/children, and encoded
+parameter errors before acquisition, then compiles once and executes once through
+the session observer pipeline. Versioned entities and missing/unsupported explicit
+capabilities reject. Zero matches succeeds. Existing native SQL/builder APIs keep
+their original lower-level behavior.
+
+[No-server tests](../tests/unit/test_bulk_predicate.cpp) cover wide count parsing,
+checked signed/32-bit conversions, literal/null/raw values, dialect/parameter order,
+codec/lease/database/observer failures, keyless/composite/generated/version mapping,
+malformed ASTs, and disabled/unknown/ClickHouse capabilities. Native adapter unit
+cases cover wide result storage and PostgreSQL handle ownership/failure/move paths.
+SQLite checks direct counts with RETURNING and triggers and prevents SELECT/DDL
+from inheriting stale DML counts.
+
+The [shared live fixture](../tests/support/bulk_predicate.hpp) covers three
+backends: typed-predicate lowering, flag changes, archive-after-cutoff deletion,
+no-change/zero-match behavior, generated/default values, constraint errors,
+rollback, commit, and observer exceptions after an autocommit write. PostgreSQL
+[timeout cases](../tests/integration/test_statement_timeout.cpp) exercise both
+methods under pool and scoped timeouts, SQLSTATE 57014, explicit rollback, physical
+connection reuse, and later successful work.
+
+Fresh verification for this slice:
+
+- `just test`: `Ok: 14`, `Fail: 0`, including the compiled public mutation guide.
+- `just test-pg`: `Ok: 3`, `Fail: 0`; `just test-sqlite`: `Ok: 2`, `Fail: 0`.
+- `meson compile -C buildDir` and `just format-check`: exit 0.
+- `just lint`: exit 0 across 50 translation units. New diagnostics were corrected;
+  final targeted lint of MySQL execution and the two edited unit files, then the
+  final core-unit lint, each exited 0. Remaining warnings are existing/third-party.
+- Following those nonfunctional test-initializer fixes, the core bulk-DML test
+  selection and PostgreSQL unit tests pass again. ClickHouse header/rejection
+  instantiation compiles without a client library or server.
+- A fresh build/install with all three relational adapters, tests/examples disabled,
+  and a temporary prefix was consumed through both `AsterORM::asterorm` in CMake
+  and shared-library `pkg-config --cflags --libs asterorm`: build/run exit 0 for
+  UPDATE/DELETE against SQLite. Private package requirements include SQLite
+  `>= 3.37.0`. CMake emits an existing SQLite imported-target deprecation warning.
+  An extra `--static` experiment hit a missing external zstd search path; static
+  transitive linking is not part of this successful shared-consumer result.
+- Strict standards validation (`--mode strict-governance --workspace --today
+  2026-11-07`): exit 1, retaining 53 existing errors and 12 warnings, with no
+  findings on the three edited agent contexts.
+
+These are local commands, not remote CI or release validation. Large native
+mutation counts are checked with synthetic parser/result boundaries, not billions
+of live rows. Earlier native captures remain historical; the executable API tests
+establish this slice's behavior. Structured arithmetic and INSERT-from-SELECT
+remain unimplemented.

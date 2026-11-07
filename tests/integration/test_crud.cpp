@@ -4,6 +4,7 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
+#include "support/bulk_predicate.hpp"
 
 struct crud_user {
     std::optional<int> id;
@@ -400,4 +401,12 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_posts;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_profiles;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_authors;");
+}
+
+TEST_CASE("postgres Integration: bulk predicate mutations", "[postgres][bulk-dml]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_bulk_predicate(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
 }

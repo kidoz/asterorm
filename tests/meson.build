@@ -7,6 +7,7 @@ core_tests = executable(
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
+    'unit/test_bulk_predicate.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
     'unit/test_typed_dsl.cpp',
@@ -63,6 +64,9 @@ if sqlite_enabled
     dependencies : [asterorm_sqlite_dep, catch2_dep],
   )
   test('sqlite unit tests', sqlite_unit_tests)
+  test('bulk mutation guide', python_program,
+    args : [files('check_bulk_predicate_guide.py'), '--build-root', meson.project_build_root()],
+  )
   sqlite_tests = executable(
     'sqlite_integration',
     [
