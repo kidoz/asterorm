@@ -64,7 +64,8 @@ As of the 2026-11-07 runtime follow-up, `typed::query` uses the session
 observed-execute helper inside `with_connection`. Success/error events and
 transaction pinning have unit and PostgreSQL/SQLite/MySQL coverage. Custom
 facades without a helper returning the native prepared result type retain direct
-execution. Timeout scopes remain planned; see the runtime audit for those limits.
+execution. PostgreSQL timeout scopes now cover typed reads on the scoped connection;
+see the [timeout guide](how-to/statement-timeouts.md) for the available limits.
 
 ## Checks run for this review
 
@@ -92,11 +93,9 @@ execution. Timeout scopes remain planned; see the runtime audit for those limits
   the three edited feature-expansion context files. This is not a passing
   repository-wide standards check.
 
-The next planned feature is locks and timeouts. The
-[implementation audit](locking-and-timeout-audit.md) now records the existing
-paths, live probes, and ordered work. Cancellation classification and typed-query
-observer routing are corrected with regression coverage. Shared SELECT locking
-now has a restricted supported surface and backend checks. Scoped PostgreSQL
-advisory locking, safe lease ownership, and PostgreSQL migration serialization
-are implemented. The [timeout contract](statement-timeout-design.md) is defined;
-pool baseline and adapter implementation are next, then transaction-bound scopes.
+The later [locking/timeout acceptance review](locking-timeout-acceptance.md)
+records scoped local closure of cancellation classification, typed observation,
+shared SELECT locking, PostgreSQL advisory scopes, migration serialization, pool
+defaults, and transaction-bound timeouts. Its v1 limits and current checks are
+separate from the original typed-DSL review above. The next feature inventory is
+bulk predicate-based DML.

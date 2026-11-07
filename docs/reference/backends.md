@@ -19,6 +19,8 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
 | Bulk insert | Yes, no entity refresh | Yes, no entity refresh | Yes, no entity refresh | Experimental |
 | Bulk upsert with refresh | Yes | Yes | Rejected | Experimental |
+| Transaction-bound statement timeout scopes | Yes | Rejected | Rejected | Rejected |
+| Pool statement timeout baseline | Yes | Rejected | Rejected | Rejected |
 | Scoped advisory locks | Yes | Rejected | Rejected | Rejected |
 | Generic schema migrator | Yes, serialized | Yes, externally coordinated | Rejected | Experimental |
 | PostgreSQL COPY helpers | Yes | No | No | No |
@@ -37,6 +39,16 @@ Parameters and results use text format. Each connection owns a bounded prepared
 statement cache. PostgreSQL-specific extras include arrays, JSONB, UUID, bytea,
 date/time/numeric codecs, enum labels, and raw or structured COPY IN/OUT through
 `postgres/copy.hpp`. There is no binary protocol or pipeline API.
+
+PostgreSQL connections additionally expose `statement_timeout()` returning
+`result<chrono::milliseconds>`, `set_statement_timeout(milliseconds)` for an idle
+connection, and `set_local_statement_timeout(milliseconds)` for a healthy active
+transaction. Both setters validate 0 through 2,147,483,647 ms before SQL.
+`is_transaction_idle() const noexcept` reports the physical connection state.
+The getter uses numeric server metadata rather than parsing human-readable units.
+These control operations bypass session observation and provide no automatic
+restoration. Use [session timeout scopes](../how-to/statement-timeouts.md) for
+automatic restoration within an existing transaction.
 
 ## SQLite
 

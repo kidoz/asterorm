@@ -1,16 +1,156 @@
 # Locking, statement timeout, and execution audit
 
-Reviewed on 2026-11-06 against `d79d9ff` and the working tree. The planned lock and
-timeout feature is **partially implemented**. Existing transactions, native SQL,
-prepared execution, and backend error diagnostics provide useful foundations.
-Cancellation classification and typed-query observation are implemented in the
-follow-ups below. Shared SELECT locking and scoped PostgreSQL advisory locks
-are now available. PostgreSQL migration serialization is implemented; timeout
-scope and pool-default behavior is now specified, with implementation pending.
+Initially reviewed on 2026-11-06 against `d79d9ff` and the working tree.
+Implementation follow-ups culminate in the
+[2026-11-07 local acceptance review](locking-timeout-acceptance.md): the locking and
+timeout feature is **implemented within the revised v1 contract**. The review
+records supported boundaries, current checks, and source/test provenance; it does
+not establish remote CI or release readiness.
 
 The initial audit added a reproducible probe and changed no production behavior.
 The original findings and probe snapshot below describe that audited revision;
 follow-ups record later fixes.
+
+## Follow-up: combined local acceptance (2026-11-07)
+
+The [acceptance matrix](locking-timeout-acceptance.md) closes items 1–6 below for
+the revised v1 surface. No runtime correction was needed in this review. A missing
+no-server unit target for actual PostgreSQL adapter methods was added, covering
+native error propagation, timeout range/context checks, physical state, and
+advisory operations on a disconnected connection. `just test-pg` now includes it.
+Five public guide examples and the disabled ClickHouse header/rejection path
+compile through a reproducible standalone check. Public guides explicitly state
+the PostgreSQL 16+ support baseline.
+
+Fresh verification and source fingerprints are in the review/provenance record.
+An initial full run had two MySQL connection-refusal failures while that service
+was offline; starting the existing service resolved the environment failure.
+The existing strict-standards errors remain a separate, unwaived governance issue.
+Original native probe snapshots remain unchanged.
+
+The next task is the bulk predicate-DML inventory and contract review for
+`update_where`, `delete_where`, and `insert_select`.
+
+## Follow-up: transaction-bound timeout scopes (2026-11-07)
+
+`session::with_statement_timeout(milliseconds, callback)` now requires an existing
+transaction, captures its actual effective timeout, and restores local settings
+in stack order. Zero disables the limit for a scope. Duration/backend/state checks
+reject before leasing or callback execution. The synchronous callback returns
+`result<T>` by value, including move-only values. See the
+[guide](how-to/statement-timeouts.md) for the available API and v1 limits.
+
+Advisory/timeout scopes now share pin accounting and connection poisoning. Each
+timeout frame records transaction generation: commit/full rollback retains its pin
+and blocks further managed work until all completed timeout frames unwind. Cleanup
+after transaction end skips local setters, so a prior local value never becomes a
+session baseline. Existing advisory owners can continue afterward. Savepoint
+creation/release works; managed savepoint rollback rejects before SQL during a
+live timeout scope. Rebuild consumers after the session layout change.
+
+Snapshot failure leaves cleanup with the caller. Uncertain application or failed
+restoration discards the connection and invalidates transaction ownership. Original
+callback errors retain diagnostics plus cleanup detail; callback exceptions survive
+secondary cleanup exceptions. Ignoring a nested timeout/advisory cleanup failure
+cannot turn an outer scope into success. Stale guards cannot finish later work.
+
+Unit coverage exercises admission, nesting, zero/max values, error/exception paths,
+move-only results and transaction guards, completed-frame gates, commit reported
+as rollback, rollback failure, and cross-scope poisoning. Live PostgreSQL checks
+exercise healthy/error/exception restoration, prior locals, both COPY directions,
+native/typed queries, DDL, contended advisory acquisition, observer exceptions,
+aborted snapshots, explicit rollback recovery, savepoints, same-connection reuse,
+and advisory continuation. SQLite/MySQL reject scoped use before leasing.
+
+Observed verification:
+
+- Before implementation, `meson compile -C buildDir core_tests` failed because
+  the new fixture required `session::with_statement_timeout`.
+- `meson test -C buildDir 'core unit tests' --test-args='[timeout-scope],[advisory]' --print-errorlogs`:
+  `Ok: 1`, `Fail: 0` for the initial core ownership/restoration cases.
+- `meson test -C buildDir 'pg integration' --test-args='[timeout-scope]' --print-errorlogs`:
+  `Ok: 1`, `Fail: 0`, including cancellation during COPY IN/OUT and advisory waits.
+- `just test-pg`: `Ok: 2`, `Fail: 0`; `just test-sqlite`: `Ok: 1`, `Fail: 0`.
+- `just test` and final `meson test -C buildDir --print-errorlogs`:
+  each printed `Ok: 11`, `Fail: 0`, including the final advisory-cleanup case and
+  all enabled backend/guide/compile checks.
+- `meson compile -C buildDir`: exit 0, rebuilding the remaining quickstart after
+  the session layout change. `just format-check` and the final
+  `meson compile -C buildDir clang-format-check`: exit 0.
+- `just lint`: exit 0 across 47 translation units, with warnings. New fixture
+  warnings were corrected; final
+  `clang-tidy -p buildDir tests/unit/test_timeout_scope.cpp tests/integration/test_statement_timeout.cpp`:
+  exit 0, with remaining diagnostics confined to Catch2 headers.
+- Standalone C++23 syntax checks: exit 0 for the guide example instantiated with
+  a PostgreSQL session using its compilation-database flags, and for the ClickHouse
+  header plus an unsupported scoped-timeout call. Local documentation links passed.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-timeout-scope-standards.json`:
+  exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
+  three edited agent context files.
+
+The later combined acceptance review above closes this implementation slice under
+the documented v1 contract.
+
+## Follow-up: pool timeout baseline (2026-11-07)
+
+Optional `pool_config::statement_timeout` now applies a PostgreSQL session-level
+baseline during warmup/new connection setup and before every idle checkout. Values
+0 through 2,147,483,647 ms are accepted; absent configuration preserves prior
+behavior. Invalid values and unsupported/partial adapter capabilities fail before
+connecting, including lazy pools. All three non-PostgreSQL built-in adapters reject
+explicit configuration, including zero.
+
+The adapter implements numeric timeout snapshots, validated session/local setters,
+and a nonthrowing physical idle check. It binds values to `pg_catalog.set_config`;
+the pool uses the session setter outside a transaction. Setup/reapplication bypasses
+session observation. The local setter is low-level support for the later scope;
+the later follow-up above adds `session::with_statement_timeout`.
+
+Network setup occurs outside the pool mutex. Setup failure/exception closes and
+discards the connection, releases its capacity slot, and wakes waiters. Warmup
+failures remain persistent; lazy/reuse failures permit retry. A configured pool
+rejects and discards returned active/failed transactions. Late setup completion
+after `close()` times out no longer underflows capacity accounting. Rebuild binary
+consumers with the library because the appended `pool_config` field changes layout.
+
+New unit cases cover validation, zero/max values, warmup/new/reuse, absent-option
+compatibility, setup failure/throw, waiting borrowers, concurrent returns, close
+races, and setup finishing after the existing ten-second close deadline. Live
+PostgreSQL checks cover exact values/local lifetimes, same-PID baseline restoration,
+active/aborted transaction discard, cancellation diagnostics, and observer counts.
+SQLite/MySQL checks prove explicit unsupported configuration rejection.
+
+Observed verification:
+
+- Initial `meson compile -C buildDir core_tests` rejected the new fixture's
+  references to the then-missing `pool_config::statement_timeout` field.
+- `meson test -C buildDir 'core unit tests' 'pg integration' 'sqlite integration' 'mysql integration' --test-args='[pool-timeout]' --print-errorlogs`:
+  `Ok: 4`, `Fail: 0` after implementation.
+- The final core/PostgreSQL timeout selection printed `Ok: 2`, `Fail: 0`, also
+  covering a partial custom protocol and retained transaction-local values.
+- `just test-pg`: `Ok: 2`, `Fail: 0`; `just test-sqlite`: `Ok: 1`, `Fail: 0`.
+- `just test` and final `meson test -C buildDir --print-errorlogs`:
+  each printed `Ok: 11`, `Fail: 0`. The core suite includes the real ten-second
+  close-expiry regression; it is not a timed-sleep concurrency fixture.
+- `meson compile -C buildDir`: exit 0, rebuilding all normal targets including
+  the remaining quickstart binary after the configuration layout change.
+- `just format-check` and the final `meson compile -C buildDir clang-format-check`:
+  exit 0.
+- `just lint`: exit 0 across 46 translation units, with warnings. New fixture
+  warnings were corrected; final
+  `clang-tidy -p buildDir tests/unit/test_pool_timeout.cpp tests/integration/test_statement_timeout.cpp`:
+  exit 0, with remaining diagnostics confined to Catch2 headers.
+- Standalone C++23 checks: exit 0 for the updated pool guide example using the
+  PostgreSQL compilation-database flags, and the ClickHouse header with a negative
+  timeout-capability assertion.
+- Strict standards validation via
+  `uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-pool-timeout-standards.json`:
+  exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
+  three edited agent context files.
+
+The later scoped-timeout follow-up above implements the remaining ownership and
+cleanup behavior from the [contract](statement-timeout-design.md).
 
 ## Follow-up: timeout contract (2026-11-07)
 
@@ -46,8 +186,8 @@ Observed evidence and verification:
 - No production source or build targets changed; product suites were not rerun
   for this design-only slice.
 
-The next task is implementing the optional pool baseline and PostgreSQL adapter
-protocol from the contract, followed by transaction-bound scope implementation.
+The later pool-baseline and scoped-timeout follow-ups above implement both slices.
+The later combined review above records local acceptance.
 The original blanket per-lease `SET LOCAL` proposal is superseded by this split.
 
 ## Follow-up: migration serialization (2026-11-07)
@@ -104,8 +244,8 @@ Observed verification:
   exit 1, retaining 53 existing errors and 12 warnings, with no findings on the
   three edited agent context files.
 
-The later timeout-contract follow-up above resolves item 6's design. Pool/adapter
-implementation is next; scope implementation and regression coverage follow.
+The later timeout-contract, pool, and scope follow-ups above close item 6's
+design and implementation; their combined acceptance is recorded at the top.
 
 ## Follow-up: scoped advisory locking (2026-11-07)
 
@@ -207,7 +347,8 @@ Observed verification:
   three edited agent context files.
 
 This SELECT-locking slice preceded the scoped advisory implementation above.
-Migration serialization is addressed above; timeout helpers remain pending.
+Migration serialization and timeout helpers are addressed by later follow-ups
+above.
 
 ## Follow-up: typed-query observation (2026-11-07)
 
@@ -439,16 +580,16 @@ clause, and unsupported adapters must still fail clearly.
    the same connection. Coordinate apply and rollback. Preserve per-migration
    commits unless a batch-atomic API change is explicitly designed. Test two
    migrators, initial history creation, later-migration failure, and lock release.
-6. **Implement timeout scopes and pool defaults (design settled, implementation pending).**
+6. **Implement timeout scopes and pool defaults (implemented within the v1 contract).**
    Use the [contract](statement-timeout-design.md): optional session baseline at
-   checkout first, then transaction-bound local scopes with explicit savepoint rules.
-   Cover zero/negative/out-of-range durations, nested restoration,
+   checkout and transaction-bound local scopes with explicit savepoint rules. Cover zero/negative/out-of-range durations, nested restoration,
    callback errors/exceptions, query cancellation, failed cleanup, transaction
    completion inside callbacks, and connection reuse across leases. State which
    raw/DDL/COPY paths the guarantee covers and reject unsupported backends.
 
-The immediate next task is item 6. Feature status stays planned until the original
-acceptance criteria and the cross-backend behavior have executable coverage.
+Items 1–6 and their recorded design revisions are locally accepted in the
+[combined review](locking-timeout-acceptance.md). The next feature inventory is
+bulk predicate-based DML.
 
 ## Verification
 
@@ -473,4 +614,5 @@ acceptance criteria and the cross-backend behavior have executable coverage.
 Only PostgreSQL native lock/timeout semantics and PostgreSQL/SQLite observer
 routing were probed in the initial audit. The later follow-ups add advisory-helper
 exception safety, MySQL locking coverage, and real multi-process PostgreSQL
-migration coverage. Timeout-helper behavior remains unverified.
+migration coverage. Timeout-helper API behavior is now covered by unit/live tests;
+the combined review records the current local acceptance conclusion.

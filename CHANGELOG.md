@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- No-server PostgreSQL adapter unit coverage and a source-bound local acceptance
+  review for locking and timeout behavior.
 - PostgreSQL `session::with_statement_timeout` with nested local restoration,
   transaction-completion gates, and cleanup shared with advisory scopes.
 - Optional PostgreSQL pool statement-timeout baselines on connection creation and

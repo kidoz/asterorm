@@ -12,12 +12,18 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 | `acquire_timeout` | `5000ms` | Wait for an available lease when exhausted |
 | `prepared_statement_cache_size` | `128` | Per-connection prepared-statement limit |
 | `conninfo` | empty string | Backend-specific connection settings |
+| `statement_timeout` | `nullopt` | PostgreSQL session baseline on creation/checkout; optional milliseconds, 0 disables, maximum 2,147,483,647 |
 
 `connection_pool<Driver>::acquire()` returns `result<lease_type>`. A lease is
 move-only and returns its connection on destruction or `release_to_pool()`.
-`warmup_error()` reports a retained startup failure. `stats()` returns pool
+`warmup_error()` reports retained invalid configuration or a startup/setup failure. `stats()` returns pool
 counts and shutdown state. `close()` prevents further acquisition and waits
 for outstanding leases up to an internal deadline.
+
+Explicit timeout configuration rejects unsupported adapters before connecting,
+including lazy pools. New/idle setup failures discard the connection; lazy/reuse
+errors permit retry. See [pool timeout behavior](../how-to/pooling-and-observability.md#set-a-postgresql-statement-timeout-baseline).
+The appended `pool_config` field changes its layout; rebuild consumers together.
 
 ## Session operations
 
@@ -27,6 +33,7 @@ for outstanding leases up to an internal deadline.
 | `has_active_transaction()` | Thread-safe snapshot of session-managed transaction state |
 | `with_connection(callback)` | Uses the transaction/advisory scope's pinned connection or obtains a temporary lease |
 | `with_advisory_lock(key, callback)` | PostgreSQL exclusive lock; callback returns `result<T>`; see [scope and cleanup](../how-to/advisory-locking.md) |
+| `with_statement_timeout(milliseconds, callback)` | PostgreSQL transaction-bound override; callback returns `result<T>`; see [scope rules](../how-to/statement-timeouts.md) |
 | `native<T>(sql, args...)` | `result<vector<T>>`; strict hydration by mapped column name |
 | `native_as<T>(mode, sql, args...)` | Explicit strict or lenient hydration |
 | `native_scalar<T>(sql, args...)` | `result<optional<T>>`; first row, first column |
@@ -57,4 +64,7 @@ serialization and deadlock failures. Rollback does not restore C++ object state.
 
 The pool must outlive sessions; sessions must outlive repositories and guards.
 Use separate sessions for independent concurrent work so transaction state is
-not shared between unrelated operations.
+not shared between unrelated operations. Timeout scopes keep their own lease pins;
+completing a transaction inside one blocks further work until its timeout frames
+unwind. Savepoint rollback is rejected while a timeout scope is active. See the
+[timeout guide](../how-to/statement-timeouts.md) for restoration and discard rules.

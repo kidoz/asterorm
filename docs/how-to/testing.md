@@ -30,14 +30,15 @@ database: integration tests create and drop tables.
 To select the relevant registered tests:
 
 ```sh
-meson test -C build-test-pg 'pg integration' 'migration serialization' --print-errorlogs
+meson test -C build-test-pg 'postgres unit tests' 'pg integration' 'migration serialization' --print-errorlogs
 meson test -C build-test-pg 'sqlite integration' --print-errorlogs
 ```
 
 The PostgreSQL migration serialization test starts independent client processes
 and observes server lock waits before releasing its gate. `just test-pg` includes
-both this test and the PostgreSQL integration executable. Both use
-`ASTERORM_TEST_CONNINFO` or the default local PostgreSQL service.
+this test, the PostgreSQL integration executable, and PostgreSQL adapter unit
+cases. The adapter unit executable constructs a disconnected connection and
+requires no server; live checks use `ASTERORM_TEST_CONNINFO` or the local service.
 
 ## Test MySQL
 

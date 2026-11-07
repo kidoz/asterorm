@@ -69,6 +69,13 @@ if sqlite_enabled
 endif
 
 if postgres_enabled
+  postgres_unit_tests = executable(
+    'postgres_unit_tests',
+    'unit/test_postgres_connection.cpp',
+    dependencies : [asterorm_pg_dep, catch2_dep],
+  )
+  test('postgres unit tests', postgres_unit_tests)
+
   pg_tests = executable(
     'pg_integration',
     [

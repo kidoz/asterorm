@@ -40,6 +40,7 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - [SELECT row locking](docs/how-to/select-locking.md) on PostgreSQL and MySQL,
   through both builders, with rejection on unsupported backends.
 - Exclusive connection leases, bounded prepared-statement caches, pool statistics,
+  PostgreSQL statement-timeout defaults and [transaction-bound overrides](docs/how-to/statement-timeouts.md),
   and query-observer callbacks.
 - Scoped transactions, savepoints, transaction retries, and a schema migration
   runner for PostgreSQL and SQLite, with automatic PostgreSQL executor
@@ -50,7 +51,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 Relationship loading is explicit. Async APIs, streaming cursors, automatic
 lazy/eager loading, an identity map, and compile-time checking of raw SQL are
 not implemented. See the [API reference](docs/reference/README.md) for contracts
-and limitations.
+and limitations. The [locking and timeout review](docs/locking-timeout-acceptance.md)
+records the accepted v1 scope and local checks.
 
 ## Backends
 

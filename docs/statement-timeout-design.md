@@ -1,21 +1,21 @@
 # Statement timeout contract
 
-Decided on 2026-11-07. **Design only: the public APIs below are not implemented.**
+Decided on 2026-11-07. **Pool defaults, PostgreSQL adapter support, and
+transaction-bound session scopes are implemented within the v1 limits below.**
 This resolves the timeout portion of the [runtime audit](locking-and-timeout-audit.md).
-The next implementation slice is the pool default and PostgreSQL adapter contract;
-transaction-bound scopes follow separately. Existing query cancellation remains
-`query_failed` with SQLSTATE `57014`.
+Local acceptance is recorded in the [combined review](locking-timeout-acceptance.md).
+Existing query cancellation remains `query_failed` with SQLSTATE `57014`.
 
 ## API and limits
 
 ```cpp
-// Proposed additions, not current API.
+// Available pool addition:
 struct pool_config {
     // Existing fields remain in order; append:
     std::optional<std::chrono::milliseconds> statement_timeout{};
 };
 
-// Callback receives session&, returns asterorm::result<T> by value.
+// Available scope: callback receives session&, returns result<T> by value.
 db.with_statement_timeout(std::chrono::milliseconds duration, callback);
 ```
 
@@ -137,7 +137,7 @@ or retry hides the cancellation.
 
 ## Adapter boundary and coverage
 
-A compatible adapter supplies this proposed protocol, with exact result types:
+The PostgreSQL adapter implements this protocol, with exact result types:
 
 ```cpp
 result<std::chrono::milliseconds> statement_timeout();
@@ -167,17 +167,21 @@ cancellation, so do not relabel every occurrence as a timeout.
 
 | Slice | Required executable checks |
 | --- | --- |
-| Pool baseline — next | Absent option adds no SQL on every backend; zero/max valid; invalid values and unsupported adapters fail before connect, including lazy pools; warmup/new/idle acquisition see baseline; borrower mutation is reset on the same PID; failed setup/active returned transaction discards and frees slots; pool close during setup returns no lease; initialization outside mutex lets unrelated returns progress |
+| Pool baseline — implemented | Absent option adds no SQL on every backend; zero/max valid; invalid values and unsupported adapters fail before connect, including lazy pools; warmup/new/idle acquisition see baseline; borrower mutation is reset on the same PID; failed setup/active returned transaction discards and frees slots; pool close during setup returns no lease; initialization outside mutex lets unrelated returns progress |
 | Scoped success | Admission gates before SQL/callback; explicit transaction and one-connection pool; actual prior local value restored; nested overrides including zero; move-only `result<T>`; no observer/control event changes |
 | Scope completion | Commit/rollback inside callback retain scope pin; post-completion work rejected; no restoring a local value into session state; all nested frames unwind; next lease sees baseline; existing advisory owner can continue afterward |
-| Scope failures | Callback result/exception, cancellation `57014`, aborted cleanup `25P02`, uncertain apply, restoration error/throw, ignored inner errors, stale guards, and rollback failure; exactly-once pin release and reuse after unwind |
+| Scope failures | Callback result/exception, cancellation `57014`, aborted snapshots `25P02`, rejected restoration, uncertain apply, restoration error/throw, ignored inner errors, stale guards, and rollback failure; exactly-once pin release and reuse after unwind |
 | Savepoints | Create/release supported; managed rollback rejected before SQL without poisoning; native probes show both undo and resurrection hazards |
 | Integration | PostgreSQL server timeout through native/typed/prepared execution and raw DDL/COPY/advisory paths; snapshot/control observation absent; SQLite/MySQL rejection and existing suites remain green |
 
-Implement pool/adapter support first, then the scope state machine with tests
-written against these boundaries. No shipped-feature claim follows from this
-specification or its native semantic probe. Keep feature status partial until the
-implementation and acceptance coverage exist.
+Pool/adapter support has [unit](../tests/unit/test_pool_timeout.cpp) and
+[PostgreSQL integration](../tests/integration/test_statement_timeout.cpp) coverage;
+see the audit for commands and observed results. Transaction-bound scopes now have
+[unit](../tests/unit/test_timeout_scope.cpp) and live PostgreSQL coverage of the
+remaining boundaries, plus unsupported-backend checks. The native semantic probe
+is historical server evidence, not API acceptance. A combined locking/timeout
+[acceptance review](locking-timeout-acceptance.md) accepts this revised v1 contract
+with explicit boundaries and fresh check results.
 
 ## Evidence and references
 
@@ -185,7 +189,7 @@ The [native probe](evidence/statement-timeout-design/README.md) passed nine chec
 on PostgreSQL 16.14: ineffective autocommit local setting, nested restoration,
 transactional session settings, both savepoint hazards, transaction completion,
 failed-transaction cleanup, numeric bounds, and restoration of the original value.
-It does not exercise the proposed ORM API.
+It does not exercise the ORM API; the runtime tests above provide that coverage.
 
 PostgreSQL documents the underlying [setting lifetimes](https://www.postgresql.org/docs/16/sql-set.html),
 [statement timeout](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-STATEMENT-TIMEOUT),

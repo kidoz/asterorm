@@ -4,6 +4,8 @@
 lock on one connection while a synchronous callback runs. The callback receives
 the session and returns `asterorm::result<T>` by value, including `result<void>`
 or a move-only value. The helper returns that result after cleanup.
+The supported PostgreSQL baseline is 16+, matching the supplied development service;
+the helper does not probe the server version.
 
 ```cpp
 constexpr std::int64_t refresh_key = 4217;
