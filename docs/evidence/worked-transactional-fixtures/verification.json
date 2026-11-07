@@ -1,0 +1,261 @@
+{
+  "recorded_at_utc": "2026-11-07T21:23:21.074829+00:00",
+  "review_date": "2026-11-08",
+  "git_base": "d18979031f09daa48ce2ac2eece603c451c4fc67",
+  "scope": "Checked reference fixtures and worked CRUD migration, with optional pinned validation. Combined harness acceptance remains the next delivery.",
+  "platform": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "machine": "arm64"
+  },
+  "compiler": [
+    "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "Target: arm64-apple-darwin27.2.0"
+  ],
+  "catch2_version": "3.16.1",
+  "build_options": {
+    "buildtype": "debug",
+    "warning_level": "3",
+    "werror": false,
+    "b_sanitize": [],
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "clickhouse": "disabled",
+    "tests": true,
+    "examples": true,
+    "mysql": "enabled"
+  },
+  "sqlite_only_options": {
+    "postgres": "disabled",
+    "mysql": "disabled",
+    "clickhouse": "disabled",
+    "sqlite": "enabled",
+    "tests": true,
+    "examples": false
+  },
+  "reviewed_inputs_sha256": {
+    ".clang-format": "5487b608c8c20ccbc33b4a912b2e6ad33425adea9dfe9ef7c9e5cc4470d7573d",
+    ".clang-tidy": "e04b2e7820dda9f058d41f3c02682fb7662651c0fc849533aa375ed4c2e8dcbc",
+    "CHANGELOG.md": "e53cc4942ed81efbae385dbb251ebb9b5fd95b4c536df22e8fbb19c2105dd56e",
+    "README.md": "6ed4216e374d296dc792c8f9eb52e4dad63e0e0b0a0abc3c93f5a54014f17a35",
+    "docs/evidence/catch2-transactional-adapter/check_consumers.py": "295399799f875801b0467dbbd3b366dd77e060b72a13d5dd77535ec94bc013b9",
+    "docs/evidence/worked-transactional-fixtures/README.md": "617a358ae003025ca74f5759ce6f77724abb72a0e22678e60b7c6b0344cab35a",
+    "docs/evidence/worked-transactional-fixtures/check_sanitizer.py": "bf95c8fc52de2a431630ef85085a2c3900f1e929751c1c48885517416b7dd8df",
+    "docs/evidence/worked-transactional-fixtures/scenarios.json": "7aa14b1a3511528adf31ac5b91165379520874450c7be7ddce6e62c537496e0b",
+    "docs/explanation/README.md": "3fe4e3cadb5258dcab4ecea88299f7f9e4dc58d5064d5bf3aa1ecb950f013c10",
+    "docs/how-to/README.md": "cece324a224cbdf14ea0eb4ed2ae23658cbcaea250cfb66efcb2ed4998b4b9b1",
+    "docs/how-to/catch2-transactional-tests.md": "8c4809d61fe7ce5bea2ea68acb9115921a49bf74ab941644eea8a6fcc61d4297",
+    "docs/how-to/testing.md": "2d5925d0154ff22abfdea4168f2feecb7a120a65bfb646e154591d6adb229db1",
+    "docs/how-to/transactional-test-scopes.md": "2aef9f854ddb16ffeaa2ee4dece5abb88e409fd744585f54c0569f3b3a2020c2",
+    "docs/how-to/worked-reference-fixtures.md": "80a07bdab61d1a10866470ae03b2af4a913e8983f9fd4b4e641ec0d95e22b624",
+    "docs/transactional-test-harness-design.md": "03678c5b0e01f4ed21cca38d298c0a8ca34d49434ca86cb7afebba460912c3a3",
+    "include/asterorm/core/session.hpp": "b272f89d037dffd432c22a0b736502756754c384a13cfe1631ce8f47d7333cc9",
+    "include/asterorm/pool/connection_pool.hpp": "c1aee2769f8b2ae6d44245bcfee95a9246627723b1d2f9b47ffc5a4b389737f2",
+    "include/asterorm/testing/catch2.hpp": "7bc1c7254339dd013d4f1476f851d5576d3c94aeff88c717609d68ec5e27dd0a",
+    "meson.build": "4482a6d9a63fe890e1878f027b7f3d37e1ed8e18f9cb352d553264813add3e7d",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    "subprojects/catch2.wrap": "6e7dfd0705e5367c1a9c22a27bdef6f7a7e40a2a68d76e35d6aa055006181a2f",
+    "tests/check_catch2_harness.py": "8ad305dc79ca56cdff17b8a2f2375ca35042c64d964a26880a2115ec9e6e1320",
+    "tests/check_reference_fixtures.py": "52b10afe3d25c92787b01b437d89b0316367fac9bd1d07779ee871f4cabb68d1",
+    "tests/integration/test_crud.cpp": "967313ab86f38b487abb6d26f9c7e440489ee3334b876e833678003acd94d3d2",
+    "tests/integration/test_pg_reference_fixture.cpp": "9a0ce387f1c1fa25b35db265215831a7d32facec106741eaf2f80b9ba5b9815c",
+    "tests/integration/test_sqlite_reference_fixture.cpp": "a17743ea29c568e059e60a5566400570c9efaf5df5c668a83c21b44f77ef6a49",
+    "tests/integration/test_sqlite_reference_probe.cpp": "7839bceef5dca0d248396866b718485db2cd0f5e3dd6ff7c1d0a12e557e8473e",
+    "tests/meson.build": "d5d0a506505d495ee45325b273e7e2839dae9961fab08780f6baa70e235020a9",
+    "tests/support/catch2_harness_fixture.hpp": "9efc07fd6e6649c7390cf436e17ca8554e37bd3dd76ee91dc82b7f02db4c473a",
+    "tests/support/catch2_harness_main.cpp": "9f3cb52b0f27da8558c276c20241188521c8098f2f7df8e3703eb8603be09550",
+    "tests/support/pg_crud_fixture.hpp": "22a018d596ea5a1bdfcd0b04a0c3cf65599b1306cab12330aad34b11ea5c3b73",
+    "tests/support/pg_integration_main.cpp": "cd97a0b3caa5c900f527cb585ee967863bf94717e26ebfb23e5deed144b7da37",
+    "tests/support/reference_fixture.hpp": "930a68ede416dfeac61a26b58aea20e6ace746e9f9230aec7a37ca227e390682",
+    "tests/support/reference_fixture_cases.hpp": "bd732f7831836e40313012af562714f4ccd89677303f4676b955a7abacc3ca36",
+    "tests/support/sqlite_crud_fixture.hpp": "767203f9e1812d032238d7c4e2ec3fde54c2dc543e5de37f5cdfefea446e21e9",
+    "tests/support/sqlite_integration_main.cpp": "66a58ac0efd612b6b74d8ead067d2489c0407f0976ab275a417690d0b83487f9"
+  },
+  "ignored_canonical_contexts_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "93f45488a93e129a1dac7bc3dde4dc2f578eda2097624e628a1ac4294a2a20c4",
+    ".agents/contexts/MESON_LAYOUT.md": "86173d2e6ed608c3dce36697414abc27295835cdd5e92aa1ff7bf5742dff233b",
+    ".agents/contexts/specs/feature-expansion/README.md": "724461a89e7099ed3c104641d9d4b03b97bda08b440efe9521bb8ee6b3f1309e",
+    ".agents/contexts/specs/feature-expansion/TESTING_MIGRATIONS_AND_OBSERVABILITY.md": "66a9922a95fcc2b3b40b0c52946a79a3da5db7e4aaa367ce7a76b21e356f599d"
+  },
+  "standards_comparison": {
+    "baseline_local_report": "/tmp/asterorm-reference-standards-baseline.json",
+    "baseline_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "final_local_report": "/tmp/asterorm-reference-standards.json",
+    "final_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "errors_warnings_infos_identical": true,
+    "note": "Same-date quiescent baseline avoids transient compiler .o.tmp findings; historical 2026-11-07 freshness-age messages differ by one day."
+  },
+  "verification": [
+    {
+      "check": "pg",
+      "command": "python3 tests/check_reference_fixtures.py --backend pg --integration buildDir/tests/pg_integration --probe buildDir/tests/pg_reference_probe --json-out /tmp/asterorm-reference-pg.json",
+      "exit_code": 0,
+      "result": {
+        "process_scenarios": 9,
+        "worked_paths": 7,
+        "preparations": 1,
+        "native_fixture_connects": 1
+      },
+      "local_log": "/tmp/asterorm-reference-pg.log",
+      "log_sha256": "c60326dd09398612738a8c68243641051556e44c535c1bdc793f63cc3fd17dce"
+    },
+    {
+      "check": "sqlite",
+      "command": "python3 tests/check_reference_fixtures.py --backend sqlite --integration buildDir/tests/sqlite_integration --probe buildDir/tests/sqlite_reference_probe --json-out /tmp/asterorm-reference-sqlite.json",
+      "exit_code": 0,
+      "result": {
+        "process_scenarios": 8,
+        "worked_paths": 4,
+        "preparations": 1,
+        "native_fixture_connects": 1
+      },
+      "local_log": "/tmp/asterorm-reference-sqlite.log",
+      "log_sha256": "0ad75da77e1ad500be9545905a6d100ff1f5af8f4a40913893ad2c4a6aa62208"
+    },
+    {
+      "check": "adapter",
+      "command": "python3 tests/check_catch2_harness.py buildDir/tests/catch2_harness",
+      "exit_code": 0,
+      "result": {
+        "process_scenarios": 43
+      },
+      "local_log": "/tmp/asterorm-reference-adapter.log",
+      "log_sha256": "59951eaa5ef38ddb09db3bf20032d99599f32b8ad7a95a049e054dd30d374144"
+    },
+    {
+      "check": "pg-focused",
+      "command": "ASTERORM_REFERENCE_RECEIPT=1 buildDir/tests/pg_integration 'PG Integration: CRUD operations'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 118,
+        "cases": 1,
+        "partial_paths": 7
+      },
+      "local_log": "/tmp/asterorm-reference-pg-focused.log",
+      "log_sha256": "c1b33aa267798be4a8669561652cd1cefcb17753f407b8018d6798efabd51b7d"
+    },
+    {
+      "check": "sqlite-focused",
+      "command": "ASTERORM_REFERENCE_RECEIPT=1 buildDir/tests/sqlite_integration 'SQLite reference fixture: CRUD paths'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 34,
+        "cases": 1,
+        "partial_paths": 4
+      },
+      "local_log": "/tmp/asterorm-reference-sqlite-focused.log",
+      "log_sha256": "6241156d85035ee5c2eb216ef5744a69e742b665bcfe1390621b176d6b4aef29"
+    },
+    {
+      "check": "tests",
+      "command": "meson test -C buildDir --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 23,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-reference-tests.log",
+      "log_sha256": "79370169f4ea3d3fd0a14eebe179081054f099d17e4a597eaabb2e4b33b696da"
+    },
+    {
+      "check": "sqlite-only",
+      "command": "meson test -C /tmp/asterorm-test-scope-sqlite.MDy3Mc --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 9,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-reference-sqlite-only.log",
+      "log_sha256": "165b94abb08686036c3e2b49cadf7be5ab71b63fb4d035a508a4f035a36d00b1"
+    },
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-reference-build.log",
+      "log_sha256": "4766de8450d9105efea89c877d5f5f7e6634bb84a212f45fe89215847dcfdb04"
+    },
+    {
+      "check": "format",
+      "command": "python3 tools/run_clang_format.py --source-root . --check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-reference-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "lint",
+      "command": "just lint",
+      "exit_code": 0,
+      "result": {
+        "distinct_translation_units": 65,
+        "existing_diagnostics_retained": true
+      },
+      "local_log": "/tmp/asterorm-reference-lint.log",
+      "log_sha256": "7615b1f246d4c6ebeb3ac0dd0ec21c6bd276506c5b6330cd3e59b068327af70a"
+    },
+    {
+      "check": "targeted-lint",
+      "command": "clang-tidy -p buildDir --extra-arg=-isysroot --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk tests/support/pg_integration_main.cpp tests/support/sqlite_integration_main.cpp tests/integration/test_crud.cpp tests/integration/test_pg_reference_fixture.cpp tests/integration/test_sqlite_reference_fixture.cpp tests/integration/test_sqlite_reference_probe.cpp tests/support/catch2_harness_main.cpp tests/integration/test_catch2_harness.cpp",
+      "exit_code": 0,
+      "result": {
+        "translation_units": 8,
+        "remaining_diagnostics": "Catch2 enum assertion flags"
+      },
+      "local_log": "/tmp/asterorm-reference-targeted-lint.log",
+      "log_sha256": "8c0208b017e43d8aaad1887ba48a3df4ec177af77d7c5d43cd59a95623d3dc7d"
+    },
+    {
+      "check": "asan",
+      "command": "python3 docs/evidence/worked-transactional-fixtures/check_sanitizer.py --build-root buildDir",
+      "exit_code": 0,
+      "result": {
+        "pg_scenarios": 9,
+        "sqlite_scenarios": 8,
+        "adapter_scenarios": 43,
+        "instrumented_compilations": 10,
+        "scope": "Selected main/worked-case/probe/adapter translation units; remaining integration objects and dependency libraries are not instrumented. Not a full-project sanitizer, leak/thread sanitizer, or cross-platform claim."
+      },
+      "local_log": "/tmp/asterorm-reference-asan.log",
+      "log_sha256": "d533aa963bf17cae63384931f51a7da770eff615b0f799a0a8411c5767e852bf"
+    },
+    {
+      "check": "consumers",
+      "command": "python3 docs/evidence/catch2-transactional-adapter/check_consumers.py --build-root buildDir",
+      "exit_code": 0,
+      "result": {
+        "clients": [
+          "CMake",
+          "shared pkg-config"
+        ],
+        "guide_paths_per_client": 4,
+        "fixture_validation_hook": true,
+        "separately_installed_catch2": true,
+        "normal_asterorm_install_tests_disabled": true
+      },
+      "local_log": "/tmp/asterorm-reference-consumers.log",
+      "log_sha256": "36d86a3237af86c90e93507ed5ab775a30c6671e313b7826990130c77bb36361"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-08 --json-out /tmp/asterorm-reference-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0,
+        "findings_unchanged_from_quiescent_baseline": true
+      },
+      "local_log": "/tmp/asterorm-reference-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "limitations": [
+    "Unsigned local evidence, not independent attestation, remote CI or release provenance.",
+    "Old repeated DDL is a source comparison, not a fresh timing baseline; no speedup claim.",
+    "Only worked cases migrate; native commit/migration/locking/streaming/multi-session and separate bulk-DML cases remain untagged.",
+    "Prior evidence remains historical; .gitignore/build outputs/credentials excluded; local logs may expire."
+  ]
+}
