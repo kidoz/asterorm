@@ -22,6 +22,25 @@ session's dialect automatically. Identifiers are quoted; values are kept in
 parameters. Empty or NUL-containing identifiers are rejected. `func()` names
 must be bare identifiers. `raw_expr()` inserts caller-owned SQL text.
 
+## INSERT-from-SELECT
+
+`insert_select_ast` contains `table`, explicit destination `columns`, and a
+`select_ast source`. `compiler::compile` validates the restricted relational
+source and emits one statement using the existing SELECT compiler and parameter
+vector. `insert_ast` remains VALUES-only. Repository `insert_select<T>` infers
+non-generated destinations; see the [mutation guide](../how-to/bulk-predicate-mutations.md)
+for projection/default rules, MySQL name guards and supported source shapes.
+
+## Assignment arithmetic
+
+`sql::add(left, right)` and `sql::multiply(left, right)` return immutable
+`arithmetic_ptr` nodes accepted by `sql::value_source`. Operands are runtime
+columns, encoded parameters or nested arithmetic. The compiler quotes columns,
+binds values and parenthesizes every operation; SELECT/predicate `expr_ast`
+remains unchanged. Literal/raw assignment construction remains supported.
+See the [mutation guide](../how-to/bulk-predicate-mutations.md) for mapping checks,
+64-level/1024-visit limits, backend evaluation/type rules and ABI notes.
+
 ## Typed SELECT
 
 Namespace: `asterorm::sql::typed`. Builder header: `sql/typed.hpp`.

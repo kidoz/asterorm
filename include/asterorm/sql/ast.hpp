@@ -247,6 +247,13 @@ struct insert_ast {
     std::vector<std::string> returning;
 };
 
+// A distinct source form prevents ambiguous VALUES/SELECT combinations.
+struct insert_select_ast {
+    std::string table;
+    std::vector<std::string> columns;
+    select_ast source;
+};
+
 struct update_ast {
     std::string table;
     std::vector<std::pair<std::string, value_source>> assignments;

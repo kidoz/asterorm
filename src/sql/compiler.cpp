@@ -75,6 +75,93 @@ bool contains_nul(std::string_view text) {
     return text.find('\0') != std::string_view::npos;
 }
 
+constexpr std::size_t max_insert_predicate_depth = 64;
+constexpr std::size_t max_insert_predicate_nodes = 1024;
+
+result<void> insert_source_column(const compiler& compiler, std::string_view name) {
+    if (name.contains('*')) {
+        return std::unexpected(invalid_sql("INSERT SELECT requires explicit column names"));
+    }
+    auto quoted = compiler.quote_qualified_ident(name);
+    if (!quoted) {
+        return std::unexpected(quoted.error());
+    }
+    return {};
+}
+
+result<void> insert_source_operand(const compiler& compiler, const expr_ast& operand) {
+    if (const auto* column = std::get_if<column_expr>(&operand)) {
+        return insert_source_column(compiler, column->name);
+    }
+    if (const auto* parameter = std::get_if<param_expr>(&operand)) {
+        if (parameter->encoded_value.error) {
+            return std::unexpected(*parameter->encoded_value.error);
+        }
+        return {};
+    }
+    return std::unexpected(
+        invalid_sql("INSERT SELECT predicates require column/parameter operands"));
+}
+
+result<void> insert_source_predicate(const compiler& compiler, const predicate_ast& predicate,
+                                     std::size_t& visited, std::size_t depth = 0) {
+    if (depth > max_insert_predicate_depth || ++visited > max_insert_predicate_nodes) {
+        return std::unexpected(invalid_sql("INSERT SELECT predicate exceeds its depth/node limit"));
+    }
+    if (const auto* comparison = std::get_if<comparison_predicate>(&predicate.val)) {
+        switch (comparison->op) {
+        case op_kind::eq:
+        case op_kind::neq:
+        case op_kind::lt:
+        case op_kind::gt:
+        case op_kind::le:
+        case op_kind::ge:
+            break;
+        default:
+            return std::unexpected(invalid_sql("Invalid INSERT SELECT comparison operator"));
+        }
+        auto left = insert_source_operand(compiler, comparison->left);
+        if (!left) {
+            return left;
+        }
+        return insert_source_operand(compiler, comparison->right);
+    }
+    if (const auto* unary = std::get_if<unary_predicate>(&predicate.val)) {
+        if (unary->op != unary_op_kind::is_null && unary->op != unary_op_kind::is_not_null) {
+            return std::unexpected(invalid_sql("Invalid INSERT SELECT NULL operator"));
+        }
+        return insert_source_operand(compiler, unary->operand);
+    }
+    const auto& binary = std::get<binary_predicate>(predicate.val);
+    if (!binary.left || !binary.right ||
+        (binary.op != op_kind::and_ && binary.op != op_kind::or_)) {
+        return std::unexpected(invalid_sql("Invalid INSERT SELECT logical predicate"));
+    }
+    auto left = insert_source_predicate(compiler, *binary.left, visited, depth + 1);
+    if (!left) {
+        return left;
+    }
+    return insert_source_predicate(compiler, *binary.right, visited, depth + 1);
+}
+
+bool same_mysql_table_name(std::string_view left, std::string_view right) {
+    left.remove_prefix(left.rfind('.') == std::string_view::npos ? 0 : left.rfind('.') + 1);
+    right.remove_prefix(right.rfind('.') == std::string_view::npos ? 0 : right.rfind('.') + 1);
+    if (left.size() != right.size()) {
+        return false;
+    }
+    auto ascii_lower = [](unsigned char character) {
+        return character >= 'A' && character <= 'Z' ? character + ('a' - 'A') : character;
+    };
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (ascii_lower(static_cast<unsigned char>(left[index])) !=
+            ascii_lower(static_cast<unsigned char>(right[index]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 asterorm::result<std::string> compiler::quote_ident(std::string_view ident) const {
@@ -474,6 +561,91 @@ asterorm::result<compiled_query> compiler::compile(const select_ast& ast) { // N
     query.sql += *locking;
 
     return query;
+}
+
+asterorm::result<compiled_query> compiler::compile(const insert_select_ast& ast) {
+    if (dialect_ != dialect::postgres && dialect_ != dialect::sqlite &&
+        dialect_ != dialect::mysql) {
+        return std::unexpected(invalid_sql("This dialect does not support INSERT SELECT"));
+    }
+    const auto& source = ast.source;
+    if (ast.columns.empty() || (!source.columns.empty() && !source.items.empty()) ||
+        (source.columns.empty() && source.items.empty()) || !source.joins.empty() ||
+        !source.group_bys.empty() || source.having_clause ||
+        source.locking.strength != select_lock_strength::none ||
+        source.locking.wait != select_lock_wait::block ||
+        (source.offset_val && !source.limit_val)) {
+        return std::unexpected(
+            invalid_sql("INSERT SELECT requires a column-only single-table source and explicit "
+                        "destinations; OFFSET requires LIMIT"));
+    }
+    const auto width = source.items.empty() ? source.columns.size() : source.items.size();
+    if (width != ast.columns.size()) {
+        return std::unexpected(invalid_sql("INSERT SELECT projection/destination arity mismatch"));
+    }
+    auto target = quote_qualified_ident(ast.table);
+    if (!target) {
+        return std::unexpected(target.error());
+    }
+    auto source_table = quote_qualified_ident(source.table);
+    if (!source_table) {
+        return std::unexpected(source_table.error());
+    }
+    if (dialect_ == dialect::mysql && same_mysql_table_name(ast.table, source.table)) {
+        return std::unexpected(
+            invalid_sql("MySQL INSERT SELECT rejects matching source/destination table names"));
+    }
+    std::string prefix = "INSERT INTO " + *target + " (";
+    for (std::size_t index = 0; index < ast.columns.size(); ++index) {
+        const auto& name = ast.columns[index];
+        if (std::find(ast.columns.begin(), ast.columns.begin() + static_cast<std::ptrdiff_t>(index),
+                      name) != ast.columns.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return std::unexpected(invalid_sql("Duplicate INSERT SELECT destination column"));
+        }
+        auto quoted = quote_ident(name);
+        if (!quoted) {
+            return std::unexpected(quoted.error());
+        }
+        if (index != 0) {
+            prefix += ", ";
+        }
+        prefix += *quoted;
+    }
+    prefix += ") ";
+    for (const auto& name : source.columns) {
+        auto valid = insert_source_column(*this, name);
+        if (!valid) {
+            return std::unexpected(valid.error());
+        }
+    }
+    for (const auto& item : source.items) {
+        if (item.fn || !item.column_name) {
+            return std::unexpected(invalid_sql("INSERT SELECT requires column-only projections"));
+        }
+        auto valid = insert_source_column(*this, *item.column_name);
+        if (!valid) {
+            return std::unexpected(valid.error());
+        }
+    }
+    for (const auto& order : source.order_bys) {
+        auto valid = insert_source_column(*this, order.column);
+        if (!valid) {
+            return std::unexpected(valid.error());
+        }
+    }
+    if (source.where_clause) {
+        std::size_t visited = 0;
+        auto valid = insert_source_predicate(*this, *source.where_clause, visited);
+        if (!valid) {
+            return std::unexpected(valid.error());
+        }
+    }
+    auto selected = compile(source);
+    if (!selected) {
+        return std::unexpected(selected.error());
+    }
+    selected->sql = prefix + selected->sql;
+    return selected;
 }
 
 asterorm::result<compiled_query> compiler::compile(const insert_ast& ast) {

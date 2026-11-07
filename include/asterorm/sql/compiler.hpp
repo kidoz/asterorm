@@ -54,6 +54,7 @@ class compiler {
 
     [[nodiscard]] asterorm::result<compiled_query> compile(const select_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const insert_ast& ast);
+    [[nodiscard]] asterorm::result<compiled_query> compile(const insert_select_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const update_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const delete_ast& ast);
     [[nodiscard]] asterorm::result<std::string>

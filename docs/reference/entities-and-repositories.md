@@ -32,6 +32,7 @@ Construct `asterorm::repository repo{db}` with an existing session.
 | `find<T>(key)` | `T` | Fetches one row; missing row is `query_failed` |
 | `update(entity)` | `void` | Updates by primary key; mutable overload refreshes fields |
 | `update_where<T>(predicate, assignments)` | `size_t` | One predicate update; zero matches succeeds |
+| `insert_select<T>(select_ast)` | `size_t` | One INSERT-from-SELECT; inferred non-generated destinations, no refresh |
 | `delete_where<T>(predicate)` | `size_t` | One predicate delete; zero matches succeeds |
 | `erase<T>(key)` | `void` | Deletes by primary key; zero affected rows is an error |
 | `patch(entity, changed_columns)` | `void` | Updates named mapped fields; does not refresh the entity |

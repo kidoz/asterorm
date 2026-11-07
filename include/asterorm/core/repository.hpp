@@ -1313,6 +1313,30 @@ template <typename Session> class repository {
         }
     }
 
+    template <typename T> asterorm::result<std::size_t> insert_select(sql::select_ast source) {
+        if constexpr (!detail::supports_bulk_predicate_dml<Session>()) {
+            return std::unexpected(detail::bulk_mutation_error(
+                "INSERT SELECT requires an explicit supported relational capability",
+                db_error_kind::query_failed));
+        } else {
+            sql::insert_select_ast mutation;
+            mutation.table = entity_traits<T>::table;
+            std::apply(
+                [&](const auto&... column) {
+                    (
+                        [&] {
+                            if (column.gen == generated::none) {
+                                mutation.columns.emplace_back(column.name);
+                            }
+                        }(),
+                        ...);
+                },
+                entity_traits<T>::columns);
+            mutation.source = std::move(source);
+            return execute_bulk_mutation(mutation);
+        }
+    }
+
     template <typename T> asterorm::result<void> update(T& entity) {
         if constexpr (detail::has_version_column<T>::value) {
             return update_versioned(entity);

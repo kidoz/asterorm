@@ -6,6 +6,9 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Repository `insert_select` and dedicated INSERT-from-SELECT AST/compiler support,
+  with generated/default destination inference, source-shape checks and observed execution.
+
 - Structured assignment arithmetic through `sql::add` and `sql::multiply`, with
   bound values, nested parentheses, mapped-operand validation, and traversal limits.
 

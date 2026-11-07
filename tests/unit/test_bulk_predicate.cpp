@@ -29,6 +29,14 @@ template <> struct asterorm::entity_traits<bulk_unit_row> {
 };
 struct bulk_versioned_row : bulk_unit_row {};
 struct bulk_keyless_row : bulk_unit_row {};
+struct insert_generated_row {
+    int id{};
+};
+template <> struct asterorm::entity_traits<insert_generated_row> {
+    static constexpr const char* table = "generated_only";
+    static constexpr auto columns = std::make_tuple(
+        asterorm::column<&insert_generated_row::id>("id", asterorm::generated::by_default));
+};
 template <> struct asterorm::entity_traits<bulk_keyless_row> {
     static constexpr const char* table = "bulk_rows";
     static constexpr auto columns = asterorm::entity_traits<bulk_unit_row>::columns;
@@ -95,6 +103,87 @@ auto matching_rows() {
     return sql::col("tenant") == sql::val(7);
 }
 } // namespace
+
+TEST_CASE("Repository INSERT SELECT infers writable columns and uses one observed execution",
+          "[core][bulk-dml][insert-select]") {
+    auto source = [] {
+        return sql::select({"tenant", "id", "price", "active", "note"})
+            .from("input_rows")
+            .where(sql::col("active") == sql::val(true))
+            .build();
+    };
+    bulk_session session;
+    asterorm::repository repo{session};
+    REQUIRE(repo.insert_select<bulk_unit_row>(source()) == 2);
+    REQUIRE(session.acquisitions == 1);
+    REQUIRE(session.events == 1);
+    REQUIRE(
+        session.statement ==
+        R"(INSERT INTO "bulk_rows" ("tenant", "id", "price", "active", "note") SELECT "tenant", "id", "price", "active", "note" FROM "input_rows" WHERE "active" = $1)");
+    REQUIRE(session.params.size() == 1);
+    REQUIRE(session.params[0].type == asterorm::parameter_type::boolean);
+    REQUIRE(repo.insert_select<bulk_versioned_row>(source()) == 2);
+    session.count = 0;
+    REQUIRE(repo.insert_select<bulk_unit_row>(source()) == 0);
+    session.failure = asterorm::db_error{
+        .kind = asterorm::db_error_kind::constraint_violation,
+        .sqlstate = "23505",
+        .message = "duplicate identity",
+    };
+    auto failed = repo.insert_select<bulk_unit_row>(source());
+    REQUIRE_FALSE(failed.has_value());
+    REQUIRE(failed.error().sqlstate == "23505");
+    session.failure.reset();
+    session.throw_observer = true;
+    REQUIRE_THROWS_WITH(repo.insert_select<bulk_unit_row>(source()), "observer identity");
+    REQUIRE(session.events == 5);
+    bulk_session<sql::dialect::mysql> mysql;
+    asterorm::repository mysql_repo{mysql};
+    REQUIRE(mysql_repo.insert_select<bulk_unit_row>(source()) == 2);
+    REQUIRE(mysql.statement.starts_with(
+        "INSERT INTO `bulk_rows` (`tenant`, `id`, `price`, `active`, `note`) SELECT"));
+    auto self = source();
+    self.table = "db.BULK_ROWS";
+    auto rejected_self = mysql_repo.insert_select<bulk_unit_row>(std::move(self));
+    REQUIRE_FALSE(rejected_self.has_value());
+    REQUIRE(mysql.acquisitions == 1);
+}
+
+TEST_CASE(
+    "Repository INSERT SELECT rejects local errors and unsupported capabilities before leasing",
+    "[core][bulk-dml][insert-select]") {
+    bulk_session session;
+    asterorm::repository repo{session};
+    REQUIRE_FALSE(
+        repo.insert_select<bulk_unit_row>(sql::select({"*"}).from("input").build()).has_value());
+    REQUIRE_FALSE(
+        repo.insert_select<bulk_unit_row>(sql::select({"id"}).from("input").build()).has_value());
+    REQUIRE_FALSE(
+        repo.insert_select<insert_generated_row>(sql::select({"id"}).from("input").build())
+            .has_value());
+    auto malformed = sql::select({"tenant", "id", "price", "active", "note"}).from("input").build();
+    malformed.where_clause = sql::predicate_ast{
+        sql::binary_predicate{
+            .op = sql::op_kind::and_,
+            .left = nullptr,
+            .right = nullptr,
+        },
+    };
+    auto rejected_shape = repo.insert_select<bulk_unit_row>(std::move(malformed));
+    REQUIRE_FALSE(rejected_shape.has_value());
+    REQUIRE(session.acquisitions == 0);
+    REQUIRE(session.events == 0);
+    legacy_bulk_session legacy;
+    asterorm::repository legacy_repo{legacy};
+    REQUIRE_FALSE(
+        legacy_repo.insert_select<bulk_unit_row>(sql::select({"id"}).from("input").build())
+            .has_value());
+    bulk_session<sql::dialect::clickhouse> clickhouse;
+    asterorm::repository ch_repo{clickhouse};
+    REQUIRE_FALSE(ch_repo.insert_select<bulk_unit_row>(sql::select({"id"}).from("input").build())
+                      .has_value());
+    REQUIRE(clickhouse.acquisitions == 0);
+}
 
 TEST_CASE("Bulk arithmetic validates every mapped operand before acquisition",
           "[core][bulk-dml][arithmetic]") {

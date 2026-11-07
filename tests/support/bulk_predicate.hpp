@@ -4,6 +4,7 @@
 
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed.hpp"
+#include "insert_select.hpp"
 
 struct bulk_live_row {
     int tenant{};
@@ -229,5 +230,6 @@ template <typename Driver> void check_bulk_predicate(Driver driver, std::string 
     });
     REQUIRE(persisted.has_value());
     REQUIRE(persisted->get_string(0, 0) == "1");
+    check_insert_select(db);
 }
 } // namespace asterorm::test

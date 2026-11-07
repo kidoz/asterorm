@@ -2,7 +2,9 @@
 
 Reviewed on 2026-11-07. **Partially implemented:** checked 64-bit affected-row
 transport, literal `update_where`, and `delete_where` are implemented under the
-bounded contract below. Structured arithmetic and `insert_select` remain planned.
+bounded contract below. Structured assignment arithmetic is also implemented;
+`insert_select` is implemented with the source-shape and destination limits below;
+combined feature acceptance remains pending.
 See the [mutation guide](how-to/bulk-predicate-mutations.md) and implementation
 verification below. This does not establish acceptance of the whole feature or
 release readiness.
@@ -142,21 +144,32 @@ PostgreSQL-compatible dialect fallback alone does not prove mutation support.
 
 ## Bound arithmetic and INSERT-from-SELECT
 
-After the first slice, add structured arithmetic assignment values for at least
-addition and multiplication. A bulk price update must be representable with a
-quoted mapped column and bound adjustment, for example `price = price * $1`.
-Extend the existing expression/value AST and compiler; do not concatenate user
-values into `raw_expr`. Preserve existing literal/raw construction and test
-placeholder order, parenthesization, null behavior, and type/SQL errors. Native
-SQL remains an explicit escape hatch while this helper is unimplemented.
+Structured assignment arithmetic is implemented as `arithmetic_operand`,
+`arithmetic_expr` and immutable `arithmetic_ptr` nodes in `value_source`.
+`sql::add` / `sql::multiply` accept mapped runtime column leaves, encoded values,
+or nested arithmetic. The compiler quotes identifiers, binds every value, and
+parenthesizes every operation. `expr_ast` and the SELECT/predicate DSL are unchanged.
+Literal/raw assignments retain their existing construction. Rebuild consumers
+and update exhaustive `value_source` visitors for its new alternative.
 
-The proposed INSERT entry point is `insert_select<T>(sql::select_ast source)`
-returning `result<size_t>`. Introduce a dedicated `insert_select_ast` with target
+Repository arithmetic validates all referenced columns and encoded errors before
+leasing. Primary/generated source columns can be read; destination protections
+remain in force. Null pointers, invalid operators, depth beyond 64 operations,
+and more than 1024 operand/node visits per expression reject. Shared subtree
+visits count separately, bounding malformed cycles and exponential DAG expansion.
+No raw/function operands or automatic casts are introduced. SQL types, nullable
+arithmetic, overflow and coercion remain backend responsibilities. Cross-target
+assignment reads retain native SET evaluation order; the
+[guide](how-to/bulk-predicate-mutations.md) documents the PostgreSQL/SQLite versus
+MySQL difference and portable single-target usage.
+
+The implemented INSERT entry point is `insert_select<T>(sql::select_ast source)`
+returning `result<size_t>`. The dedicated `insert_select_ast` carries target
 table, destination columns, and SELECT source. Keeping `insert_ast` rows-only
 avoids ambiguous simultaneous VALUES/SELECT states. The compiler owns the prefix
 and source rendering, retaining one parameter vector and statement.
 
-For its first implementation:
+Its first implementation enforces:
 
 - Infer destination columns from `entity_traits<T>::columns` in mapping order,
   excluding `generated::always` and `generated::by_default`. Non-generated keys
@@ -170,8 +183,10 @@ For its first implementation:
 - Source and destination may be different entity tables. Runtime AST arity is
   checked locally; SQL type compatibility, constraints, defaults, and source
   schema existence remain server responsibilities. No DTO hydration is involved.
-- Reject a MySQL source referring to its destination table before acquisition
-  in the portable v1 surface; do not rely on vendor materialization behavior.
+- On MySQL, reject matching final source/destination table-name components
+  (ASCII case-insensitive), even across different schema prefixes. This is a
+  conservative syntactic guard; it does not resolve views, server aliases or
+  Unicode normalization, and does not issue catalog queries before insertion.
   This is a deliberate API limit, not a claim that every such native query fails.
 - Execute once on the same session path and return a checked count. No readback,
   client-side row transfer, implicit commit, or automatic retry. A versioned
@@ -193,9 +208,8 @@ typed source alone does not establish compatible target fields.
 | Timeout/capability integration | PostgreSQL delayed UPDATE/DELETE/INSERT-from-SELECT under pool/scoped timeout: SQLSTATE 57014 and explicit rollback recovery; disabled/custom/ClickHouse rejection before leasing, plus unchanged ordinary queries |
 | Combined acceptance | Updated README inventory, guides that compile, backend limits and public count/AST ABI notes; fresh unit/integration, normal build, format and lint checks, with separate standards findings |
 
-**Next implementation:** structured bound arithmetic assignment values (addition
-and multiplication), followed by INSERT-from-SELECT. Checked counts and literal
-UPDATE/DELETE are implemented; the feature remains partial until the required
+**Next step:** combined bulk predicate DML acceptance review. Checked counts, literal
+UPDATE/DELETE, structured assignment arithmetic and INSERT-from-SELECT are implemented; the feature remains partial until the required
 remaining APIs and combined acceptance checks close.
 
 ## Historical verification for the initial inventory
@@ -274,5 +288,95 @@ Fresh verification for this slice:
 These are local commands, not remote CI or release validation. Large native
 mutation counts are checked with synthetic parser/result boundaries, not billions
 of live rows. Earlier native captures remain historical; the executable API tests
-establish this slice's behavior. Structured arithmetic and INSERT-from-SELECT
-remain unimplemented.
+establish that slice's behavior. The later arithmetic follow-up below supersedes
+its remaining-work status; INSERT-from-SELECT remains unimplemented.
+
+## Implementation follow-up: structured arithmetic (2026-11-07)
+
+Compiler/no-server tests cover addition and multiplication, both nesting orders,
+three dialects, stable parameter ordering, quoted hostile identifiers, owned
+values, binding of SQL-looking input, malformed/null nodes, codec errors, depth
+and node-budget boundaries, cycles and shared subtrees. Repository tests verify
+mapped-operand validation before acquisition and retained primary/generated-target
+protections. Existing literal/raw, typed SELECT and predicate paths remain covered.
+
+The shared live fixture applies a bulk price adjustment to two rows while leaving
+an unrelated row unchanged, reads a generated source column, propagates nullable
+arithmetic, verifies native cross-assignment evaluation, reports NOT NULL errors,
+and restores values by caller rollback on PostgreSQL, SQLite and MySQL. PostgreSQL
+also checks invalid numeric text (`22P02`) and arithmetic UPDATE under pool/scoped
+timeouts (`57014`) with rollback and physical connection reuse. The guide checker
+now compiles both literal and arithmetic examples.
+
+Fresh verification:
+
+- `just test`: `Ok: 14`, `Fail: 0`, including both guide snippets, all three live
+  relational backends, and existing typed/compiler/migration tests.
+- `meson compile -C buildDir` and `just format-check`: exit 0.
+- `just lint`: exit 0 over 50 translation units. New test diagnostics were fixed;
+  final targeted lint of `test_ast.cpp` and `test_statement_timeout.cpp` exited 0,
+  with the remaining AST diagnostic on an unchanged pre-existing upsert fixture.
+- After those test-style fixes, `meson test -C buildDir 'core unit tests'
+  'pg integration' --print-errorlogs`: `Ok: 2`, `Fail: 0`.
+- A fresh temporary-prefix build/install and CMake/shared pkg-config consumers
+  compile and execute nested arithmetic (`(1 + 2) * 3 = 9`) followed by predicate
+  deletion: exit 0. This checks the new variant alternative across the installed
+  header/library boundary; it does not establish other platforms or static linking.
+- Strict standards validation (`--mode strict-governance --workspace --today
+  2026-11-07`): exit 1 with the existing 53 errors and 12 warnings; no findings
+  on the three edited canonical contexts.
+
+INSERT-from-SELECT and combined feature acceptance are next; no full-feature,
+remote-CI or release result is claimed. Original inventory captures remain unchanged.
+
+## Implementation follow-up: INSERT-from-SELECT (2026-11-07)
+
+`repository::insert_select<T>(select_ast)` now infers destinations in mapping
+order, excluding both generated categories, then uses the same single observed
+execution/count path as the other bulk mutations. A separate `insert_select_ast`
+keeps VALUES and SELECT sources disjoint. Compiler validation precedes acquisition
+for both the repository and direct AST use; the source then lowers through the
+existing SELECT compiler, preserving its parameter vector.
+
+The source is one table with explicit matching-width column projections, optional
+aliases, portable pagination, and column/parameter predicates. Functions, joins,
+GROUP BY/HAVING, locking, wildcards, mixed projection lists, invalid operators/
+children and stored codec errors reject locally. Predicates are bounded at depth
+64 and 1024 nodes. Server schema/type resolution remains server-owned. Versioned
+targets can project their non-generated version column without optimistic checks.
+MySQL's conservative ASCII basename guard is documented in the guide; it is not
+live-schema object-identity validation. Existing ordinary SELECT/VALUES behavior
+and the `insert_ast` layout remain unchanged.
+
+No-server tests cover three-dialect SQL/parameter parity, alias/identifier quoting,
+source shape, depth/node boundaries, generated-only targets, version fields,
+capability admission and error/observer paths. The shared native fixture copies
+nullable/text data with aliases and pagination, verifies generated identity/default/
+computed values, zero-row sources, local arity rejection, duplicate errors,
+rollback, typed source lowering, commit and observer exceptions after autocommit.
+PostgreSQL timeout coverage now includes INSERT-from-SELECT as well as arithmetic
+UPDATE and DELETE under pool/scoped limits, explicit rollback, and physical reuse.
+
+Fresh verification:
+
+- `just test`: `Ok: 14`, `Fail: 0`, including all three guide examples, typed compile
+  checks, existing APIs, and PostgreSQL/SQLite/MySQL integration cases.
+- `meson compile -C buildDir` and `just format-check`: exit 0.
+- `just lint`: exit 0 across 50 translation units. New test-style diagnostics
+  were corrected; final targeted lint on the edited unit/timeout sources and
+  final core-unit lint exited 0. Remaining diagnostics concern unchanged fixtures.
+- After those test-only fixes, core/PG integration selection printed `Ok: 2`,
+  `Fail: 0`; the final focused INSERT SELECT core selection printed `Ok: 1`,
+  `Fail: 0`. Actual disabled ClickHouse header/API instantiation syntax-checks
+  without its client library or server.
+- Fresh temporary-prefix build/install plus CMake and shared pkg-config consumers:
+  compile/run exit 0. The consumer executes arithmetic, copies with INSERT SELECT,
+  and verifies the copied value through predicate deletion across the installed
+  header/library boundary. Other platforms/static linking are not claimed.
+- Strict standards validation (`--mode strict-governance --workspace --today
+  2026-11-07`): exit 1 with 53 existing errors and 12 warnings, no findings on the
+  three edited canonical contexts.
+
+The next task is combined bulk predicate DML acceptance; this implementation
+slice does not claim that review or remote CI/release validation is complete.
+Earlier captures remain historical.

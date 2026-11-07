@@ -37,19 +37,28 @@ asterorm::pool_config pg_timeout_config() {
 struct bulk_timeout_row {
     int id{};
     bool active{true};
+    int price{1};
 };
 template <> struct asterorm::entity_traits<bulk_timeout_row> {
     static constexpr const char* table = "bulk_timeout_rows";
     static constexpr auto primary_key = asterorm::pk<&bulk_timeout_row::id>("id");
     static constexpr auto columns =
         std::make_tuple(asterorm::column<&bulk_timeout_row::id>("id"),
-                        asterorm::column<&bulk_timeout_row::active>("active"));
+                        asterorm::column<&bulk_timeout_row::active>("active"),
+                        asterorm::column<&bulk_timeout_row::price>("price"));
+};
+
+struct bulk_timeout_archive_row : bulk_timeout_row {};
+template <>
+struct asterorm::entity_traits<bulk_timeout_archive_row>
+    : asterorm::entity_traits<bulk_timeout_row> {
+    static constexpr const char* table = "bulk_timeout_archive";
 };
 
 TEST_CASE("PG Integration: bulk predicate mutations honor pool and scoped timeouts",
           "[pg][bulk-dml][statement-timeout]") {
     const bool scoped = GENERATE(false, true);
-    const bool deleting = GENERATE(false, true);
+    const int operation = GENERATE(0, 1, 2);
     auto config = pg_timeout_config();
     config.statement_timeout = milliseconds{scoped ? 1000 : 100};
     asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, config};
@@ -58,13 +67,17 @@ TEST_CASE("PG Integration: bulk predicate mutations honor pool and scoped timeou
     timeout_take(db.with_connection([](auto& connection) -> asterorm::result<void> {
         for (const auto* statement : {
                  "CREATE TEMPORARY TABLE bulk_timeout_rows (id INTEGER PRIMARY KEY, active BOOLEAN "
-                 "NOT NULL)",
-                 "INSERT INTO bulk_timeout_rows VALUES (1,TRUE)",
+                 "NOT NULL, price INTEGER NOT NULL)",
+                 "CREATE TEMPORARY TABLE bulk_timeout_archive (id INTEGER PRIMARY KEY, active "
+                 "BOOLEAN NOT NULL, price INTEGER NOT NULL)",
+                 "INSERT INTO bulk_timeout_rows VALUES (1,TRUE,1)",
                  "CREATE FUNCTION pg_temp.bulk_timeout_delay() RETURNS trigger LANGUAGE plpgsql AS "
                  "$$ BEGIN PERFORM pg_sleep(0.3); IF TG_OP='DELETE' THEN RETURN OLD; END IF; "
                  "RETURN NEW; END $$",
                  "CREATE TRIGGER bulk_timeout_delay BEFORE UPDATE OR DELETE ON bulk_timeout_rows "
                  "FOR EACH ROW EXECUTE FUNCTION pg_temp.bulk_timeout_delay()",
+                 "CREATE TRIGGER bulk_archive_delay BEFORE INSERT ON bulk_timeout_archive FOR EACH "
+                 "ROW EXECUTE FUNCTION pg_temp.bulk_timeout_delay()",
              }) {
             auto executed = connection.execute(statement);
             if (!executed) {
@@ -87,11 +100,27 @@ TEST_CASE("PG Integration: bulk predicate mutations honor pool and scoped timeou
     });
     auto transaction = timeout_take(db.begin());
     auto cancel_and_rollback = [&](auto&) -> asterorm::result<void> {
-        auto cancelled = deleting ? repo.delete_where<bulk_timeout_row>(asterorm::sql::col("id") ==
-                                                                        asterorm::sql::val(1))
-                                  : repo.update_where<bulk_timeout_row>(
-                                        asterorm::sql::col("id") == asterorm::sql::val(1),
-                                        {{"active", asterorm::sql::val(false)}});
+        auto cancelled = [&] {
+            if (operation == 2) {
+                return repo.insert_select<bulk_timeout_archive_row>(
+                    asterorm::sql::select({"id", "active", "price"})
+                        .from("bulk_timeout_rows")
+                        .where(asterorm::sql::col("id") == asterorm::sql::val(1))
+                        .build());
+            }
+            if (operation == 1) {
+                return repo.delete_where<bulk_timeout_row>(asterorm::sql::col("id") ==
+                                                           asterorm::sql::val(1));
+            }
+            return repo.update_where<bulk_timeout_row>(
+                asterorm::sql::col("id") == asterorm::sql::val(1),
+                {
+                    {
+                        "price",
+                        asterorm::sql::multiply(asterorm::sql::col("price"), asterorm::sql::val(2)),
+                    },
+                });
+        }();
         REQUIRE_FALSE(cancelled.has_value());
         REQUIRE(cancelled.error().sqlstate == "57014");
         REQUIRE(cancelled.error().kind == asterorm::db_error_kind::query_failed);
@@ -105,11 +134,15 @@ TEST_CASE("PG Integration: bulk predicate mutations honor pool and scoped timeou
     REQUIRE(events == 1);
     REQUIRE(errors == 1);
     auto restored = timeout_take(db.with_connection([](auto& connection) {
-        return connection.execute(
-            "SELECT pg_backend_pid(),COUNT(*) FROM bulk_timeout_rows WHERE active=TRUE");
+        return connection.execute("SELECT pg_backend_pid(),COUNT(*) FROM bulk_timeout_rows WHERE "
+                                  "active=TRUE AND price=1");
     }));
     REQUIRE(restored.get_int64(0, 0) == original_pid);
     REQUIRE(restored.get_int64(0, 1) == 1);
+    auto empty_archive = timeout_take(db.with_connection([](auto& connection) {
+        return connection.execute("SELECT COUNT(*) FROM bulk_timeout_archive");
+    }));
+    REQUIRE(empty_archive.get_int64(0, 0) == 0);
     timeout_take(db.with_connection([](auto& connection) {
         return connection.execute("DROP TRIGGER bulk_timeout_delay ON bulk_timeout_rows");
     }));

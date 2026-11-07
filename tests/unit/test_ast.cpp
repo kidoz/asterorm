@@ -7,6 +7,193 @@
 
 using namespace asterorm::sql;
 
+TEST_CASE("INSERT SELECT reuses source compilation and ordered parameters",
+          "[core][sql][insert-select]") {
+    for (auto target : {dialect::postgres, dialect::sqlite, dialect::mysql}) {
+        insert_select_ast mutation;
+        mutation.table = "archive";
+        mutation.columns = {"source_id", "label"};
+        mutation.source = select({"s.id", "s.name"})
+                              .from("source")
+                              .where(col("s.active") == val(true) && is_not_null(col("s.name")))
+                              .order_by("s.id")
+                              .limit(2)
+                              .offset(1)
+                              .build();
+        mutation.source.table_alias = "s";
+        compiler compiler{target};
+        auto compiled = compiler.compile(mutation);
+        REQUIRE(compiled.has_value());
+        REQUIRE(compiled->params.size() == 1);
+        REQUIRE(compiled->params[0].type == asterorm::parameter_type::boolean);
+        if (target == dialect::mysql) {
+            REQUIRE(compiled->sql ==
+                    "INSERT INTO `archive` (`source_id`, `label`) SELECT `s`.`id`, `s`.`name` FROM "
+                    "`source` AS `s` WHERE (`s`.`active` = ? AND `s`.`name` IS NOT NULL) ORDER BY "
+                    "`s`.`id` ASC LIMIT 2 OFFSET 1");
+        } else {
+            REQUIRE(
+                compiled->sql ==
+                R"(INSERT INTO "archive" ("source_id", "label") SELECT "s"."id", "s"."name" FROM "source" AS "s" WHERE ("s"."active" = $1 AND "s"."name" IS NOT NULL) ORDER BY "s"."id" ASC LIMIT 2 OFFSET 1)");
+        }
+    }
+    insert_select_ast aliased;
+    aliased.table = "odd\"table";
+    aliased.columns = {"literal.dot"};
+    aliased.source.table = "source";
+    aliased.source.items = {
+        {
+            .column_name = "value",
+            .fn = nullptr,
+            .alias = "renamed",
+        },
+    };
+    auto compiled = compiler{}.compile(aliased);
+    REQUIRE(compiled.has_value());
+    REQUIRE(
+        compiled->sql ==
+        R"(INSERT INTO "odd""table" ("literal.dot") SELECT "value" AS "renamed" FROM "source")");
+}
+
+TEST_CASE("INSERT SELECT rejects invalid shape without weakening ordinary SELECT",
+          "[core][sql][insert-select]") {
+    auto valid = [] {
+        insert_select_ast mutation;
+        mutation.table = "archive";
+        mutation.columns = {"id"};
+        mutation.source = select({"id"}).from("source").build();
+        return mutation;
+    };
+    std::vector<insert_select_ast> invalid;
+    auto append = [&](auto change) {
+        auto mutation = valid();
+        change(mutation);
+        invalid.push_back(std::move(mutation));
+    };
+    append([](auto& mutation) { mutation.columns.clear(); });
+    append([](auto& mutation) {
+        mutation.columns = {"id", "id"};
+        mutation.source.columns = {"id", "id"};
+    });
+    append([](auto& mutation) { mutation.columns = {""}; });
+    append([](auto& mutation) { mutation.columns = {std::string{"i\0d", 3}}; });
+    append([](auto& mutation) { mutation.source.columns.clear(); });
+    append([](auto& mutation) { mutation.source.columns = {"id", "name"}; });
+    append([](auto& mutation) { mutation.source.columns = {"*"}; });
+    append([](auto& mutation) { mutation.source.columns = {"source.*"}; });
+    append([](auto& mutation) {
+        mutation.source.items = {
+            {
+                .column_name = "id",
+                .fn = nullptr,
+                .alias = std::nullopt,
+            },
+        };
+    });
+    append([](auto& mutation) {
+        mutation.source.columns.clear();
+        mutation.source.items = {
+            {
+                .column_name = std::nullopt,
+                .fn = nullptr,
+                .alias = std::nullopt,
+            },
+        };
+    });
+    append([](auto& mutation) {
+        mutation.source.columns.clear();
+        mutation.source.items = {
+            {
+                .column_name = std::nullopt,
+                .fn = count_all(),
+                .alias = std::nullopt,
+            },
+        };
+    });
+    append([](auto& mutation) { mutation.source.offset_val = 1; });
+    append([](auto& mutation) { mutation.source.locking.strength = select_lock_strength::update; });
+    append([](auto& mutation) { mutation.source.locking.wait = select_lock_wait::nowait; });
+    append([](auto& mutation) { mutation.source.group_bys = {"id"}; });
+    append([](auto& mutation) { mutation.source.having_clause = col("id") == val(1); });
+    append([](auto& mutation) { mutation.source.joins.push_back(join_ast{}); });
+    append([](auto& mutation) {
+        mutation.source.where_clause = predicate_ast{
+            binary_predicate{
+                .op = op_kind::and_,
+                .left = nullptr,
+                .right = nullptr,
+            },
+        };
+    });
+    append([](auto& mutation) {
+        mutation.source.where_clause = predicate_ast{
+            comparison_predicate{
+                .op = op_kind::and_,
+                .left = col("id"),
+                .right = val(1),
+            },
+        };
+    });
+    append([](auto& mutation) {
+        mutation.source.where_clause = predicate_ast{
+            comparison_predicate{
+                .op = op_kind::eq,
+                .left = std::shared_ptr<func_expr>{},
+                .right = val(1),
+            },
+        };
+    });
+    append([](auto& mutation) { mutation.source.table = ".invalid"; });
+    append([](auto& mutation) { mutation.source.table_alias = ""; });
+    append([](auto& mutation) {
+        mutation.source.order_bys = {
+            {
+                .column = "*",
+                .ascending = true,
+            },
+        };
+    });
+    for (const auto& mutation : invalid) {
+        auto rejected = compiler{}.compile(mutation);
+        REQUIRE_FALSE(rejected.has_value());
+        REQUIRE(rejected.error().kind == asterorm::db_error_kind::parse_failed);
+    }
+    auto mutation = valid();
+    REQUIRE_FALSE(compiler{dialect::clickhouse}.compile(mutation).has_value());
+    mutation.source.table = "other.ARCHIVE";
+    REQUIRE_FALSE(compiler{dialect::mysql}.compile(mutation).has_value());
+    REQUIRE(compiler{dialect::postgres}.compile(mutation).has_value());
+    asterorm::query_parameter encoded;
+    encoded.error = asterorm::db_error{
+        .kind = asterorm::db_error_kind::parse_failed,
+        .message = "source codec identity",
+    };
+    mutation.source.where_clause = col("id") == expr_ast{param_expr{encoded}};
+    auto failed = compiler{}.compile(mutation);
+    REQUIRE_FALSE(failed.has_value());
+    REQUIRE(failed.error().message == "source codec identity");
+    auto ordinary = select({"*"}).from("source").build();
+    REQUIRE(compiler{}.compile(ordinary).has_value());
+    auto depth_limited = valid();
+    predicate_ast deep = col("id") == val(1);
+    for (int depth = 0; depth < 65; ++depth) {
+        deep = std::move(deep) && (col("id") == val(1));
+    }
+    depth_limited.source.where_clause = std::move(deep);
+    REQUIRE_FALSE(compiler{}.compile(depth_limited).has_value());
+    auto tree = [](auto&& self, int levels) -> predicate_ast {
+        if (levels == 0) {
+            return col("id") == val(1);
+        }
+        return self(self, levels - 1) || self(self, levels - 1);
+    };
+    auto width_limited = valid();
+    width_limited.source.where_clause = tree(tree, 9);
+    REQUIRE(compiler{}.compile(width_limited).has_value());
+    width_limited.source.where_clause = tree(tree, 10);
+    REQUIRE_FALSE(compiler{}.compile(width_limited).has_value());
+}
+
 TEST_CASE("Assignment arithmetic quotes columns, binds values, and preserves nesting",
           "[core][sql][arithmetic]") {
     STATIC_REQUIRE(std::is_const_v<arithmetic_ptr::element_type>);

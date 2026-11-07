@@ -32,8 +32,9 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - Plain struct entities with explicit column, generated-value, composite-key,
   version, and relationship mappings.
 - CRUD, patches, bulk inserts, upserts, and optional optimistic locking.
-- [Predicate UPDATE/DELETE](docs/how-to/bulk-predicate-mutations.md) with checked
-  affected-row counts and pre-lease validation on PostgreSQL, SQLite, and MySQL.
+- [Predicate UPDATE/DELETE and INSERT-from-SELECT](docs/how-to/bulk-predicate-mutations.md) with checked
+  affected-row counts, bound addition/multiplication, and pre-lease validation on
+  PostgreSQL, SQLite, and MySQL.
 - Typed SELECT filters, ordering, pagination, grouping, aggregates, and inferred
   tuple or named DTO projections.
 - Runtime SQL builders and native SQL with entity, scalar, or custom row mapping.

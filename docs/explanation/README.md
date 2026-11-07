@@ -12,8 +12,8 @@ The [local locking/timeout review](../locking-timeout-acceptance.md) records acc
 scope, current evidence, and release boundaries.
 
 The [bulk predicate DML contract](../bulk-predicate-dml-design.md) records the
-implemented predicate UPDATE/DELETE slice and its limits. Structured bound
-arithmetic and INSERT-from-SELECT remain planned.
+implemented predicate UPDATE/DELETE, arithmetic and INSERT-from-SELECT slices
+and their limits. Combined feature acceptance remains pending.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

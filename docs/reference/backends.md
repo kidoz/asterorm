@@ -17,6 +17,7 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Client | libpq | sqlite3 | mysqlclient or bundled Connector/C | clickhouse-cpp |
 | Value binding | Native parameters | Native parameters | Native prepared statements | Interpolated literals |
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
+| INSERT-from-SELECT | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
 | Predicate UPDATE/DELETE | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
 | Bulk insert | Yes, no entity refresh | Yes, no entity refresh | Yes, no entity refresh | Experimental |
 | Bulk upsert with refresh | Yes | Yes | Rejected | Experimental |
