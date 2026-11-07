@@ -58,6 +58,8 @@ and limitations. The [locking and timeout review](docs/locking-timeout-acceptanc
 records the accepted v1 scope and local checks.
 The [bulk predicate DML review](docs/bulk-predicate-dml-acceptance.md) records its
 accepted v1 limits and fresh three-backend verification.
+The [streaming inventory and contract](docs/streaming-design.md) records the planned
+reader API, native feasibility probes, and session ownership work still required.
 
 ## Backends
 

@@ -16,6 +16,10 @@ implemented predicate UPDATE/DELETE, arithmetic and INSERT-from-SELECT slices
 and their limits. The [local acceptance review](../bulk-predicate-dml-acceptance.md)
 maps the revised v1 requirements to current code and fresh verification.
 
+The [streaming inventory and contract](../streaming-design.md) defines the proposed
+reader/error interface, connection ownership, cancellation limits and memory checks.
+Streaming remains unimplemented.
+
 For executable lessons, start with [tutorials](../tutorials/README.md).
 
 [Documentation home](../README.md)
