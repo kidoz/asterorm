@@ -4,6 +4,7 @@ core_tests = executable(
     'unit/test_core.cpp',
     'unit/test_mysql_dialect.cpp',
     'unit/test_pool.cpp',
+    'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
     'unit/test_codecs.cpp',

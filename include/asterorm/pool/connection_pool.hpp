@@ -13,6 +13,7 @@
 
 #include "asterorm/core/error.hpp"
 #include "asterorm/core/result.hpp"
+#include "asterorm/core/statement_timeout.hpp"
 
 namespace asterorm {
 
@@ -22,6 +23,7 @@ struct pool_config {
     std::chrono::milliseconds acquire_timeout{5000};
     size_t prepared_statement_cache_size{128};
     std::string conninfo;
+    std::optional<std::chrono::milliseconds> statement_timeout{};
 };
 
 struct pool_stats {
@@ -43,6 +45,56 @@ struct has_prepared_cache_limit<
 template <typename Conn> void configure_connection(Conn& conn, const pool_config& config) {
     if constexpr (has_prepared_cache_limit<Conn>::value) {
         conn.set_max_prepared_statements(config.prepared_statement_cache_size);
+    }
+}
+template <typename Conn> asterorm::result<void> validate_timeout_config(const pool_config& config) {
+    if (!config.statement_timeout) {
+        return {};
+    }
+    auto valid = validate_statement_timeout(*config.statement_timeout);
+    if (!valid) {
+        return valid;
+    }
+    if constexpr (!has_statement_timeout<Conn>) {
+        return std::unexpected(unsupported_statement_timeout());
+    }
+    return {};
+}
+
+template <typename Conn>
+asterorm::result<void> configure_statement_timeout(Conn& conn, const pool_config& config) {
+    if (!config.statement_timeout) {
+        return {};
+    }
+    if constexpr (has_statement_timeout<Conn>) {
+        if (!conn.is_transaction_idle()) {
+            conn.close();
+            db_error error;
+            error.kind = db_error_kind::query_failed;
+            error.message = "Cannot configure statement timeout on an active or failed transaction";
+            return std::unexpected(std::move(error));
+        }
+        try {
+            auto configured = conn.set_statement_timeout(*config.statement_timeout);
+            if (!configured) {
+                conn.close();
+            }
+            return configured;
+        } catch (...) {
+            conn.close();
+            throw;
+        }
+    } else {
+        return std::unexpected(unsupported_statement_timeout());
+    }
+}
+
+template <typename Conn>
+void close_configured_connection(Conn& conn, const pool_config& config) noexcept {
+    if constexpr (has_statement_timeout<Conn>) {
+        if (config.statement_timeout) {
+            conn.close();
+        }
     }
 }
 } // namespace detail
@@ -111,6 +163,11 @@ template <typename Driver> class connection_pool {
     connection_pool(Driver driver, pool_config config)
         : driver_(std::move(driver)), config_(std::move(config)) {
         try {
+            auto valid = detail::validate_timeout_config<connection_type>(config_);
+            if (!valid) {
+                fail_warmup(valid.error());
+                return;
+            }
             for (size_t i = 0; i < config_.min_size; ++i) {
                 auto conn_res = driver_.connect(config_.conninfo);
                 if (!conn_res) {
@@ -118,6 +175,11 @@ template <typename Driver> class connection_pool {
                     return;
                 }
                 detail::configure_connection(*conn_res, config_);
+                auto configured = detail::configure_statement_timeout(*conn_res, config_);
+                if (!configured) {
+                    fail_warmup(configured.error());
+                    return;
+                }
                 idle_connections_.push_back(std::move(*conn_res));
                 ++current_size_;
             }
@@ -165,8 +227,8 @@ template <typename Driver> class connection_pool {
                           .closed = closed_};
     }
 
-    // Set when `min_size` connections could not be opened. `acquire` keeps
-    // returning this error until the pool is replaced.
+    // Set on invalid configuration or when warmup connections could not be prepared. `acquire`
+    // keeps returning this error until the pool is replaced.
     [[nodiscard]] std::optional<db_error> warmup_error() const {
         std::lock_guard lock(mutex_);
         return warmup_error_;
@@ -191,6 +253,22 @@ template <typename Driver> class connection_pool {
                     cv_.notify_all();
                     continue;
                 }
+                if (config_.statement_timeout) {
+                    // A popped idle connection still owns its existing capacity slot.
+                    slot_reservation reservation{*this, lock};
+                    lock.unlock();
+                    auto configured = detail::configure_statement_timeout(conn, config_);
+                    if (!configured) {
+                        return std::unexpected(configured.error());
+                    }
+                    lock.lock();
+                    if (closed_) {
+                        lock.unlock();
+                        detail::close_configured_connection(conn, config_);
+                        return std::unexpected(closed_error());
+                    }
+                    reservation.disarm();
+                }
                 return lease_type{std::move(conn), this, alive_flag_};
             }
 
@@ -205,9 +283,16 @@ template <typename Driver> class connection_pool {
                     return std::unexpected(conn_res.error());
 
                 detail::configure_connection(*conn_res, config_);
+                auto configured = detail::configure_statement_timeout(*conn_res, config_);
+                if (!configured) {
+                    return std::unexpected(configured.error());
+                }
                 lock.lock();
-                if (closed_)
+                if (closed_) {
+                    lock.unlock();
+                    detail::close_configured_connection(*conn_res, config_);
                     return std::unexpected(closed_error());
+                }
                 reservation.disarm();
                 return lease_type{std::move(*conn_res), this, alive_flag_};
             }
@@ -282,7 +367,10 @@ template <typename Driver> class connection_pool {
                 return;
             if (!lock_->owns_lock())
                 lock_->lock();
-            --pool_->current_size_;
+            // close() may already have expired its wait and reset the count.
+            if (pool_->current_size_ > 0) {
+                --pool_->current_size_;
+            }
             pool_->cv_.notify_all();
         }
         void disarm() {

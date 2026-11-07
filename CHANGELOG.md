@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Optional PostgreSQL pool statement-timeout baselines on connection creation and
+  checkout, with range/backend validation and low-level adapter read/local setters.
 - Automatic PostgreSQL migration serialization across processes, covering history
   setup, apply, rollback, and version reads while preserving per-migration commits.
 - PostgreSQL `session::with_advisory_lock(key, callback)` with nested scopes,
@@ -35,6 +37,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- Appended `statement_timeout` to `pool_config`; rebuild the library and consumers
+  together for the layout change.
 - PostgreSQL migration operations reject caller-owned transactions before history
   setup, preserving the caller transaction and per-migration commit behavior.
 - Added a lock clause to the public SELECT AST and explicit SQLite/ClickHouse
@@ -46,6 +50,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Fixed
 
+- Prevented late connection/setup completion from underflowing pool capacity
+  after the close wait deadline expires.
 - Routed typed query execution through session observation, retaining direct
   prepared execution for custom sessions without a compatible observer helper.
 - Classified PostgreSQL query cancellation (`57014`) as a query failure while

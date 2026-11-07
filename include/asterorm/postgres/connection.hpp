@@ -1,6 +1,7 @@
 #pragma once
 #include <libpq-fe.h>
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -31,6 +32,11 @@ class connection {
 
     bool is_open() const;
     void close() noexcept;
+
+    [[nodiscard]] bool is_transaction_idle() const noexcept;
+    asterorm::result<std::chrono::milliseconds> statement_timeout();
+    asterorm::result<void> set_statement_timeout(std::chrono::milliseconds duration);
+    asterorm::result<void> set_local_statement_timeout(std::chrono::milliseconds duration);
 
     asterorm::result<void> advisory_lock(std::int64_t key);
     asterorm::result<void> advisory_unlock(std::int64_t key);

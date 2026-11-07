@@ -11,6 +11,7 @@ cfg.min_size = 1;
 cfg.max_size = 8;
 cfg.acquire_timeout = std::chrono::milliseconds{2000};
 cfg.prepared_statement_cache_size = 128;
+cfg.statement_timeout = std::chrono::milliseconds{1000}; // PostgreSQL only
 asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
 
 if (auto failure = pool.warmup_error())
@@ -21,7 +22,7 @@ Include `<asterorm/postgres/driver.hpp>` and `<asterorm/session.hpp>` and use th
 snippet in a function returning `asterorm::result<...>`. Keep `min_size` no
 greater than `max_size`, and choose a positive `max_size`.
 
-A failed constructor warmup is retained: `acquire()` keeps returning that error.
+Invalid configuration or a failed constructor warmup is retained: `acquire()` keeps returning that error.
 Correct the settings or service availability and construct a replacement pool.
 With `min_size = 0`, the first acquire opens the first connection.
 
@@ -31,6 +32,40 @@ Use it to distinguish an exhausted pool from a connection failure.
 For private SQLite `:memory:` databases, set both sizes to one. For persistence,
 set `conninfo` to a file path or supported `file:` URI. Each new SQLite
 connection enables foreign keys and a five-second busy timeout.
+
+## Set a PostgreSQL statement timeout baseline
+
+The supported PostgreSQL baseline for this API is 16+, matching the development
+service. The adapter checks connection state rather than probing server versions.
+
+`pool_config::statement_timeout` is an optional `std::chrono::milliseconds`.
+Leave it absent to preserve the server/role/connection setting. Zero explicitly
+disables the timeout. Values from 1 through 2,147,483,647 milliseconds are accepted;
+negative or larger values return a persistent `query_failed` configuration error
+before connecting, including on a lazy pool. SQLite, MySQL, and ClickHouse reject
+explicit configuration, even zero, before connecting.
+
+The pool applies a session-level setting during connection creation and before
+every idle checkout. A borrower can change it through raw APIs, but the next
+checkout reapplies the configured baseline on the same connection. This covers
+explicit leases, native/typed/prepared queries, DDL, COPY, and advisory waits on
+that connection. Initialization/reapplication does not emit session observer events.
+
+Setup runs outside the pool mutex. A failed or throwing setup discards its
+connection and frees capacity. Warmup failures persist through `warmup_error()`;
+lazy/reuse failures affect that acquisition and permit a later retry. Returning an
+open or failed transaction to a configured pool causes its next checkout to close
+and discard the connection with an error; it does not commit that work.
+
+The timeout limits individual server statements, not a whole callback, C++ work,
+client transfer time, or pool waiting. `acquire_timeout` still bounds capacity
+waiting rather than connection/configuration work. Server cancellation retains
+`query_failed` and SQLSTATE `57014`; that code can also mean explicit cancellation.
+
+`pool_config` gained a field: rebuild the library and its consumers together.
+Use [`session::with_statement_timeout`](statement-timeouts.md) for a temporary
+override inside an existing transaction. Low-level PostgreSQL adapter setters
+provide no automatic scope restoration.
 
 ## Record query timing
 

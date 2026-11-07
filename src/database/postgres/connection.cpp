@@ -1,8 +1,10 @@
 #include "asterorm/postgres/connection.hpp"
 
+#include <charconv>
 #include <utility>
 
 #include "asterorm/core/error.hpp"
+#include "asterorm/core/statement_timeout.hpp"
 
 namespace asterorm::pg {
 
@@ -43,6 +45,73 @@ void connection::close() noexcept {
     prepared_statements_.clear();
     prepared_statement_order_.clear();
     next_stmt_id_ = 0;
+}
+
+bool connection::is_transaction_idle() const noexcept {
+    return conn_ && PQstatus(conn_) == CONNECTION_OK && PQtransactionStatus(conn_) == PQTRANS_IDLE;
+}
+
+asterorm::result<std::chrono::milliseconds> connection::statement_timeout() {
+    auto setting = execute_params(
+        "SELECT setting, unit FROM pg_catalog.pg_settings WHERE name = 'statement_timeout'", {});
+    if (!setting) {
+        return std::unexpected(setting.error());
+    }
+    if (setting->rows() == 1 && setting->columns() == 2 &&
+        setting->get_string(0, 1) == std::optional<std::string>{"ms"}) {
+        auto text = setting->get_string(0, 0);
+        if (text) {
+            std::chrono::milliseconds::rep count{};
+            auto parsed = std::from_chars(text->data(), text->data() + text->size(), count);
+            if (parsed.ec == std::errc{} && parsed.ptr == text->data() + text->size() &&
+                detail::validate_statement_timeout(std::chrono::milliseconds{count})) {
+                return std::chrono::milliseconds{count};
+            }
+        }
+    }
+    db_error error;
+    error.kind = db_error_kind::parse_failed;
+    error.message = "Invalid statement timeout setting returned by server";
+    return std::unexpected(std::move(error));
+}
+
+asterorm::result<void> connection::set_statement_timeout(std::chrono::milliseconds duration) {
+    auto valid = detail::validate_statement_timeout(duration);
+    if (!valid) {
+        return valid;
+    }
+    if (!is_transaction_idle()) {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Session statement timeout requires an idle connection";
+        return std::unexpected(std::move(error));
+    }
+    auto configured = execute_params("SELECT pg_catalog.set_config('statement_timeout', $1, false)",
+                                     {encode_parameter(std::to_string(duration.count()) + "ms")});
+    if (!configured) {
+        return std::unexpected(configured.error());
+    }
+    return {};
+}
+
+asterorm::result<void> connection::set_local_statement_timeout(std::chrono::milliseconds duration) {
+    auto valid = detail::validate_statement_timeout(duration);
+    if (!valid) {
+        return valid;
+    }
+    if (!conn_ || PQstatus(conn_) != CONNECTION_OK ||
+        PQtransactionStatus(conn_) != PQTRANS_INTRANS) {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Local statement timeout requires a healthy active transaction";
+        return std::unexpected(std::move(error));
+    }
+    auto configured = execute_params("SELECT pg_catalog.set_config('statement_timeout', $1, true)",
+                                     {encode_parameter(std::to_string(duration.count()) + "ms")});
+    if (!configured) {
+        return std::unexpected(configured.error());
+    }
+    return {};
 }
 
 asterorm::result<void> connection::advisory_lock(std::int64_t key) {
