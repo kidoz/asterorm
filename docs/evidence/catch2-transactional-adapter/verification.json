@@ -1,0 +1,199 @@
+{
+  "recorded_at_utc": "2026-11-07T20:30:48.931332+00:00",
+  "review_date": "2026-11-07",
+  "git_base": "4e2d03e7ce50159f151a4107fb7285a68e022f52",
+  "scope": "Optional Catch2 registry/accessor/listener/runner; worked reference providers, native connection-loss detection before body access, CRUD migration and combined harness acceptance remain planned.",
+  "platform": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "machine": "arm64"
+  },
+  "compiler": [
+    "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "Target: arm64-apple-darwin27.2.0"
+  ],
+  "catch2_version": "3.16.1",
+  "build_options": {
+    "buildtype": "debug",
+    "warning_level": "3",
+    "werror": false,
+    "b_sanitize": [],
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "clickhouse": "disabled",
+    "tests": true,
+    "examples": true,
+    "mysql": "enabled"
+  },
+  "sqlite_only_options": {
+    "postgres": "disabled",
+    "sqlite": "enabled",
+    "mysql": "disabled",
+    "clickhouse": "disabled",
+    "tests": true,
+    "examples": false
+  },
+  "sources_tests_build_docs_sha256": {
+    "CHANGELOG.md": "f800ded875f80c96cc0a44abf06e37eefb2ea5292a5a476694873d52b92bf3c2",
+    "README.md": "c2df383ac2cf53bbedfc2a0c36596bde2fbd3ca284123fd3407576ffa7f353df",
+    "docs/evidence/catch2-transactional-adapter/README.md": "b2f124db0fd7f1db5a439d1452a19acaf93d0c9b846708ed919845d5edbd7f2a",
+    "docs/evidence/catch2-transactional-adapter/check_consumers.py": "295399799f875801b0467dbbd3b366dd77e060b72a13d5dd77535ec94bc013b9",
+    "docs/evidence/catch2-transactional-adapter/check_sanitizer.py": "19645a93152ca3005f64ca58e4c4a019509bc102f53847da6c77b529911f1027",
+    "docs/explanation/README.md": "46f53a49375c063268abfee0ac2280b51c0df3e277168b0431ba56b742c806fe",
+    "docs/how-to/README.md": "c61b796705f5de1f93cfdbdaf3b942ed2ec0ede5187972da4c7e8b1c339500c5",
+    "docs/how-to/catch2-transactional-tests.md": "c36c84c0583e9438ad80d3c213048e0eaba1834ee4f56d0465fa0dbfd93a9e55",
+    "docs/how-to/testing.md": "ae40f0d88c30ddad43fbeb7c837c1dfd27363e89d8214e3d401595ce84b0994f",
+    "docs/how-to/transactional-test-scopes.md": "eb00dbbbfd1fb1edba9615e93f102c988b3094bda827501f4b84934ffe82c4a1",
+    "docs/reference/connections.md": "a2a76badaba880f785b6821de083a7245855d2950bd2bac6c8cd569563ae1c5f",
+    "docs/transactional-test-harness-design.md": "d188a2e912ecdef885c7810cb934d7b4be841baa69065a34138732cb7956d173",
+    "include/asterorm/core/testing_scope.hpp": "9ec78bdc4e799057acc3234ff00a76a482604a9e6083b74ef422e7d7966d2aba",
+    "include/asterorm/testing/catch2.hpp": "c588afb4179e921e2a4f4b225e3179a74f24f0dbd0700e7cd6a4bce9c196b803",
+    "include/asterorm/testing/transactional_session.hpp": "bc401cff9fa2a3c210e59dccaf06835fc2f950d2efe2ba2371166a26c58345ca",
+    "meson.build": "4482a6d9a63fe890e1878f027b7f3d37e1ed8e18f9cb352d553264813add3e7d",
+    "tests/check_catch2_harness.py": "996e36705e88042a3f7042540810caa3a18551f9855e23950c3c8f6de7382375",
+    "tests/integration/test_catch2_harness.cpp": "ae74d096c225eee90df510ece4102dd4233e6efd5ccd9cfe9935e6ba7207bd76",
+    "tests/meson.build": "633509a9ae754dc99048f79433016602d3c56b5a2e3c4d13f5ce302d76eef8b4",
+    "tests/support/catch2_harness_fixture.hpp": "cbfa627bd6a85f87103b162e1c5b5f161014764178e15c03df3a6e17bcca01a0",
+    "tests/support/catch2_harness_main.cpp": "5440f9f67b09559b0b522450c389effa8efb6e93a7d79c71e24a5cf7de445938"
+  },
+  "ignored_canonical_contexts_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "53644db8efc126d0ed429d2ffd5e6e7a6140e163d713f81da1e7c5a716394be2",
+    ".agents/contexts/specs/feature-expansion/README.md": "c093c404468f20aedd63449b4af27800bb5690be24281bf3afed6a6f3d86fb2f",
+    ".agents/contexts/specs/feature-expansion/TESTING_MIGRATIONS_AND_OBSERVABILITY.md": "40c0bccee44f3cbd868c912879712bb82b908f962bd4064a6b00d1956aaa1b05"
+  },
+  "external_working_tree_dependency": {
+    "path": "subprojects/catch2.wrap",
+    "sha256": "6e7dfd0705e5367c1a9c22a27bdef6f7a7e40a2a68d76e35d6aa055006181a2f",
+    "ownership": "Changed separately during this step; preserved unstaged."
+  },
+  "standards_baseline": {
+    "initial_local_report": "/tmp/asterorm-catch2-standards-initial.json",
+    "initial_sha256": "654c0687c163f69b122951adbe69c728fcacf2d97f9ff4422a2ebd748a409d89",
+    "final_local_report": "/tmp/asterorm-catch2-standards.json",
+    "final_sha256": "654c0687c163f69b122951adbe69c728fcacf2d97f9ff4422a2ebd748a409d89",
+    "errors_warnings_infos_identical": true,
+    "note": "Initial report uses this step's workspace dependency version; historical reports used Catch2 3.14.0 paths."
+  },
+  "verification": [
+    {
+      "check": "focused",
+      "command": "python3 tests/check_catch2_harness.py buildDir/tests/catch2_harness",
+      "exit_code": 0,
+      "result": {
+        "subprocess_scenarios": 39
+      },
+      "local_log": "/tmp/asterorm-catch2-focused.log",
+      "log_sha256": "f46f508431200ce17ec424156c54e3c2b498b7afa309aae956a7468dd70d23c1"
+    },
+    {
+      "check": "tests",
+      "command": "meson test -C buildDir --no-rebuild --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 21,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-catch2-tests.log",
+      "log_sha256": "7da31d85fd535dbd52028d71dd398abd89705066ad63f9f4cce0dfb1412f96b1"
+    },
+    {
+      "check": "sqlite-only",
+      "command": "meson test -C /tmp/asterorm-test-scope-sqlite.MDy3Mc --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 8,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-catch2-sqlite-only.log",
+      "log_sha256": "8170eb9cb7822e191102bf0330144d48a7a07ec3ada3c7bf5cbe3d4144308c72"
+    },
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-catch2-build.log",
+      "log_sha256": "acb8d081a230192e7090520a867fb6359cbe42ab7ab7183e54d2d6e1d5ec253d"
+    },
+    {
+      "check": "format",
+      "command": "meson compile -C buildDir clang-format-check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-catch2-format.log",
+      "log_sha256": "8f338130c098373e755e97fc4699ebfe981867f6e01c1fd5a172ed34ebc2c03f"
+    },
+    {
+      "check": "lint",
+      "command": "just lint",
+      "exit_code": 0,
+      "result": {
+        "translation_units": 60,
+        "diagnostics_retained": true,
+        "scope": "Full run preceded the final capability check; final targeted lint below covers both translation units that include the adapter."
+      },
+      "local_log": "/tmp/asterorm-catch2-lint.log",
+      "log_sha256": "ec6c99bbdebe8f80bc7ff348adf02dfbb362b2818a0812babae54fb067dde347"
+    },
+    {
+      "check": "targeted-lint",
+      "command": "clang-tidy -p buildDir --extra-arg=-isysroot --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk tests/support/catch2_harness_main.cpp tests/integration/test_catch2_harness.cpp",
+      "exit_code": 0,
+      "result": {
+        "translation_units": 2,
+        "final_adapter_sources": true,
+        "remaining_diagnostic": "Catch2 EnumCastOutOfRange in assertion disposition flags"
+      },
+      "local_log": "/tmp/asterorm-catch2-targeted-lint.log",
+      "log_sha256": "aa4887cefd57b6d35db883510d0a881219416af74567958faebb5944e1c1b18e"
+    },
+    {
+      "check": "asan",
+      "command": "python3 docs/evidence/catch2-transactional-adapter/check_sanitizer.py --build-root buildDir",
+      "exit_code": 0,
+      "result": {
+        "subprocess_scenarios": 39,
+        "instrumented_translation_units": 2,
+        "limitations": "Existing library/Catch2/SQLite binaries are not instrumented; not a full-project sanitizer build, leak check or thread sanitizer."
+      },
+      "local_log": "/tmp/asterorm-catch2-asan.log",
+      "log_sha256": "e033705b61d5df02448195b88e07afb80ec7139a01df6e5b86adcf239055da09"
+    },
+    {
+      "check": "consumers",
+      "command": "python3 docs/evidence/catch2-transactional-adapter/check_consumers.py --build-root buildDir",
+      "exit_code": 0,
+      "result": {
+        "clients": [
+          "CMake",
+          "shared pkg-config"
+        ],
+        "guide_paths_per_client": 4,
+        "separately_supplied_catch2": true,
+        "asterorm_tests_disabled_during_install": true
+      },
+      "local_log": "/tmp/asterorm-catch2-consumers.log",
+      "log_sha256": "7f811382a82828cec390e45f91712980e3c78f443f01ea310d7e69ed363feb84"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-catch2-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0,
+        "findings_unchanged_from_initial": true
+      },
+      "local_log": "/tmp/asterorm-catch2-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "limitations": [
+    "Unsigned local evidence; not independent execution attestation, remote CI or release provenance.",
+    "No worked CRUD migration, preparation reduction or timing/speedup claim.",
+    "No full-project sanitizer or static AsterORM consumer verification.",
+    "Prior evidence remains historical; .gitignore/build outputs/credentials excluded; local logs may expire."
+  ]
+}
