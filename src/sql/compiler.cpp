@@ -193,6 +193,48 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr,
     return out;
 }
 
+asterorm::result<std::string> compiler::compile_arithmetic(const arithmetic_operand& operand,
+                                                           query_parameters& params,
+                                                           std::size_t& visited_nodes,
+                                                           std::size_t depth) {
+    if (depth > max_arithmetic_depth || ++visited_nodes > max_arithmetic_nodes) {
+        return std::unexpected(invalid_sql("Assignment arithmetic exceeds the depth/node limit"));
+    }
+    if (const auto* column = std::get_if<column_expr>(&operand)) {
+        return compile_expr(expr_ast{*column}, params);
+    }
+    if (const auto* parameter = std::get_if<param_expr>(&operand)) {
+        if (parameter->encoded_value.error) {
+            return std::unexpected(*parameter->encoded_value.error);
+        }
+        return compile_expr(expr_ast{*parameter}, params);
+    }
+    const auto& expression = std::get<arithmetic_ptr>(operand);
+    if (!expression) {
+        return std::unexpected(invalid_sql("Assignment arithmetic requires a non-null node"));
+    }
+    std::string_view operation;
+    switch (expression->op) {
+    case arithmetic_op::add:
+        operation = " + ";
+        break;
+    case arithmetic_op::multiply:
+        operation = " * ";
+        break;
+    default:
+        return std::unexpected(invalid_sql("Invalid assignment arithmetic operator"));
+    }
+    auto left = compile_arithmetic(expression->left, params, visited_nodes, depth + 1);
+    if (!left) {
+        return std::unexpected(left.error());
+    }
+    auto right = compile_arithmetic(expression->right, params, visited_nodes, depth + 1);
+    if (!right) {
+        return std::unexpected(right.error());
+    }
+    return "(" + *left + std::string{operation} + *right + ")";
+}
+
 asterorm::result<std::string> compiler::compile_value(const value_source& src,
                                                       query_parameters& params) {
     if (std::holds_alternative<raw_expr>(src)) {
@@ -201,6 +243,10 @@ asterorm::result<std::string> compiler::compile_value(const value_source& src,
         if (contains_nul(fragment))
             return std::unexpected(invalid_sql("SQL fragment contains a NUL byte"));
         return fragment;
+    }
+    if (const auto* arithmetic = std::get_if<arithmetic_ptr>(&src)) {
+        std::size_t visited_nodes = 0;
+        return compile_arithmetic(arithmetic_operand{*arithmetic}, params, visited_nodes);
     }
     params.push_back(std::get<param_expr>(src).encoded_value);
     return placeholder(params.size());

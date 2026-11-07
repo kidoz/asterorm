@@ -96,6 +96,72 @@ auto matching_rows() {
 }
 } // namespace
 
+TEST_CASE("Bulk arithmetic validates every mapped operand before acquisition",
+          "[core][bulk-dml][arithmetic]") {
+    bulk_session session;
+    asterorm::repository repo{session};
+    auto updated = repo.update_where<bulk_unit_row>(
+        matching_rows(),
+        {
+            {"price", sql::multiply(sql::add(sql::col("price"), sql::val(2)), sql::val(3))},
+        });
+    REQUIRE(updated == 2);
+    REQUIRE(session.statement ==
+            R"(UPDATE "bulk_rows" SET "price" = (("price" + $1) * $2) WHERE "tenant" = $3)");
+    REQUIRE(session.params.size() == 3);
+    REQUIRE(session.acquisitions == 1);
+    std::vector<sql::arithmetic_ptr> invalid;
+    for (const auto* name : {"unknown", "bulk_rows.price", "*", ""}) {
+        invalid.push_back(sql::multiply(sql::col("price"), sql::add(sql::col(name), sql::val(1))));
+    }
+    invalid.push_back(sql::arithmetic_ptr{});
+    invalid.push_back(sql::add(sql::col("price"), sql::arithmetic_ptr{}));
+    for (const auto& expression : invalid) {
+        auto rejected = repo.update_where<bulk_unit_row>(matching_rows(), {{"price", expression}});
+        REQUIRE_FALSE(rejected.has_value());
+        REQUIRE(rejected.error().kind == asterorm::db_error_kind::parse_failed);
+    }
+    REQUIRE_FALSE(repo.update_where<bulk_unit_row>(
+                          matching_rows(), {{"tenant", sql::add(sql::col("tenant"), sql::val(1))}})
+                      .has_value());
+    REQUIRE_FALSE(
+        repo.update_where<bulk_unit_row>(
+                matching_rows(), {{"derived", sql::multiply(sql::col("price"), sql::val(2))}})
+            .has_value());
+    asterorm::query_parameter encoded;
+    encoded.error = asterorm::db_error{
+        .kind = asterorm::db_error_kind::parse_failed,
+        .message = "nested codec identity",
+    };
+    auto rejected = repo.update_where<bulk_unit_row>(
+        matching_rows(), {{"price", sql::add(sql::col("price"), sql::param_expr{encoded})}});
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error().message == "nested codec identity");
+    sql::arithmetic_ptr nested = sql::add(sql::col("price"), sql::val(1));
+    for (std::size_t depth = 0; depth < sql::max_arithmetic_depth; ++depth) {
+        nested = sql::add(nested, sql::val(1));
+    }
+    REQUIRE_FALSE(
+        repo.update_where<bulk_unit_row>(matching_rows(), {{"price", nested}}).has_value());
+    auto cycle = std::make_shared<sql::arithmetic_expr>(sql::arithmetic_expr{
+        .op = sql::arithmetic_op::add,
+        .left = sql::col("price"),
+        .right = sql::val(2),
+    });
+    cycle->right = sql::arithmetic_ptr{cycle};
+    auto cyclic =
+        repo.update_where<bulk_unit_row>(matching_rows(), {{"price", sql::arithmetic_ptr{cycle}}});
+    cycle->right = sql::val(0);
+    REQUIRE_FALSE(cyclic.has_value());
+    sql::arithmetic_ptr wide = sql::add(sql::val(1), sql::val(2));
+    for (int expansion = 0; expansion < 9; ++expansion) {
+        wide = sql::add(wide, wide);
+    }
+    REQUIRE_FALSE(repo.update_where<bulk_unit_row>(matching_rows(), {{"price", wide}}).has_value());
+    REQUIRE(session.acquisitions == 1);
+    REQUIRE(session.events == 1);
+}
+
 TEST_CASE("Affected-row counts retain wide boundaries and reject malformed inputs",
           "[core][bulk-dml]") {
     using asterorm::detail::parse_row_count;

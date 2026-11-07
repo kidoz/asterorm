@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -191,15 +192,44 @@ struct select_ast {
     select_lock_clause locking{};
 };
 
-// Value source for an INSERT/UPDATE assignment: either a literal value or a
-// raw expression snippet (e.g. "EXCLUDED.col", "DEFAULT"). Raw snippets are
+// Structured assignment arithmetic is separate from SELECT/predicate expressions.
+// Factory nodes are immutable; parameters own their encoded values.
+enum class arithmetic_op : std::uint8_t { add, multiply };
+struct arithmetic_expr;
+using arithmetic_ptr = std::shared_ptr<const arithmetic_expr>;
+using arithmetic_operand = std::variant<column_expr, param_expr, arithmetic_ptr>;
+struct arithmetic_expr {
+    arithmetic_op op;
+    arithmetic_operand left;
+    arithmetic_operand right;
+};
+inline constexpr std::size_t max_arithmetic_depth = 64;
+inline constexpr std::size_t max_arithmetic_nodes = 1024;
+
+inline arithmetic_ptr add(arithmetic_operand left, arithmetic_operand right) {
+    return std::make_shared<const arithmetic_expr>(arithmetic_expr{
+        .op = arithmetic_op::add,
+        .left = std::move(left),
+        .right = std::move(right),
+    });
+}
+inline arithmetic_ptr multiply(arithmetic_operand left, arithmetic_operand right) {
+    return std::make_shared<const arithmetic_expr>(arithmetic_expr{
+        .op = arithmetic_op::multiply,
+        .left = std::move(left),
+        .right = std::move(right),
+    });
+}
+
+// Value source for an INSERT/UPDATE assignment: a literal, structured arithmetic,
+// or raw expression snippet (e.g. "EXCLUDED.col", "DEFAULT"). Raw snippets are
 // NOT parameterized — callers must ensure they are safe. The compiler rejects
 // an embedded NUL so the fragment cannot truncate a C-string client call.
 // Column names are quoted via quote_ident.
 struct raw_expr {
     std::string fragment;
 };
-using value_source = std::variant<param_expr, raw_expr>;
+using value_source = std::variant<param_expr, raw_expr, arithmetic_ptr>;
 
 struct on_conflict_ast {
     std::vector<std::string> target_columns; // empty = ON CONFLICT with no target

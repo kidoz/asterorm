@@ -6,6 +6,9 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Structured assignment arithmetic through `sql::add` and `sql::multiply`, with
+  bound values, nested parentheses, mapped-operand validation, and traversal limits.
+
 - Repository `update_where` and `delete_where` with checked counts, explicit
   backend admission, mapping/predicate validation, and observed execution.
 
@@ -43,6 +46,9 @@ All notable changes to AsterORM will be documented in this file.
   package configuration, examples, and CI build and test workflows.
 
 ### Changed
+
+- `sql::value_source` includes immutable arithmetic nodes; rebuild consumers and
+  update exhaustive variant visitors. SELECT/predicate expression shapes are unchanged.
 
 - Relational result affected-row counts and storage are now 64-bit; PostgreSQL
   native results validate command counts before success. Rebuild consumers.

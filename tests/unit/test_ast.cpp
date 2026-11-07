@@ -7,6 +7,107 @@
 
 using namespace asterorm::sql;
 
+TEST_CASE("Assignment arithmetic quotes columns, binds values, and preserves nesting",
+          "[core][sql][arithmetic]") {
+    STATIC_REQUIRE(std::is_const_v<arithmetic_ptr::element_type>);
+    STATIC_REQUIRE_FALSE(std::is_constructible_v<arithmetic_operand, raw_expr>);
+    STATIC_REQUIRE_FALSE(std::is_constructible_v<arithmetic_operand, std::shared_ptr<func_expr>>);
+    for (auto target : {dialect::postgres, dialect::sqlite, dialect::mysql}) {
+        compiler compiler{target};
+        int adjustment = 2;
+        auto expression = multiply(add(col("price"), val(adjustment)), val(3));
+        adjustment = 99;
+        REQUIRE(adjustment == 99);
+        auto query = compiler.compile(update("products")
+                                          .set("active", val(false))
+                                          .set("price", expression)
+                                          .where(col("id") == val(7))
+                                          .build());
+        REQUIRE(query.has_value());
+        REQUIRE(query->params.size() == 4);
+        REQUIRE(query->params[0].type == asterorm::parameter_type::boolean);
+        REQUIRE(query->params[1] == "2");
+        REQUIRE(query->params[2] == "3");
+        REQUIRE(query->params[3] == "7");
+        if (target == dialect::mysql) {
+            REQUIRE(
+                query->sql ==
+                "UPDATE `products` SET `active` = ?, `price` = ((`price` + ?) * ?) WHERE `id` = ?");
+        } else {
+            REQUIRE(
+                query->sql ==
+                R"(UPDATE "products" SET "active" = $1, "price" = (("price" + $2) * $3) WHERE "id" = $4)");
+        }
+        auto right_nested = compiler.compile(
+            update("products").set("price", add(val(2), multiply(col("price"), val(3)))).build());
+        REQUIRE(right_nested.has_value());
+        REQUIRE(right_nested->params[0] == "2");
+        REQUIRE(right_nested->params[1] == "3");
+    }
+    compiler compiler;
+    auto quoted = compiler.compile(
+        update("products")
+            .set("price", add(col("odd\"name"), val(std::string{"'; DROP TABLE products; --"})))
+            .build());
+    REQUIRE(quoted.has_value());
+    REQUIRE(quoted->sql == R"(UPDATE "products" SET "price" = ("odd""name" + $1))");
+    REQUIRE(quoted->params[0] == "'; DROP TABLE products; --");
+    auto inserted = compiler.compile(
+        insert_into("products").columns({"price"}).values({add(val(2), val(3))}).build());
+    REQUIRE(inserted.has_value());
+    REQUIRE(inserted->sql == R"(INSERT INTO "products" ("price") VALUES (($1 + $2)))");
+}
+
+TEST_CASE("Assignment arithmetic rejects malformed nodes and retains encoding errors",
+          "[core][sql][arithmetic]") {
+    compiler compiler;
+    auto empty = compiler.compile(update("products").set("price", arithmetic_ptr{}).build());
+    REQUIRE_FALSE(empty.has_value());
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- malformed public AST input.
+    const auto invalid_operator = static_cast<arithmetic_op>(255);
+    auto malformed = std::make_shared<const arithmetic_expr>(arithmetic_expr{
+        .op = invalid_operator,
+        .left = col("price"),
+        .right = val(1),
+    });
+    REQUIRE_FALSE(compiler.compile(update("products").set("price", malformed).build()).has_value());
+    auto null_child = add(col("price"), arithmetic_ptr{});
+    REQUIRE_FALSE(
+        compiler.compile(update("products").set("price", null_child).build()).has_value());
+    asterorm::query_parameter failed;
+    failed.error = asterorm::db_error{
+        .kind = asterorm::db_error_kind::parse_failed,
+        .message = "arithmetic codec identity",
+    };
+    auto invalid_parameter = compiler.compile(
+        update("products").set("price", multiply(col("price"), param_expr{failed})).build());
+    REQUIRE_FALSE(invalid_parameter.has_value());
+    REQUIRE(invalid_parameter.error().message == "arithmetic codec identity");
+    arithmetic_ptr nested = add(col("price"), val(1));
+    for (std::size_t depth = 1; depth < max_arithmetic_depth; ++depth) {
+        nested = add(nested, val(1));
+    }
+    REQUIRE(compiler.compile(update("products").set("price", nested).build()).has_value());
+    REQUIRE_FALSE(
+        compiler.compile(update("products").set("price", add(nested, val(1))).build()).has_value());
+    auto cycle = std::make_shared<arithmetic_expr>(arithmetic_expr{
+        .op = arithmetic_op::add,
+        .left = val(1),
+        .right = val(2),
+    });
+    cycle->left = arithmetic_ptr{cycle};
+    auto cyclic = compiler.compile(update("products").set("price", arithmetic_ptr{cycle}).build());
+    cycle->left = val(0); // Break the deliberately malformed ownership cycle.
+    REQUIRE_FALSE(cyclic.has_value());
+    arithmetic_ptr wide = add(val(1), val(2));
+    for (int expansion = 0; expansion < 8; ++expansion) {
+        wide = add(wide, wide);
+    }
+    REQUIRE(compiler.compile(update("products").set("price", wide).build()).has_value());
+    REQUIRE_FALSE(
+        compiler.compile(update("products").set("price", add(wide, wide)).build()).has_value());
+}
+
 TEST_CASE("Core: SQL AST and Compiler", "[core][sql][ast]") {
     SECTION("Basic Select") {
         auto query = select({"id", "name"}).from("users").build();

@@ -71,6 +71,9 @@ class compiler {
                                                              query_parameters& params);
     [[nodiscard]] asterorm::result<std::string> compile_value(const value_source& src,
                                                               query_parameters& params);
+    [[nodiscard]] asterorm::result<std::string>
+    compile_arithmetic(const arithmetic_operand& operand, query_parameters& params,
+                       std::size_t& visited_nodes, std::size_t depth = 0);
     [[nodiscard]] static std::string op_to_string(op_kind op);
 };
 

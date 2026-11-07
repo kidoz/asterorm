@@ -310,6 +310,34 @@ template <typename T> result<void> validate_bulk_predicate(const sql::predicate_
 }
 
 template <typename T>
+result<void> validate_bulk_arithmetic(const sql::arithmetic_operand& operand,
+                                      std::size_t& visited_nodes, std::size_t depth = 0) {
+    if (depth > sql::max_arithmetic_depth || ++visited_nodes > sql::max_arithmetic_nodes) {
+        return std::unexpected(
+            bulk_mutation_error("Assignment arithmetic exceeds the depth/node limit"));
+    }
+    if (const auto* column = std::get_if<sql::column_expr>(&operand)) {
+        return validate_bulk_column<T>(column->name);
+    }
+    if (const auto* parameter = std::get_if<sql::param_expr>(&operand)) {
+        if (parameter->encoded_value.error) {
+            return std::unexpected(*parameter->encoded_value.error);
+        }
+        return {};
+    }
+    const auto& expression = std::get<sql::arithmetic_ptr>(operand);
+    if (!expression || (expression->op != sql::arithmetic_op::add &&
+                        expression->op != sql::arithmetic_op::multiply)) {
+        return std::unexpected(bulk_mutation_error("Invalid assignment arithmetic node/operator"));
+    }
+    auto left = validate_bulk_arithmetic<T>(expression->left, visited_nodes, depth + 1);
+    if (!left) {
+        return left;
+    }
+    return validate_bulk_arithmetic<T>(expression->right, visited_nodes, depth + 1);
+}
+
+template <typename T>
 result<void> validate_bulk_assignments(
     const std::vector<std::pair<std::string, sql::value_source>>& assignments) {
     if (assignments.empty()) {
@@ -342,6 +370,14 @@ result<void> validate_bulk_assignments(
         if (const auto* parameter = std::get_if<sql::param_expr>(&value);
             parameter && parameter->encoded_value.error) {
             return std::unexpected(*parameter->encoded_value.error);
+        }
+        if (const auto* arithmetic = std::get_if<sql::arithmetic_ptr>(&value)) {
+            std::size_t visited_nodes = 0;
+            auto arithmetic_valid =
+                validate_bulk_arithmetic<T>(sql::arithmetic_operand{*arithmetic}, visited_nodes);
+            if (!arithmetic_valid) {
+                return arithmetic_valid;
+            }
         }
     }
     return {};
