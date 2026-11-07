@@ -1,0 +1,103 @@
+{
+  "captured_at_utc": "2026-11-07T10:08:51.252380+00:00",
+  "purpose": "Existing compiler/adapter/observer baseline, not future API acceptance",
+  "git_base_commit": "1037db214e6fb269f911f577038cf7dc698cc2a6",
+  "snapshot_note": "Hashes describe the inspected working tree, including any uncommitted changes; the unrelated .gitignore edit is outside review scope",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "compiler": {
+    "id": "clang",
+    "exelist": [
+      "c++"
+    ],
+    "linker_exelist": [
+      "c++"
+    ],
+    "file_suffixes": [
+      "cpp",
+      "cppm",
+      "cc",
+      "cp",
+      "cxx",
+      "c++",
+      "hh",
+      "hp",
+      "hpp",
+      "ipp",
+      "hxx",
+      "h++",
+      "ino",
+      "ixx",
+      "CPP",
+      "C",
+      "HPP",
+      "H"
+    ],
+    "default_suffix": "cpp",
+    "version": "21.0.0",
+    "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "linker_id": "ld64"
+  },
+  "compile_command": [
+    "c++",
+    "-Itests/pg_integration.p",
+    "-Itests",
+    "-I../tests",
+    "-I../include",
+    "-Isubprojects/Catch2-3.14.0/src",
+    "-I../subprojects/Catch2-3.14.0/src",
+    "-I/opt/homebrew/opt/libpq/include",
+    "-fdiagnostics-color=always",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+    "-Wall",
+    "-Winvalid-pch",
+    "-Wextra",
+    "-Wpedantic",
+    "-std=c++23",
+    "-O0",
+    "-g",
+    "-Werror",
+    "-Itests/sqlite_integration.p",
+    "-Itests/mysql_integration.p",
+    "-I/opt/homebrew/opt/mysql-client/include/mysql",
+    "/Users/apavlov/Projects/AsterORM/docs/evidence/bulk-predicate-dml-inventory/probe.cpp",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/libasterorm_core.dylib",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/database/libasterorm_pg.dylib",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/database/libasterorm_sqlite.dylib",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/database/libasterorm_mysql.dylib",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src/database",
+    "-o",
+    "<temporary executable>"
+  ],
+  "compile_working_directory": "/Users/apavlov/Projects/AsterORM/buildDir",
+  "compile_exit_code": 0,
+  "probe_exit_code": 0,
+  "connection_configuration": "Existing ASTERORM_TEST_CONNINFO / ASTERORM_MYSQL_TEST_CONNINFO or Compose defaults; values omitted; SQLite :memory:",
+  "evidence_sha256": {
+    "docs/evidence/bulk-predicate-dml-inventory/probe.cpp": "19232192b452e453b9924d081bbec41ec1d0b0a9dca378a6a8a7b84e23f80bf8",
+    "docs/evidence/bulk-predicate-dml-inventory/capture.py": "759a2f2bca400fa79eab8eb42e33ce52f67b9f0c327bea042b6f9d7f6828860d",
+    "docs/evidence/bulk-predicate-dml-inventory/output.txt": "05c5aa26f2c14b58f5348d83e8dc8b986c905b7cd6da77ebde0f36855e81f0be",
+    "docs/evidence/bulk-predicate-dml-inventory/stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "inspected_source_sha256": {
+    "include/asterorm/core/repository.hpp": "7447e4e73b316cfc485aa9b515a98669d542e811de8799dcfce7546a998914c7",
+    "include/asterorm/core/session.hpp": "f9947098f6a6accccc4034a5358537237b483e8974ffc4f5380701d2d07ae590",
+    "include/asterorm/sql/ast.hpp": "06b88451f9b727924730faf7aebacfdc6d3e00a36044ad47b5c672dce3c3f8e2",
+    "include/asterorm/sql/typed.hpp": "cc4cbd696bd7540755bbf69185612dc81fb9a122185c51554e847047ec15f28b",
+    "src/sql/compiler.cpp": "5ca1442da4362b72a0abfdfd6678508801f788159264f52f0a6a7a07dfbde54e",
+    "src/database/postgres/result.cpp": "975ca929c3805ef95e708da70168467c86cfb07eb754e5c4150de955876666bb",
+    "src/database/sqlite/connection.cpp": "f6e28a7185bc0a853987f143e6b79f5abab049270db36aa4c2688539e8c91ebc",
+    "src/database/mysql/connection.cpp": "681489749e061db5658f41be657e613441813e746de87177f83b8d88a3ee84b8",
+    "src/database/mysql/driver.cpp": "a20caf646d68a219fd7e98f45ea7cc79192354fa02e6aceca141c33f5bd2738c",
+    "src/database/clickhouse/result.cpp": "fa1be1975d9e02c0309b60de2d022b395f15e75cb9a033b1a03d3a5dc749fc85"
+  },
+  "limits": [
+    "Temporary tables only; no persistent schema changes",
+    "No large-row-count workload or new repository API exercised",
+    "ClickHouse inspected only; no live runtime test",
+    "Local unsigned snapshot, not CI/release evidence"
+  ]
+}

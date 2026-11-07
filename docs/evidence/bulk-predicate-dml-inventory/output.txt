@@ -1,0 +1,8 @@
+compiler: 3 dialects; ordered typed parameters; empty SET/mapping gaps; no INSERT SELECT source
+sqlite: version=3.54.0
+sqlite: update=2; unchanged=2; no-match=0; delete=1; native-insert-select=1; events=6/errors=1; rollback=restored
+postgres: version=PostgreSQL 16.14 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+postgres: update=2; unchanged=2; no-match=0; delete=1; native-insert-select=1; events=6/errors=1; rollback=restored
+mysql: version=8.4.13
+mysql: update=2; unchanged=2; no-match=0; delete=1; native-insert-select=1; events=6/errors=1; rollback=restored
+Inventory probe passed; proposed repository methods remain unimplemented
