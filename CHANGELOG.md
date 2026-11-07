@@ -6,6 +6,13 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Optional `testing::transactional_session<Session>` for PostgreSQL/SQLite, with
+  owned root/private savepoint, managed completion gates, observer restoration,
+  generation-safe rollback and fail-closed session poisoning. Catch2 integration
+  and automatic reference fixtures remain planned.
+- SQLite native idle-state inspection and explicit transactional testing
+  capabilities on PostgreSQL/SQLite connections.
+
 - Source-bound local streaming acceptance review with five fresh-process repository
   memory scenarios, a materializing control, larger payloads, independent server/
   transaction-lock cleanup checks and reproducible installed guide consumers.
@@ -72,6 +79,9 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- Session layout includes transactional testing ownership; rebuild library and
+  consumers together. SQLite connection close/cache cleanup are now nonthrowing.
+
 - PostgreSQL connection layout includes reader ownership; rebuild consumers.
 - Pools honor an optional nonthrowing reuse check and close opted-in discarded
   connections outside the pool mutex before freeing their capacity slot.
@@ -103,6 +113,10 @@ All notable changes to AsterORM will be documented in this file.
 - Made repository writes and schema migrations aware of backend capabilities.
 
 ### Fixed
+
+- Transaction-guard abandonment on connections with nonthrowing close now catches
+  rollback/pool-return exceptions, defers release of borrowed connections and
+  preserves newer managed transaction generations.
 
 - Prevented late connection/setup completion from underflowing pool capacity
   after the close wait deadline expires.

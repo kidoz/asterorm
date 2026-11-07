@@ -23,6 +23,7 @@ namespace asterorm::pg {
 class connection {
   public:
     static constexpr bool supports_bulk_predicate_dml = true;
+    static constexpr bool supports_transactional_test_scope = true;
     static constexpr bool supports_single_row_stream = true;
     static constexpr bool supports_cursor_stream = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::postgres;

@@ -10,6 +10,7 @@ core_tests = executable(
     'unit/test_bulk_predicate.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
+    'unit/test_transactional_session.cpp',
     'unit/test_typed_dsl.cpp',
     'unit/test_typed_query.cpp',
     'unit/test_select_locking.cpp',
@@ -66,6 +67,9 @@ if sqlite_enabled
     dependencies : [asterorm_sqlite_dep, catch2_dep],
   )
   test('sqlite unit tests', sqlite_unit_tests)
+  test('transactional scope guide', python_program,
+    args : [files('check_transactional_guide.py'), '--build-root', meson.project_build_root()],
+  )
   test('bulk mutation guide', python_program,
     args : [files('check_bulk_predicate_guide.py'), '--build-root', meson.project_build_root()],
   )
@@ -100,6 +104,7 @@ if postgres_enabled
     [
       'integration/test_crud.cpp',
       'integration/test_transactions.cpp',
+      'integration/test_transactional_session.cpp',
       'integration/test_advisory_lock.cpp',
       'integration/test_pool.cpp',
       'integration/test_statement_timeout.cpp',

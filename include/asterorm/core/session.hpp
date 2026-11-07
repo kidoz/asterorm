@@ -20,6 +20,7 @@
 #include "asterorm/core/result.hpp"
 #include "asterorm/core/statement_timeout.hpp"
 #include "asterorm/core/stream_reservation.hpp"
+#include "asterorm/core/testing_scope.hpp"
 #include "asterorm/pool/connection_pool.hpp"
 
 namespace asterorm {
@@ -175,14 +176,20 @@ template <typename Session> class transaction_guard {
   private:
     void abandon() {
         if (session_) {
-            if constexpr (requires { session_->abandon_stream_transaction(transaction_id_); }) {
-                if (session_->abandon_stream_transaction(transaction_id_)) {
-                    session_ = nullptr;
-                    transaction_id_ = 0;
-                    return;
+            if constexpr (requires { session_->abandon_transaction(transaction_id_); }) {
+                session_->abandon_transaction(transaction_id_);
+                session_ = nullptr;
+                transaction_id_ = 0;
+            } else {
+                if constexpr (requires { session_->abandon_stream_transaction(transaction_id_); }) {
+                    if (session_->abandon_stream_transaction(transaction_id_)) {
+                        session_ = nullptr;
+                        transaction_id_ = 0;
+                        return;
+                    }
                 }
+                auto _ = rollback(); // legacy custom-session fallback
             }
-            auto _ = rollback(); // ignores error in dtor/move replacement
         }
     }
 
@@ -317,6 +324,10 @@ template <typename Pool> class session {
             if (auto blocked = scope_access_error()) {
                 return return_type{std::unexpected(*blocked)};
             }
+            if (testing_scope_) {
+                return return_type{std::unexpected(detail::testing_scope_error(
+                    "Advisory scopes are not supported inside a transactional test scope"))};
+            }
             if (transaction_invalidated_) {
                 return return_type{std::unexpected(invalidated_transaction_error())};
             }
@@ -380,6 +391,10 @@ template <typename Pool> class session {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
             if (auto blocked = scope_access_error()) {
                 return return_type{std::unexpected(*blocked)};
+            }
+            if (testing_scope_) {
+                return return_type{std::unexpected(detail::testing_scope_error(
+                    "Timeout scopes are not supported inside a transactional test scope"))};
             }
             if (transaction_invalidated_) {
                 return return_type{std::unexpected(invalidated_transaction_error())};
@@ -674,6 +689,231 @@ template <typename Pool> class session {
     template <typename> friend class transaction_guard;
     template <typename> friend class detail::stream_reservation;
     friend struct detail::session_stream_access;
+    friend struct detail::testing_session_access;
+
+    struct testing_control_guard {
+        session& owner;
+        detail::testing_scope_state* state;
+        explicit testing_control_guard(session& source,
+                                       detail::testing_scope_state* scope = nullptr)
+            : owner(source), state(scope) {
+            owner.testing_control_active_ = true;
+            if (state) {
+                state->finishing = true;
+            }
+        }
+        ~testing_control_guard() {
+            if (state) {
+                state->finishing = false;
+            }
+            owner.testing_control_active_ = false;
+        }
+    };
+
+    static void remember_testing_failure(const std::shared_ptr<detail::testing_scope_state>& state,
+                                         db_error error) noexcept {
+        static_assert(std::is_nothrow_move_constructible_v<db_error>);
+        if (!state->failure) {
+            state->failure.emplace(std::move(error));
+        }
+    }
+
+    void
+    restore_testing_observer(const std::shared_ptr<detail::testing_scope_state>& state) noexcept {
+        if (!state->observer_restored) {
+            state->observer_restored = true;
+            observer_ = std::move(state->observer);
+        }
+    }
+
+    void complete_deferred_discard() noexcept {
+        if constexpr (detail::has_stream_cleanup<connection_type>) {
+            if (active_lease_) {
+                (*active_lease_)->close();
+            }
+        }
+        active_lease_.reset();
+        deferred_discard_ = false;
+        scope_poisoned_ = scope_depth_ != 0;
+    }
+
+    void poison_testing_scope(const std::shared_ptr<detail::testing_scope_state>& state) noexcept {
+        state->done = true;
+        if (testing_scope_ != state || state->transaction_id != active_transaction_id_) {
+            return; // never discard a newer managed generation
+        }
+        restore_testing_observer(state);
+        in_transaction_ = false;
+        transaction_invalidated_ = false;
+        active_transaction_id_ = 0;
+        deferred_discard_ = true;
+        if (operation_depth_ == 0) {
+            complete_deferred_discard();
+        }
+        // Keep the failed record: future access fails closed instead of reconnecting.
+    }
+
+    void rollback_testing_failure(const std::shared_ptr<detail::testing_scope_state>& state,
+                                  bool attempt_rollback) noexcept {
+        if constexpr (detail::supports_testing_scope<connection_type>()) {
+            if (attempt_rollback && testing_scope_ == state && active_lease_ &&
+                state->transaction_id == active_transaction_id_) {
+                try {
+                    if ((*active_lease_)->is_open() && !(*active_lease_)->is_transaction_idle()) {
+                        (void)(*active_lease_)->execute("ROLLBACK");
+                    }
+                } catch (...) {
+                    // Preserve the first cleanup diagnostic; discard below regardless.
+                }
+            }
+        }
+        poison_testing_scope(state);
+    }
+
+    result<std::shared_ptr<detail::testing_scope_state>> create_testing_scope() {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if constexpr (!detail::supports_testing_scope<connection_type>()) {
+            return std::unexpected(detail::testing_scope_error(
+                "This connection does not support transactional test scopes"));
+        } else {
+            if (auto blocked = scope_access_error()) {
+                return std::unexpected(*blocked);
+            }
+            if (testing_scope_ || in_transaction_ || scope_depth_ != 0 || operation_depth_ != 0) {
+                return std::unexpected(detail::testing_scope_error(
+                    "Transactional test scope requires an idle session outside callbacks/scopes"));
+            }
+            testing_control_guard control{*this};
+            auto state = std::make_shared<detail::testing_scope_state>();
+            state->generation = ++next_testing_scope_id_;
+            if (state->generation == 0) {
+                state->generation = ++next_testing_scope_id_;
+            }
+            const auto name =
+                std::string{detail::testing_savepoint_prefix} + std::to_string(state->generation);
+            const auto quoted = *detail::quote_savepoint(name);
+            state->begin_sql = detail::build_begin_sql_for<connection_type>({});
+            state->savepoint_sql = "SAVEPOINT " + quoted;
+            state->rollback_sql = "ROLLBACK TO SAVEPOINT " + quoted;
+            state->release_sql = "RELEASE SAVEPOINT " + quoted;
+            state->observer = observer_; // snapshot/allocation before lease or transaction mutation
+            auto acquired = pool_->acquire();
+            if (!acquired) {
+                return std::unexpected(std::move(acquired.error()));
+            }
+            active_lease_.emplace(std::move(*acquired));
+            testing_scope_ = state;
+            if (!(*active_lease_)->is_transaction_idle()) {
+                remember_testing_failure(state, std::move(state->lost_error));
+                poison_testing_scope(state);
+                return std::unexpected(*state->failure);
+            }
+            state->transaction_id = ++next_transaction_id_;
+            if (state->transaction_id == 0) {
+                state->transaction_id = ++next_transaction_id_;
+            }
+            active_transaction_id_ = state->transaction_id;
+            in_transaction_ = true;
+            transaction_invalidated_ = false;
+            try {
+                for (const auto* statement : {&state->begin_sql, &state->savepoint_sql}) {
+                    auto executed = (*active_lease_)->execute(*statement);
+                    if (!executed) {
+                        remember_testing_failure(state, std::move(executed.error()));
+                        rollback_testing_failure(state, true);
+                        return std::unexpected(*state->failure);
+                    }
+                }
+                return state;
+            } catch (...) {
+                remember_testing_failure(state, std::move(state->exception_error));
+                poison_testing_scope(state);
+                throw;
+            }
+        }
+    }
+
+    bool testing_scope_active(const std::shared_ptr<detail::testing_scope_state>& state) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        return state && !state->done && testing_scope_ == state &&
+               state->transaction_id == active_transaction_id_ && !testing_control_active_;
+    }
+
+    result<void> finish_testing_scope(const std::shared_ptr<detail::testing_scope_state>& state) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!state) {
+            return {};
+        }
+        if (state->done) {
+            return state->failure ? result<void>{std::unexpected(*state->failure)} : result<void>{};
+        }
+        if (operation_depth_ != 0 || testing_control_active_) {
+            return std::unexpected(detail::testing_scope_error(
+                "Cannot finish a transactional test scope during an active callback"));
+        }
+        if constexpr (detail::supports_testing_scope<connection_type>()) {
+            testing_control_guard control{*this, state.get()};
+            if (testing_scope_ != state || state->transaction_id != active_transaction_id_ ||
+                !active_lease_ || (*active_lease_)->is_transaction_idle() ||
+                transaction_invalidated_) {
+                remember_testing_failure(state, std::move(state->lost_error));
+                rollback_testing_failure(state, true);
+                return std::unexpected(*state->failure);
+            }
+            restore_testing_observer(state);
+            try {
+                for (const auto statement :
+                     {std::string_view{state->rollback_sql}, std::string_view{state->release_sql},
+                      std::string_view{"ROLLBACK"}}) {
+                    auto executed = (*active_lease_)->execute(statement);
+                    if (!executed) {
+                        remember_testing_failure(state, std::move(executed.error()));
+                        rollback_testing_failure(state, statement != "ROLLBACK");
+                        return std::unexpected(*state->failure);
+                    }
+                }
+                if (!(*active_lease_)->is_transaction_idle()) {
+                    remember_testing_failure(state, std::move(state->lost_error));
+                    poison_testing_scope(state);
+                    return std::unexpected(*state->failure);
+                }
+                // Explicit release makes a pool allocation failure catchable, before lease
+                // destruction.
+                active_lease_->release_to_pool();
+                active_lease_.reset();
+                in_transaction_ = false;
+                active_transaction_id_ = 0;
+                transaction_invalidated_ = false;
+                state->done = true;
+                testing_scope_.reset();
+                return {};
+            } catch (...) {
+                remember_testing_failure(state, std::move(state->exception_error));
+                poison_testing_scope(state);
+                throw;
+            }
+        } else {
+            return std::unexpected(
+                detail::testing_scope_error("Unsupported transactional test scope"));
+        }
+    }
+
+    void abandon_testing_scope(const std::shared_ptr<detail::testing_scope_state>& state) noexcept {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (!state || state->done || state->finishing || testing_scope_ != state) {
+            return;
+        }
+        if (operation_depth_ != 0 || testing_control_active_) {
+            remember_testing_failure(state, std::move(state->abandoned_error));
+            poison_testing_scope(state);
+            return;
+        }
+        try {
+            (void)finish_testing_scope(state);
+        } catch (...) {
+            // Explicit finish preserves C++ exception identity; destruction never throws.
+        }
+    }
 
     class operation_scope {
       public:
@@ -686,6 +926,9 @@ template <typename Pool> class session {
         ~operation_scope() {
             std::lock_guard<std::recursive_mutex> lock(owner_.mutex_);
             --owner_.operation_depth_;
+            if (owner_.operation_depth_ == 0 && owner_.deferred_discard_) {
+                owner_.complete_deferred_discard();
+            }
         }
 
       private:
@@ -700,6 +943,10 @@ template <typename Pool> class session {
         } else {
             if (auto blocked = scope_access_error()) {
                 return std::unexpected(*blocked);
+            }
+            if (testing_scope_) {
+                return std::unexpected(detail::testing_scope_error(
+                    "Streaming is not supported inside a transactional test scope"));
             }
             if (scope_depth_ != 0 || operation_depth_ != 0) {
                 return std::unexpected(detail::stream_ownership_error(
@@ -811,6 +1058,54 @@ template <typename Pool> class session {
         return false;
     }
 
+    // Ordinary guards share the generation/deferred-discard safety needed by testing.
+    // Legacy connections without a nonthrowing close retain the older guard fallback.
+    void abandon_transaction(std::uint64_t generation) noexcept
+        requires detail::has_stream_cleanup<connection_type>
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (generation == 0 || generation != active_transaction_id_ || !in_transaction_ ||
+            !active_lease_ || testing_control_active_ ||
+            (testing_scope_ && !testing_scope_->done)) {
+            return;
+        }
+        if (abandon_stream_transaction(generation)) {
+            return;
+        }
+        if (operation_depth_ == 0) {
+            try {
+                auto rolled_back = (*active_lease_)->execute("ROLLBACK");
+                if (generation != active_transaction_id_ || !in_transaction_) {
+                    return;
+                }
+                if (rolled_back) {
+                    if (scope_depth_ == 0) {
+                        active_lease_
+                            ->release_to_pool(); // catch allocation failure before destruction
+                        active_lease_.reset();
+                    }
+                    in_transaction_ = false;
+                    active_transaction_id_ = 0;
+                    transaction_invalidated_ = false;
+                    return;
+                }
+            } catch (...) {
+                // Destructors/move replacement cannot propagate native C++ cleanup exceptions.
+            }
+        }
+        if (generation != active_transaction_id_ || !in_transaction_) {
+            return;
+        }
+        in_transaction_ = false;
+        active_transaction_id_ = 0;
+        transaction_invalidated_ = false;
+        scope_poisoned_ = true;
+        deferred_discard_ = true;
+        if (operation_depth_ == 0) {
+            complete_deferred_discard();
+        }
+    }
+
     class advisory_scope {
       public:
         advisory_scope(session& owner, std::int64_t key) : owner_(&owner), key_(key) {}
@@ -908,7 +1203,22 @@ template <typename Pool> class session {
         }
     }
 
-    [[nodiscard]] std::optional<db_error> scope_access_error() const {
+    [[nodiscard]] std::optional<db_error> scope_access_error() {
+        if (testing_control_active_) {
+            return detail::testing_scope_error("Transactional test scope control is executing");
+        }
+        if (testing_scope_) {
+            if constexpr (detail::supports_testing_scope<connection_type>()) {
+                if (!testing_scope_->done &&
+                    (!active_lease_ || (*active_lease_)->is_transaction_idle())) {
+                    remember_testing_failure(testing_scope_, std::move(testing_scope_->lost_error));
+                    poison_testing_scope(testing_scope_);
+                }
+            }
+            if (testing_scope_->done) {
+                return testing_scope_->failure;
+            }
+        }
         if (active_stream_id_ != 0 || stream_call_active_) {
             return detail::stream_ownership_error("Session is busy with an active stream");
         }
@@ -979,6 +1289,10 @@ template <typename Pool> class session {
 
     asterorm::result<void> commit_transaction(std::uint64_t expected_transaction_id) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (testing_control_active_ || (testing_scope_ && !testing_scope_->done)) {
+            return std::unexpected(
+                detail::testing_scope_error("Transactional test scope owns completion"));
+        }
         if (active_stream_id_ != 0) {
             return std::unexpected(
                 detail::stream_ownership_error("Session is busy with an active stream"));
@@ -1020,6 +1334,10 @@ template <typename Pool> class session {
 
     asterorm::result<void> rollback_transaction(std::uint64_t expected_transaction_id) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (testing_control_active_ || (testing_scope_ && !testing_scope_->done)) {
+            return std::unexpected(
+                detail::testing_scope_error("Transactional test scope owns completion"));
+        }
         if (active_stream_id_ != 0) {
             return std::unexpected(
                 detail::stream_ownership_error("Session is busy with an active stream"));
@@ -1063,6 +1381,10 @@ template <typename Pool> class session {
         if (auto blocked = scope_access_error()) {
             return std::unexpected(*blocked);
         }
+        if (testing_scope_ && name.starts_with(detail::testing_savepoint_prefix)) {
+            return std::unexpected(
+                detail::testing_scope_error("Savepoint name is reserved by transactional testing"));
+        }
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -1102,6 +1424,10 @@ template <typename Pool> class session {
     std::uint64_t next_stream_id_{0};
     std::size_t operation_depth_{0};
     bool stream_call_active_{false};
+    std::shared_ptr<detail::testing_scope_state> testing_scope_;
+    std::uint64_t next_testing_scope_id_{0};
+    bool testing_control_active_{false};
+    bool deferred_discard_{false};
     query_observer observer_;
 
     static db_error invalidated_transaction_error() {

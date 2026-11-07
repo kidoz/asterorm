@@ -225,7 +225,11 @@ bool connection::is_open() const {
     return db_ != nullptr;
 }
 
-void connection::clear_cache_locked() {
+bool connection::is_transaction_idle() const noexcept {
+    return db_ && sqlite3_get_autocommit(db_) != 0;
+}
+
+void connection::clear_cache_locked() noexcept {
     for (auto& entry : prepared_statements_) {
         sqlite3_finalize(entry.second);
     }
@@ -233,7 +237,7 @@ void connection::clear_cache_locked() {
     prepared_statement_order_.clear();
 }
 
-void connection::close() {
+void connection::close() noexcept {
     clear_cache_locked();
     if (db_) {
         sqlite3_close_v2(db_);

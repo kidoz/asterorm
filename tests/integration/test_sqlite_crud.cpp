@@ -10,6 +10,7 @@
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
 #include "support/bulk_predicate.hpp"
+#include "support/transactional_session.hpp"
 #include "support/typed_query_observer.hpp"
 
 TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][observer]") {
@@ -643,4 +644,51 @@ TEST_CASE("SQLite Integration: timeout scopes reject before leasing", "[sqlite][
 
 TEST_CASE("sqlite Integration: bulk predicate mutations", "[sqlite][bulk-dml]") {
     asterorm::test::check_bulk_predicate(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("SQLite transactional testing scope preserves fixtures and fails closed",
+          "[sqlite][transactional-testing]") {
+    asterorm::test::check_transactional_session(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("SQLite test scope detects native automatic rollback before another statement",
+          "[sqlite][transactional-testing]") {
+    STATIC_REQUIRE(noexcept(std::declval<asterorm::sqlite::connection&>().close()));
+    STATIC_REQUIRE(
+        noexcept(std::declval<const asterorm::sqlite::connection&>().is_transaction_idle()));
+    asterorm::sqlite::connection empty{nullptr};
+    REQUIRE_FALSE(empty.is_transaction_idle());
+    asterorm::pool_config config;
+    config.conninfo = ":memory:";
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, config};
+    asterorm::session db{pool};
+    using asterorm::test::scope_take;
+    using scope_type = asterorm::testing::transactional_session<decltype(db)>;
+    scope_take(db.with_connection([](auto& connection) {
+        return connection.execute("CREATE TEMP TABLE rollback_target(id INTEGER)");
+    }));
+    scope_take(db.with_connection([](auto& connection) {
+        return connection.execute(
+            "CREATE TEMP TRIGGER reject_write BEFORE INSERT ON rollback_target BEGIN SELECT "
+            "RAISE(ROLLBACK,'rollback identity'); END");
+    }));
+    auto scope = scope_take(scope_type::create(db));
+    auto failure = db.with_connection([](auto& connection) {
+        return connection.execute("INSERT INTO rollback_target VALUES(1)");
+    });
+    REQUIRE_FALSE(failure.has_value());
+    REQUIRE(failure.error().message.contains("rollback identity"));
+    bool called = false;
+    auto forbidden = db.with_connection([&](auto& connection) {
+        called = true;
+        return connection.execute("CREATE TEMP TABLE escaped(id INTEGER)");
+    });
+    REQUIRE_FALSE(forbidden.has_value());
+    REQUIRE_FALSE(called);
+    REQUIRE_FALSE(scope.finish().has_value());
+    REQUIRE(pool.stats().total == 0);
+    REQUIRE_FALSE(db.has_active_transaction());
+    REQUIRE_FALSE(scope_type::create(db).has_value());
 }

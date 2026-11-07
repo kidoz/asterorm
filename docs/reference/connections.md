@@ -78,6 +78,12 @@ guard offers `commit()` and `rollback()` and rolls back on destruction while
 active. The session must outlive the guard. A session supports one active
 transaction; savepoint methods provide named partial rollback.
 
+On connections with nonthrowing close, guard destruction catches rollback and
+pool-return exceptions and discards the connection. If a callback still borrows
+it, close/release waits for the callback to unwind. Generation checks preserve
+any newer managed transaction. Legacy connections retain their existing cleanup
+path.
+
 `transact(callback, options)` commits a successful callback result and rolls
 back errors. `retry_transaction(callback, max_attempts=3, options={})` retries
 serialization and deadlock failures. Rollback does not restore C++ object state.
@@ -88,3 +94,13 @@ not shared between unrelated operations. Timeout scopes keep their own lease pin
 completing a transaction inside one blocks further work until its timeout frames
 unwind. Savepoint rollback is rejected while a timeout scope is active. See the
 [timeout guide](../how-to/statement-timeouts.md) for restoration and discard rules.
+
+The separately included `testing::transactional_session<Session>` supports an
+optional rollback-only test boundary on PostgreSQL/SQLite. It requires an idle
+session, starts its own root/private savepoint, permits ordinary queries and user
+savepoints, and gates managed completion and stream/advisory/timeout composition.
+Explicit `finish()` rolls back, restores the entering observer and releases a
+confirmed-idle connection. Failure discards and poisons that borrowed session;
+there is no automatic reconnection or baseline recreation. See the
+[scope guide](../how-to/transactional-test-scopes.md) for lifetime, callbacks and
+exception policy. Session layout changed; rebuild consumers with the library.

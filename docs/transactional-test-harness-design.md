@@ -1,11 +1,13 @@
 # Transactional test harness: inventory and implementation contract
 
-Reviewed on 2026-11-07. **Inventory and v1 contract are complete; the harness is
-not implemented.** The [capture](evidence/transactional-test-harness-inventory/README.md)
-compiles and runs against the configured PostgreSQL, SQLite and Catch2 targets.
-Its results establish current behavior, not delivery or acceptance of the proposed API.
+Reviewed on 2026-11-07. **The generic transactional scope and session ownership
+layer are implemented; Catch2 integration and worked fixture migration remain
+planned.** The historical [capture](evidence/transactional-test-harness-inventory/README.md)
+was compiled and run against the configured PostgreSQL, SQLite and Catch2 targets.
+Its results establish the inventory baseline; the implementation follow-up below
+records the delivered core API. This is not combined harness acceptance.
 
-## Current inventory
+## Inventory before implementation
 
 | Area | Observed implementation | Consequence |
 | --- | --- | --- |
@@ -46,7 +48,8 @@ testing scopes reject. This resolves the proposal's missing transaction prerequi
 without committing caller work. A private savepoint is opened after BEGIN. Fixture
 schema/reference preparation happens once, outside these per-invocation transactions.
 
-Proposed public declarations, **not current installed headers**:
+Delivered core declarations in
+[`transactional_session.hpp`](../include/asterorm/testing/transactional_session.hpp):
 
 ```cpp
 // <asterorm/testing/transactional_session.hpp>, no Catch2 dependency
@@ -72,7 +75,7 @@ available for cleanup after the active callback unwinds.
 
 ### Ownership and admission
 
-Introduce a narrow internal session bridge with a unique testing-scope generation
+The internal session bridge uses a unique testing-scope generation
 bound to its root transaction generation. It alone may finish or discard that
 root while the scope is active. Public managed commit/rollback, including guard
 completion, reject before SQL; nested BEGIN already rejects. Protect the private
@@ -127,7 +130,8 @@ native idle check using
 [`sqlite3_get_autocommit`](https://www.sqlite.org/c3ref/get_autocommit.html).
 The check must handle automatic native transaction rollback without trusting only
 the session's bookkeeping. PostgreSQL already has the required close/idle methods.
-These are future adapter changes, not capabilities added by this inventory.
+These prerequisites are delivered in the implementation follow-up below; the
+inventory records their earlier absence.
 
 ## Optional Catch2 integration
 
@@ -191,8 +195,8 @@ locking/timeout, streaming, connection-loss and multi-session tests stay untagge
 
 | Delivery | Required acceptance |
 | --- | --- |
-| **Next: generic scope and session ownership** | Add the optional public header, explicit PG/SQLite capabilities, SQLite cleanup/readiness prerequisites and generation-safe internal bridge. No-server tests check SQL/order, moves, stale tokens, rejection before lease, completion gates, observer restoration and injected allocation/SQL/C++ cleanup failures. Native PG/SQLite cases verify baseline rows/schema survive, invocation writes disappear, failed statements recover, and dirty connections never return to reuse |
-| Catch2 adapter and runner | Subprocess tests prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
+| Generic scope and session ownership — **implemented** | [No-server cases](../tests/unit/test_transactional_session.cpp), [shared native fixture](../tests/support/transactional_session.hpp) and [PG cases](../tests/integration/test_transactional_session.cpp): SQL/order, moves, stale handles, pre-lease rejection, completion gates, observer restoration and injected SQL/C++/pool-return allocation failures. Native PG/SQLite cases verify row/schema baselines survive, invocation writes disappear, failed statements recover and dirty connections never return to reuse |
+| **Next: Catch2 adapter and runner** | Subprocess tests prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
 | Worked fixtures and migration | Main PostgreSQL CRUD case uses the provider across all seven paths; each observes the baseline. A SQLite example does likewise. Separate processes do not collide. Deliberately lost fixtures cannot reconnect silently |
 | Public contract and combined review | Compile/install helper examples, keep Catch2 opt-in, run no-server plus PG/SQLite/MySQL regressions, build/format/lint/standards checks, document compatibility/layout changes. Count setup/DDL reduction before claiming it; measure timing before claiming speedup |
 
@@ -210,4 +214,51 @@ The [verification record](evidence/transactional-test-harness-inventory/verifica
 binds current document/context hashes and fresh local command receipts. Existing
 implementation/acceptance snapshots remain historical; this work does not rewrite
 them. No helper API, fixture migration, performance improvement, remote CI or
-release readiness is established by this inventory.
+release readiness was established by this inventory. The core implementation below
+is a subsequent delivery; earlier inventory hashes/results remain unchanged.
+
+## Implementation follow-up: generic transactional scope (2026-11-07)
+
+The optional public header now implements fallible creation/finish, move-only
+ownership with deleted move assignment, borrowed active-session access and
+nonthrowing destruction. Generic state in
+[`core/testing_scope.hpp`](../include/asterorm/core/testing_scope.hpp) and the
+session bridge keep transaction generations, prepared control SQL, observer
+snapshots and preallocated fallback diagnostics. Core exposes no vendor or Catch2
+types. PostgreSQL/SQLite explicitly opt in; unsupported connections and old session
+facades reject before executing or leasing through the scope.
+
+Creation checks managed admission before lease acquisition and snapshots the
+observer before native mutation. A non-idle checked-out connection is discarded
+and poisons the session rather than returning an uncertain transaction to reuse.
+Normal finish restores the observer, performs ROLLBACK TO / RELEASE / ROLLBACK,
+confirms native idle and explicitly releases the lease so a pool-return allocation
+failure can be caught before lease destruction. SQL failures retain their first
+diagnostic; C++ exceptions preserve identity and discard. Failed sessions retain
+their diagnostic and cannot silently reconnect. Destruction during a callback
+defers physical close/release until the connection object is no longer borrowed.
+
+SQLite close and cached-statement cleanup are audited nonthrowing operations, and
+its native idle probe reads `sqlite3_get_autocommit`. Automatic native rollback is
+detected before another statement can run in autocommit. Managed completion,
+reserved savepoint names and stream/advisory/timeout composition are gated; ordinary
+repository, typed and native queries and user savepoints remain available.
+
+Fault injection also exposed the ordinary transaction guard's exceptional
+destruction path. For connections with nonthrowing close, abandonment now catches
+native rollback/pool-return exceptions, defers discard while a callback borrows
+the connection, and rechecks the managed generation before touching ownership.
+Legacy connection cleanup is unchanged. Regression cases cover these failures,
+stale guards and generation replacement during exceptional rollback.
+
+The [guide](how-to/transactional-test-scopes.md) is compiled in the suite using
+configured SQLite flags. The [installed consumer probe](evidence/transactional-test-scope/check_consumers.py)
+runs its example on both PostgreSQL and SQLite through fresh CMake/shared pkg-config
+consumption, with no Catch2 dependency. Session layout changed; rebuild library
+and consumers together. The optional adapter, process-owned reference providers,
+CRUD migration and combined harness acceptance remain open.
+
+The [generic scope verification](evidence/transactional-test-scope/README.md)
+records the local 20-target suite, separate seven-target SQLite-only build,
+fault-injection/native cases, focused sanitizer check and installed consumers.
+Its source and receipt hashes are separate from the historical inventory.

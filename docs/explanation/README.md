@@ -26,8 +26,9 @@ fresh memory/cleanup evidence and remaining release boundaries. See the
 
 The [transactional test harness inventory and contract](../transactional-test-harness-design.md)
 defines proposed rollback ownership, per-partial Catch2 isolation, reference-data
-lifetime and failure reporting. Its native/Catch2 probes are implemented; the
-harness and fixture migration remain planned.
+lifetime and failure reporting. The generic PG/SQLite scope is implemented;
+the optional Catch2 adapter and fixture migration remain planned. See the
+[manual scope guide](../how-to/transactional-test-scopes.md).
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

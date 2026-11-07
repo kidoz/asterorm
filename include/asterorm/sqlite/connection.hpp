@@ -23,6 +23,7 @@ namespace asterorm::sqlite {
 class connection {
   public:
     static constexpr bool supports_bulk_predicate_dml = true;
+    static constexpr bool supports_transactional_test_scope = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::sqlite;
 
     connection(const connection&) = delete;
@@ -34,7 +35,8 @@ class connection {
     ~connection();
 
     bool is_open() const;
-    void close();
+    void close() noexcept;
+    [[nodiscard]] bool is_transaction_idle() const noexcept;
 
     // Used by driver
     explicit connection(sqlite3* db);
@@ -66,7 +68,7 @@ class connection {
 
   private:
     void evict_one_prepared_statement();
-    void clear_cache_locked();
+    void clear_cache_locked() noexcept;
 
     sqlite3* db_{nullptr};
     std::unordered_map<std::string, sqlite3_stmt*> prepared_statements_;

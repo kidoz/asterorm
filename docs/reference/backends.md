@@ -19,6 +19,7 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Native single-row reader | Yes | No | No | No |
 | Native declared-cursor batches | Yes, transaction required | No | No | No |
 | Repository entity stream | Single-row or cursor mode | Rejected | Rejected | Rejected |
+| Transactional testing scope | Yes | Yes | Rejected | Rejected |
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
 | INSERT-from-SELECT | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
 | Predicate UPDATE/DELETE | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
@@ -82,6 +83,11 @@ when all operations must see the same private database.
 
 The adapter enables foreign keys and a five-second busy timeout. Booleans bind
 as integer 1/0; result rows are materialized. Statements reject trailing SQL.
+`close() noexcept` finalizes cached statements and closes the native handle.
+`is_transaction_idle() const noexcept` checks native autocommit and returns false
+for a closed connection. The optional
+[test scope](../how-to/transactional-test-scopes.md) uses this to detect automatic
+native rollback and prevent later statements escaping into autocommit.
 Transaction isolation requests have the mapping described in the
 [transaction guide](../how-to/transactions.md). COPY is unsupported.
 

@@ -53,6 +53,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - Scoped transactions, savepoints, transaction retries, and a schema migration
   runner for PostgreSQL and SQLite, with automatic PostgreSQL executor
   serialization.
+- Optional [transactional test scopes](docs/how-to/transactional-test-scopes.md)
+  for PostgreSQL/SQLite, with explicit finish and conservative failure cleanup.
 - PostgreSQL codecs for JSONB, arrays, UUID, bytea, date/time, exact numeric values,
   and enum labels, plus raw and structured COPY helpers.
 
@@ -68,7 +70,7 @@ reader API, both implementations and native feasibility probes.
 Both PostgreSQL streaming strategies are implemented and
 [locally accepted within the revised v1 contract](docs/streaming-acceptance.md).
 The [transactional test harness contract](docs/transactional-test-harness-design.md)
-records the next testing-infrastructure design; that helper remains unimplemented.
+records the implemented generic scope and the remaining Catch2 adapter/fixture migration.
 
 ## Backends
 

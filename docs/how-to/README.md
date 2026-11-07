@@ -13,6 +13,7 @@ Each addresses a specific task.
 - [Temporarily limit statements in a transaction](statement-timeouts.md)
 - [Migrate string queries to the typed DSL](../typed-query-migration.md)
 - [Use transactions and retries](transactions.md)
+- [Roll back an isolated test scope](transactional-test-scopes.md)
 - [Apply and roll back schema migrations](migrations.md)
 - [Configure pools and observe queries](pooling-and-observability.md)
 - [Run the test suites](testing.md)
