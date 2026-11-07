@@ -14,6 +14,7 @@ Each addresses a specific task.
 - [Migrate string queries to the typed DSL](../typed-query-migration.md)
 - [Use transactions and retries](transactions.md)
 - [Roll back an isolated test scope](transactional-test-scopes.md)
+- [Use transactional fixtures with Catch2](catch2-transactional-tests.md)
 - [Apply and roll back schema migrations](migrations.md)
 - [Configure pools and observe queries](pooling-and-observability.md)
 - [Run the test suites](testing.md)

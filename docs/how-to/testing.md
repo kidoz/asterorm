@@ -1,7 +1,8 @@
 # Run the test suites
 
-Run commands from the repository root. Tests require Catch2 with a main function;
-Meson can resolve it through the supplied wrap. Use a new build directory for
+Run commands from the repository root. Most tests link Catch2 with its main;
+the optional adapter test supplies its own runner. Meson resolves both through
+the supplied wrap. Use a new build directory for
 each independent configuration below.
 
 ## Test without a server
@@ -73,3 +74,16 @@ python3 tests/check_repository_stream_memory.py buildDir/tests/pg_integration --
 These checks use Linux/macOS peak RSS and skip elsewhere. See the
 [acceptance review](../streaming-acceptance.md) for fixture limits, server cleanup
 observations and reproducible installed consumer checks.
+
+The SQLite-enabled suite also runs the optional
+[Catch2 transactional adapter](catch2-transactional-tests.md) matrix. Its parent
+checks intentional child assertion, skip and harness-failure statuses, so run it
+through Meson or the parent script:
+
+```sh
+python3 tests/check_catch2_harness.py buildDir/tests/catch2_harness
+```
+
+The child executable contains deliberate failures; running all its cases directly
+is not a passing suite. Existing integration executables retain their current main
+until their worked fixture migration.

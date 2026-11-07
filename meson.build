@@ -139,6 +139,7 @@ endif
 
 if get_option('tests')
   catch2_dep = dependency('catch2-with-main', fallback : ['catch2', 'catch2_with_main_dep'], default_options: ['tests=false', 'install=false'])
+  catch2_runner_dep = dependency('catch2', fallback : ['catch2', 'catch2_dep'], default_options: ['tests=false', 'install=false'])
   subdir('tests')
 endif
 

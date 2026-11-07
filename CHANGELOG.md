@@ -6,10 +6,16 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Optional `<asterorm/testing/catch2.hpp>` fixture registration, typed session
+  access and custom runner. Tagged Catch2 partial invocations use independent
+  rollback scopes; setup/cleanup failures poison providers and affect process
+  status without assertions in listener callbacks. Normal library dependencies
+  remain independent of Catch2.
+
 - Optional `testing::transactional_session<Session>` for PostgreSQL/SQLite, with
   owned root/private savepoint, managed completion gates, observer restoration,
-  generation-safe rollback and fail-closed session poisoning. Catch2 integration
-  and automatic reference fixtures remain planned.
+  generation-safe rollback and fail-closed session poisoning. Worked reference
+  fixtures and CRUD migration remain planned.
 - SQLite native idle-state inspection and explicit transactional testing
   capabilities on PostgreSQL/SQLite connections.
 

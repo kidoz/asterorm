@@ -61,6 +61,15 @@ if clickhouse_feature.allowed()
 endif
 
 if sqlite_enabled
+  catch2_harness = executable('catch2_harness',
+    ['support/catch2_harness_main.cpp', 'integration/test_catch2_harness.cpp'],
+    dependencies : [asterorm_sqlite_dep, catch2_runner_dep, dependency('threads')],
+  )
+  test('Catch2 transactional harness', python_program,
+    args : [files('check_catch2_harness.py'), catch2_harness],
+    depends : catch2_harness,
+    timeout : 60,
+  )
   sqlite_unit_tests = executable(
     'sqlite_unit_tests',
     'unit/test_sqlite_result.cpp',

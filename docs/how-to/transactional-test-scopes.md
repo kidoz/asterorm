@@ -2,8 +2,9 @@
 
 Include `<asterorm/testing/transactional_session.hpp>` to use the optional
 `asterorm::testing::transactional_session<Session>` helper. It supports PostgreSQL
-and SQLite and has no Catch2 dependency. The Catch2 adapter and automatic fixture
-registration remain planned.
+and SQLite and has no Catch2 dependency. A separately included
+[Catch2 adapter](catch2-transactional-tests.md) provides lazy registered fixtures
+and isolation for each partial invocation.
 
 Prepare connection-local schema/reference data outside the scope, then create a
 new rollback-only scope on an idle session. It owns a root transaction and private
@@ -93,4 +94,4 @@ objects. Keep transaction, migration, locking/timeout, streaming and connection-
 integration cases outside these scopes unless they explicitly test rejection.
 
 The [design and delivery contract](../transactional-test-harness-design.md) records
-the remaining Catch2 adapter, process-owned fixture and CRUD migration work.
+the delivered adapter and remaining worked reference-fixture/CRUD migration work.

@@ -104,3 +104,8 @@ confirmed-idle connection. Failure discards and poisons that borrowed session;
 there is no automatic reconnection or baseline recreation. See the
 [scope guide](../how-to/transactional-test-scopes.md) for lifetime, callbacks and
 exception policy. Session layout changed; rebuild consumers with the library.
+
+The optional `<asterorm/testing/catch2.hpp>` adds explicit fixture registration,
+typed session access during a matching tagged partial invocation and a custom
+runner for listener diagnostics/process status. It requires a separately supplied
+Catch2 dependency without its main. See the [Catch2 guide](../how-to/catch2-transactional-tests.md).

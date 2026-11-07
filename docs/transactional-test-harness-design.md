@@ -1,7 +1,7 @@
 # Transactional test harness: inventory and implementation contract
 
-Reviewed on 2026-11-07. **The generic transactional scope and session ownership
-layer are implemented; Catch2 integration and worked fixture migration remain
+Reviewed on 2026-11-07. **The generic transactional scope, session ownership and
+optional Catch2 adapter/runner are implemented; worked fixture migration remains
 planned.** The historical [capture](evidence/transactional-test-harness-inventory/README.md)
 was compiled and run against the configured PostgreSQL, SQLite and Catch2 targets.
 Its results establish the inventory baseline; the implementation follow-up below
@@ -196,8 +196,8 @@ locking/timeout, streaming, connection-loss and multi-session tests stay untagge
 | Delivery | Required acceptance |
 | --- | --- |
 | Generic scope and session ownership — **implemented** | [No-server cases](../tests/unit/test_transactional_session.cpp), [shared native fixture](../tests/support/transactional_session.hpp) and [PG cases](../tests/integration/test_transactional_session.cpp): SQL/order, moves, stale handles, pre-lease rejection, completion gates, observer restoration and injected SQL/C++/pool-return allocation failures. Native PG/SQLite cases verify row/schema baselines survive, invocation writes disappear, failed statements recover and dirty connections never return to reuse |
-| **Next: Catch2 adapter and runner** | Subprocess tests prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
-| Worked fixtures and migration | Main PostgreSQL CRUD case uses the provider across all seven paths; each observes the baseline. A SQLite example does likewise. Separate processes do not collide. Deliberately lost fixtures cannot reconnect silently |
+| Catch2 adapter and runner — **implemented** | [39 subprocess scenarios](../tests/check_catch2_harness.py) prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, body exceptions, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
+| **Next: worked fixtures and migration** | Main PostgreSQL CRUD case uses the provider across all seven paths; each observes the baseline. A SQLite example does likewise. Separate processes do not collide. Deliberately lost fixtures cannot reconnect silently |
 | Public contract and combined review | Compile/install helper examples, keep Catch2 opt-in, run no-server plus PG/SQLite/MySQL regressions, build/format/lint/standards checks, document compatibility/layout changes. Count setup/DDL reduction before claiming it; measure timing before claiming speedup |
 
 ## Validation of this inventory
@@ -262,3 +262,40 @@ The [generic scope verification](evidence/transactional-test-scope/README.md)
 records the local 20-target suite, separate seven-target SQLite-only build,
 fault-injection/native cases, focused sanitizer check and installed consumers.
 Its source and receipt hashes are separate from the historical inventory.
+
+## Implementation follow-up: optional Catch2 adapter (2026-11-07)
+
+[`testing/catch2.hpp`](../include/asterorm/testing/catch2.hpp) now provides explicit
+`register_fixture<Fixture>(name, factory)`, `session<Fixture>()` and `run(argc, argv)`.
+Each fixture returns its borrowed session and implements checked
+`prepare(Session&) -> result<void>`. A copyable factory returning
+`unique_ptr<Fixture>` can supply configuration; construction/preparation are lazy,
+run once, and are never retried after provider failure. Names/types are unique,
+registration freezes before execution, and tag matching follows Catch2's ASCII
+case-insensitive behavior. Typed access rejects missing/mismatched contexts and
+unrelated worker threads.
+
+The runner registers one listener at runtime, allowing the header in multiple
+translation units. Partial-start/end callbacks catch all exceptions, retain the
+first diagnostic without allocating in failure bookkeeping, poison only the
+affected provider and perform explicit finish after body locals unwind. No
+assertion macros run in listeners. A separate stderr summary reports the count
+and first error/exception; existing Catch2 nonzero statuses survive and harness
+failure promotes success to 1. JUnit can report a passing body alongside failed
+listener cleanup; process status and harness summary remain authoritative.
+
+The subprocess executable links Catch2 without its main and verifies native
+SQLite baselines, four SECTION/GENERATE paths, fatal REQUIRE, SKIP, body exceptions,
+early abort, listing/filter laziness, bad tags/access/registration, sticky poison,
+independent providers and injected SQL/standard/non-standard/allocation exceptions.
+The current workspace supplies Catch2 3.16.1; the earlier 3.14.0 inventory remains
+historical. The [complete guide](how-to/catch2-transactional-tests.md) runs through
+fresh installed CMake/shared pkg-config clients with separately installed Catch2.
+The [adapter verification](evidence/catch2-transactional-adapter/README.md) records
+the local checks and limitations separately from the frozen scope evidence.
+
+Normal AsterORM packaging and generic scope headers remain independent of Catch2.
+This step does not change session/connection layout or migrate the integration
+executables to the runner. Next deliver the checked PostgreSQL CRUD and SQLite
+reference providers, including native connection-loss detection before body access,
+then perform combined harness acceptance. No setup reduction or speedup is claimed.
