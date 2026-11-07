@@ -6,6 +6,12 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Checked PostgreSQL/SQLite reference fixtures with TEMP baselines, retained
+  reference IDs, one physical connection attempt and validation before tagged
+  body access. Native loss never silently reconnects or re-runs preparation.
+- Optional Catch2 fixture `validate(Session&) -> result<void>` hook after scope
+  pinning, with retained diagnostics and provider poisoning on failure.
+
 - Optional `<asterorm/testing/catch2.hpp>` fixture registration, typed session
   access and custom runner. Tagged Catch2 partial invocations use independent
   rollback scopes; setup/cleanup failures poison providers and affect process
@@ -84,6 +90,10 @@ All notable changes to AsterORM will be documented in this file.
   package configuration, examples, and CI build and test workflows.
 
 ### Changed
+
+- PostgreSQL/SQLite integration executables use the optional runner. The main
+  seven-path PostgreSQL CRUD case and four SQLite reference paths use registered
+  fixtures; unrelated integration cases keep their own sessions.
 
 - Session layout includes transactional testing ownership; rebuild library and
   consumers together. SQLite connection close/cache cleanup are now nonthrowing.

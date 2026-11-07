@@ -52,10 +52,11 @@ int main(int argc, char* argv[]) try {
     // NOLINTNEXTLINE(modernize-use-std-print)
     std::printf("summary factories=%d constructed=%d prepares=%d connects=%d closes=%d begins=%d "
                 "savepoints=%d "
-                "rollback_to=%d releases=%d rollbacks=%d bodies=%d unwinds=%d\n",
+                "rollback_to=%d releases=%d rollbacks=%d bodies=%d unwinds=%d validations=%d\n",
                 counts.factories, counts.constructed, counts.prepares, counts.connects,
                 counts.closes, counts.begins, counts.savepoints, counts.rollback_to,
-                counts.releases, counts.rollbacks, counts.bodies, counts.unwinds);
+                counts.releases, counts.rollbacks, counts.bodies, counts.unwinds,
+                counts.validations);
     return status;
 } catch (...) {
     std::fputs("Unexpected exception in harness test main\n", stderr);

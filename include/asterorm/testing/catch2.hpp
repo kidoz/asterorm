@@ -111,6 +111,17 @@ template <typename Fixture> struct fixture_provider final : provider {
             return std::unexpected(std::move(opened.error()));
         }
         scope.emplace(std::move(*opened));
+        // Validate on the scope's pinned connection, before publishing body access.
+        if constexpr (requires(Fixture& candidate, session_type& owner) {
+                          candidate.validate(owner);
+                      }) {
+            auto valid = fixture->validate(scope->session());
+            static_assert(std::same_as<decltype(valid), result<void>>,
+                          "Fixture::validate(Session&) must return result<void>");
+            if (!valid) {
+                return valid;
+            }
+        }
         return {};
     }
     result<void> finish() override {

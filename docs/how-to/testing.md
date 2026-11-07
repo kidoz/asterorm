@@ -1,7 +1,7 @@
 # Run the test suites
 
-Run commands from the repository root. Most tests link Catch2 with its main;
-the optional adapter test supplies its own runner. Meson resolves both through
+Run commands from the repository root. Unit tests link Catch2 with its main;
+PostgreSQL/SQLite integration and adapter tests supply the optional runner. Meson resolves both through
 the supplied wrap. Use a new build directory for
 each independent configuration below.
 
@@ -85,5 +85,8 @@ python3 tests/check_catch2_harness.py buildDir/tests/catch2_harness
 ```
 
 The child executable contains deliberate failures; running all its cases directly
-is not a passing suite. Existing integration executables retain their current main
-until their worked fixture migration.
+is not a passing suite. The [worked reference fixtures](worked-reference-fixtures.md)
+also have parent checks for concurrent processes and deliberately lost TEMP
+identity/native connections, using separate probe executables. The PostgreSQL
+main CRUD case and SQLite reference example are tagged; unrelated integration
+cases keep their own sessions and remain untagged.

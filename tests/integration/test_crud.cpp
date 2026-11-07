@@ -4,7 +4,9 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/session.hpp"
+#include "asterorm/testing/catch2.hpp"
 #include "support/bulk_predicate.hpp"
+#include "support/pg_crud_fixture.hpp"
 
 struct crud_user {
     std::optional<int> id;
@@ -133,57 +135,19 @@ template <> struct asterorm::entity_traits<relationship_post> {
         asterorm::column<&relationship_post::title>("title"));
 };
 
-TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
-    const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
-    std::string conninfo = env_conninfo ? env_conninfo
-                                        : "host=127.0.0.1 port=5432 dbname=orm_test user=orm_test "
-                                          "password=orm_test sslmode=disable";
-
-    asterorm::pool_config cfg;
-    cfg.conninfo = conninfo;
-    cfg.min_size = 1;
-    cfg.max_size = 2;
-
-    asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, cfg};
-    asterorm::session<decltype(pool)> db{pool};
-
-    auto test_lease = pool.acquire();
-    INFO("PostgreSQL integration tests require ASTERORM_TEST_CONNINFO or the default local test "
-         "database");
-    REQUIRE(test_lease.has_value());
-
-    // Set up table
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS crud_users;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS generated_users;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS locked_users;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS order_lines;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_posts;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_profiles;");
-    (void)(*test_lease)->execute("DROP TABLE IF EXISTS relationship_authors;");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE crud_users (id SERIAL PRIMARY KEY, email TEXT, name TEXT, active "
-                  "BOOLEAN);");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE generated_users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, slug "
-                  "TEXT GENERATED ALWAYS AS (lower(name)) STORED);");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE locked_users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, name TEXT, "
-                  "version INT NOT NULL DEFAULT 0);");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE order_lines (order_id INT NOT NULL, line_no INT NOT NULL, sku TEXT "
-                  "NOT NULL, qty INT NOT NULL, PRIMARY KEY (order_id, line_no));");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE relationship_authors (id SERIAL PRIMARY KEY, email TEXT NOT "
-                  "NULL);");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE relationship_profiles (id SERIAL PRIMARY KEY, author_id INT NOT "
-                  "NULL, display_name TEXT NOT NULL);");
-    (void)(*test_lease)
-        ->execute("CREATE TABLE relationship_posts (id SERIAL PRIMARY KEY, author_id INT NOT "
-                  "NULL, title TEXT NOT NULL);");
-    test_lease.value().release_to_pool();
-
+TEST_CASE("PG Integration: CRUD operations", "[pg][crud][transactional:pg-crud]") {
+    using asterorm::test::pg_crud_fixture;
+    auto& db = asterorm::testing::catch2::session<pg_crud_fixture>();
+    REQUIRE(pg_crud_fixture::instance != nullptr);
+    auto& fixture = *pg_crud_fixture::instance;
+    ++fixture.metrics.bodies;
     asterorm::repository repo{db};
+    auto reference = repo.find<crud_user>(fixture.reference_user_id);
+    REQUIRE(reference.has_value());
+    REQUIRE(reference->name == "Reference");
+    REQUIRE(reference->email == "reference@example.test");
+    reference->name = "Invocation mutation";
+    REQUIRE(repo.update(*reference).has_value());
 
     SECTION("Insert assigns ID and persists data") {
         crud_user u{.email = "alice@example.com", .name = "Alice", .active = true};
@@ -391,16 +355,6 @@ TEST_CASE("PG Integration: CRUD operations", "[pg][crud]") {
         REQUIRE((*author_result)->id == author.id);
         REQUIRE((*author_result)->email == author.email);
     }
-
-    // Cleanup
-    auto cleanup_lease = pool.acquire();
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS crud_users;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS generated_users;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS locked_users;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS order_lines;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_posts;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_profiles;");
-    (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS relationship_authors;");
 }
 
 TEST_CASE("postgres Integration: bulk predicate mutations", "[postgres][bulk-dml]") {

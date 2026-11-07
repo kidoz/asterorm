@@ -85,12 +85,24 @@ if sqlite_enabled
   sqlite_tests = executable(
     'sqlite_integration',
     [
+      'support/sqlite_integration_main.cpp',
       'integration/test_sqlite_crud.cpp',
+      'integration/test_sqlite_reference_fixture.cpp',
     ],
-    dependencies : [asterorm_sqlite_dep, catch2_dep],
+    dependencies : [asterorm_sqlite_dep, catch2_runner_dep],
   )
 
   test('sqlite integration', sqlite_tests)
+  sqlite_reference_probe = executable('sqlite_reference_probe',
+    ['support/sqlite_integration_main.cpp', 'integration/test_sqlite_reference_probe.cpp'],
+    dependencies : [asterorm_sqlite_dep, catch2_runner_dep],
+  )
+  test('SQLite reference fixtures', python_program,
+    args : [files('check_reference_fixtures.py'), '--backend', 'sqlite', '--integration', sqlite_tests,
+            '--probe', sqlite_reference_probe],
+    depends : [sqlite_tests, sqlite_reference_probe],
+    timeout : 60,
+  )
 endif
 
 if postgres_enabled
@@ -111,6 +123,7 @@ if postgres_enabled
   pg_tests = executable(
     'pg_integration',
     [
+      'support/pg_integration_main.cpp',
       'integration/test_crud.cpp',
       'integration/test_transactions.cpp',
       'integration/test_transactional_session.cpp',
@@ -125,10 +138,20 @@ if postgres_enabled
       'integration/test_arrays_copy.cpp',
       'integration/test_migrations.cpp',
     ],
-    dependencies : [asterorm_pg_dep, catch2_dep],
+    dependencies : [asterorm_pg_dep, catch2_runner_dep],
   )
 
   test('pg integration', pg_tests)
+  pg_reference_probe = executable('pg_reference_probe',
+    ['support/pg_integration_main.cpp', 'integration/test_pg_reference_fixture.cpp'],
+    dependencies : [asterorm_pg_dep, catch2_runner_dep],
+  )
+  test('PostgreSQL reference fixtures', python_program,
+    args : [files('check_reference_fixtures.py'), '--backend', 'pg', '--integration', pg_tests,
+            '--probe', pg_reference_probe],
+    depends : [pg_tests, pg_reference_probe],
+    timeout : 60,
+  )
   test('repository stream memory', python_program,
     args : [files('check_repository_stream_memory.py'), pg_tests],
     depends : pg_tests,

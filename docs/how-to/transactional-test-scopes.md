@@ -94,4 +94,4 @@ objects. Keep transaction, migration, locking/timeout, streaming and connection-
 integration cases outside these scopes unless they explicitly test rejection.
 
 The [design and delivery contract](../transactional-test-harness-design.md) records
-the delivered adapter and remaining worked reference-fixture/CRUD migration work.
+the delivered adapter/worked fixtures and remaining combined acceptance review.

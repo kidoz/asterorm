@@ -38,6 +38,15 @@ struct example_fixture {
             return {};
         });
     }
+    asterorm::result<void> validate(decltype(database)& owner) {
+        auto baseline = owner.native_scalar<bool>(
+            "SELECT (SELECT count(*) FROM temp.fixture_rows)=1 AND "
+            "EXISTS(SELECT 1 FROM temp.fixture_rows WHERE id=1)");
+        if (!baseline) return std::unexpected(std::move(baseline.error()));
+        if (*baseline != true) return std::unexpected(asterorm::db_error{
+            .kind = asterorm::db_error_kind::query_failed, .message = "Reference baseline changed"});
+        return {};
+    }
 };
 
 TEST_CASE("Reference rows survive each path", "[transactional:example]") {
@@ -84,6 +93,14 @@ schema/reference setup; the adapter does not inspect or enforce pool configurati
 Unsupported session/connection capabilities reject before fixture construction or
 preparation, so rejected backends cannot execute setup SQL through this adapter.
 
+An optional checked `validate(Session&) -> result<void>` runs after the scope pins
+its root/private savepoint and before typed body access becomes available. It runs
+on every matching partial invocation, including the first. Use it to check
+connection-local identity and reference baselines without reconnecting or reseeding.
+Validation errors/exceptions poison the provider and trigger scope cleanup while
+retaining the first setup diagnostic. Fixtures without the hook retain their
+existing behavior. A hook with the wrong return type is a compile error.
+
 Exactly one `[transactional:name]` tag selects a fixture. Selection follows Catch2's
 ASCII case-insensitive tag matching. Unknown, empty and multiple fixture tags fail
 closed. The typed accessor rejects a different fixture, an untagged invocation or
@@ -110,5 +127,7 @@ The [generic scope restrictions](transactional-test-scopes.md) still apply:
 managed completion and stream/advisory/timeout composition are gated; raw transaction
 control and external side effects are outside isolation. This is serial test
 infrastructure, with no promise of cleanup after fatal signals/process termination
-or a whole-scope deadline. Migrating the main PostgreSQL CRUD fixture and adding
-the corresponding SQLite worked integration case remain the next delivery.
+or a whole-scope deadline. The [worked reference fixtures](worked-reference-fixtures.md)
+show a driver that forbids replacement connections, the migrated seven-path
+PostgreSQL CRUD case, and four SQLite generator/section paths. Combined harness
+acceptance remains the next delivery.

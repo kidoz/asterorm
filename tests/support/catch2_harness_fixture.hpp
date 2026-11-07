@@ -14,6 +14,7 @@ struct counters {
     int factories{};
     int constructed{};
     int prepares{};
+    int validations{};
     int connects{};
     int closes{};
     int begins{};
@@ -125,6 +126,29 @@ struct fixture {
             }
             return {};
         });
+    }
+    asterorm::result<void> validate(decltype(database)& owner) {
+        ++observed.validations;
+        if (!owner.has_active_transaction()) {
+            return std::unexpected(fault());
+        }
+        if (fault_mode() == "validate_error") {
+            return std::unexpected(fault());
+        }
+        if (fault_mode() == "validate_throw") {
+            throw std::runtime_error("injected validation exception");
+        }
+        if (fault_mode() == "validate_alloc") {
+            throw std::bad_alloc{};
+        }
+        auto baseline = owner.native_scalar<int>("SELECT count(*) FROM harness_rows");
+        if (!baseline) {
+            return std::unexpected(std::move(baseline.error()));
+        }
+        if (*baseline != 1) {
+            return std::unexpected(fault());
+        }
+        return {};
     }
 };
 struct other_fixture : fixture {};

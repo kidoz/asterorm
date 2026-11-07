@@ -1,8 +1,8 @@
 # Transactional test harness: inventory and implementation contract
 
-Reviewed on 2026-11-07. **The generic transactional scope, session ownership and
-optional Catch2 adapter/runner are implemented; worked fixture migration remains
-planned.** The historical [capture](evidence/transactional-test-harness-inventory/README.md)
+Reviewed on 2026-11-08. **The generic scope, optional Catch2 adapter/runner and
+worked PostgreSQL/SQLite reference fixtures are implemented; combined acceptance
+remains planned.** The historical [capture](evidence/transactional-test-harness-inventory/README.md)
 was compiled and run against the configured PostgreSQL, SQLite and Catch2 targets.
 Its results establish the inventory baseline; the implementation follow-up below
 records the delivered core API. This is not combined harness acceptance.
@@ -197,8 +197,8 @@ locking/timeout, streaming, connection-loss and multi-session tests stay untagge
 | --- | --- |
 | Generic scope and session ownership — **implemented** | [No-server cases](../tests/unit/test_transactional_session.cpp), [shared native fixture](../tests/support/transactional_session.hpp) and [PG cases](../tests/integration/test_transactional_session.cpp): SQL/order, moves, stale handles, pre-lease rejection, completion gates, observer restoration and injected SQL/C++/pool-return allocation failures. Native PG/SQLite cases verify row/schema baselines survive, invocation writes disappear, failed statements recover and dirty connections never return to reuse |
 | Catch2 adapter and runner — **implemented** | [39 subprocess scenarios](../tests/check_catch2_harness.py) prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, body exceptions, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
-| **Next: worked fixtures and migration** | Main PostgreSQL CRUD case uses the provider across all seven paths; each observes the baseline. A SQLite example does likewise. Separate processes do not collide. Deliberately lost fixtures cannot reconnect silently |
-| Public contract and combined review | Compile/install helper examples, keep Catch2 opt-in, run no-server plus PG/SQLite/MySQL regressions, build/format/lint/standards checks, document compatibility/layout changes. Count setup/DDL reduction before claiming it; measure timing before claiming speedup |
+| Worked fixtures and migration — **implemented** | [Main PostgreSQL CRUD case](../tests/integration/test_crud.cpp) uses its provider across seven paths; the [SQLite example](../tests/integration/test_sqlite_reference_fixture.cpp) uses four generator/section paths. [Process checks](../tests/check_reference_fixtures.py) verify baselines, concurrent processes, lazy startup and native/identity loss without replacement connections or reseeding |
+| **Next: public contract and combined review** | Compile/install helper examples, keep Catch2 opt-in, run no-server plus PG/SQLite/MySQL regressions, build/format/lint/standards checks, document compatibility/layout changes. Count setup/DDL reduction before claiming it; measure timing before claiming speedup |
 
 ## Validation of this inventory
 
@@ -299,3 +299,43 @@ This step does not change session/connection layout or migrate the integration
 executables to the runner. Next deliver the checked PostgreSQL CRUD and SQLite
 reference providers, including native connection-loss detection before body access,
 then perform combined harness acceptance. No setup reduction or speedup is claimed.
+
+## Implementation follow-up: worked reference fixtures (2026-11-08)
+
+The PostgreSQL and SQLite integration executables now register lazy fixtures and
+link Catch2 without its main. Only the main seven-section PostgreSQL CRUD case and
+the new four-path SQLite reference case use transactional tags; the separate shared
+bulk-DML case and transaction/migration/locking/streaming/multi-session cases remain
+untagged with their own sessions.
+
+Each fixture owns a `min_size=0,max_size=1` pool/session and a test driver that
+permits only its first native connection attempt. Checked preparation creates TEMP
+identity/schema and commits reference rows outside per-invocation transactions,
+recording returned IDs. PostgreSQL prepares seven mapped tables once; SQLite uses
+one reference table. Bodies construct fresh mutable objects and prove original
+reference data returns after preceding path mutations, without ID rewind promises.
+
+The adapter supports an optional checked `validate(Session&) -> result<void>` hook.
+It runs after the root/private savepoint pins the connection, before publishing
+typed access, including the first invocation. Explicit `pg_temp`/`temp` identity
+and full baseline checks prevent accidental use of permanent names or lost data.
+Validation error/exception poisons the provider and cleans the opened scope,
+retaining the primary diagnostic. Four additional adapter subprocess scenarios
+cover SQL/standard/allocation validation failures and failed body access (43 total).
+
+Nine PostgreSQL and eight SQLite reference-process scenarios verify one prepare
+and native connection, seven/four validations and body paths, two simultaneous
+processes, lazy listing/untagged startup and deliberate between-invocation loss.
+Closed connections cannot be replaced; missing TEMP identity fails validation;
+terminated PostgreSQL backends fail entry/validation. Access is blocked, preparation
+is never repeated, and expected child status 1 is checked by the parent. Probe
+executables are separate so selecting normal transactional tags runs worked cases.
+
+The [worked fixture guide](how-to/worked-reference-fixtures.md) and
+[verification record](evidence/worked-transactional-fixtures/README.md) describe
+current sources and fresh local checks. Normal PostgreSQL work dispatches seven
+schema CREATE statements plus one identity CREATE for seven paths, compared with
+the prior source's repeated DROP/CREATE/cleanup calls. That source comparison is
+not a fresh old-run timing measurement; no speedup is claimed. Normal library
+reconnection policy, dependencies and session/connection layout are unchanged.
+The combined harness acceptance review remains the next delivery.

@@ -15,6 +15,7 @@ Each addresses a specific task.
 - [Use transactions and retries](transactions.md)
 - [Roll back an isolated test scope](transactional-test-scopes.md)
 - [Use transactional fixtures with Catch2](catch2-transactional-tests.md)
+- [Prepare reference data once for transactional tests](worked-reference-fixtures.md)
 - [Apply and roll back schema migrations](migrations.md)
 - [Configure pools and observe queries](pooling-and-observability.md)
 - [Run the test suites](testing.md)

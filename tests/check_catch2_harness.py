@@ -38,7 +38,7 @@ def run_case(tag, status=0, fault=None, arguments=(), **expected):
 
 
 child, _ = run_case("[flow]", factories=1, constructed=1, prepares=1, connects=1, begins=4, savepoints=4,
-                    rollback_to=4, releases=4, rollbacks=4, bodies=4, unwinds=4)
+                    rollback_to=4, releases=4, rollbacks=4, bodies=4, unwinds=4, validations=4)
 events = re.findall(r"^event=(\w+)$", child.stdout, re.MULTILINE)
 assert events == ["begin", "body_unwind", "rollback_to", "rollback"] * 4, events
 for tag, status in [("[fatal]", 42), ("[skip]", 4), ("[exception]", 42)]:
@@ -81,6 +81,13 @@ run_case("[untagged]", 1, "run_twice", constructed=0, prepares=0, begins=0, bodi
 run_case("[fatal]", 42, "cleanup_error", prepares=1, begins=1, closes=1, rollbacks=1)
 run_case("[skip]", 4, "cleanup_error", prepares=1, begins=1, closes=1, rollbacks=1)
 run_case("[flow]", 42, "prepare_error", prepares=1, begins=0, connects=0)
+for fault in ("validate_error", "validate_throw", "validate_alloc"):
+    child, _ = run_case("[repeat]", 1, fault, prepares=1, validations=1, connects=1, begins=1,
+                        rollback_to=1, releases=1, rollbacks=1, bodies=2)
+    diagnostic = {"validate_error": "XX901", "validate_throw": "injected validation exception",
+                  "validate_alloc": "bad_alloc"}[fault]
+    assert diagnostic in child.stderr
+run_case("[flow]", 42, "validate_error", prepares=1, validations=1, begins=1, connects=1)
 run_case("[noaccess],[healthy]", 1, "cleanup_error", constructed=2, prepares=2, connects=2,
          begins=2, rollback_to=2, rollbacks=2, bodies=2, unwinds=2)
 run_case("[noaccess],[untagged]", 1, "cleanup_error", constructed=1, prepares=1, connects=1,
