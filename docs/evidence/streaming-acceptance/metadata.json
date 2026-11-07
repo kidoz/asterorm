@@ -1,0 +1,466 @@
+{
+  "schema_version": 1,
+  "review": "Streaming local acceptance within revised v1 contract",
+  "captured_at_utc": "2026-11-07T17:44:46.215069+00:00",
+  "git_base_commit": "7d4b68248c4d4475d9881942da19ad838f878edf",
+  "tracked_worktree_dirty": true,
+  "runtime_unchanged_from_base": true,
+  "snapshot_note": "Runtime headers/sources are unchanged from the Git base. This review adds test/build coverage, documentation and evidence probes. The unrelated .gitignore edit, local connection settings, full logs and build outputs are excluded. Hash coverage is a reviewed snapshot, not execution coverage of every file. Full-suite measurements precede literal-format-only fixture cleanup; final targeted lint and the five-process memory matrix also pass.",
+  "platform": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "machine": "arm64"
+  },
+  "compiler": {
+    "id": "clang",
+    "exelist": [
+      "c++"
+    ],
+    "linker_exelist": [
+      "c++"
+    ],
+    "file_suffixes": [
+      "cpp",
+      "cppm",
+      "cc",
+      "cp",
+      "cxx",
+      "c++",
+      "hh",
+      "hp",
+      "hpp",
+      "ipp",
+      "hxx",
+      "h++",
+      "ino",
+      "ixx",
+      "CPP",
+      "C",
+      "HPP",
+      "H"
+    ],
+    "default_suffix": "cpp",
+    "version": "21.0.0",
+    "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "linker_id": "ld64"
+  },
+  "build_options": {
+    "buildtype": "debug",
+    "default_library": "shared",
+    "b_sanitize": [],
+    "cpp_std": "c++23",
+    "postgres": "enabled",
+    "sqlite": "enabled",
+    "mysql": "enabled",
+    "clickhouse": "disabled",
+    "tests": true,
+    "examples": true
+  },
+  "dependency_versions": {
+    "sqlite3": "3.54.0"
+  },
+  "client_package_versions": {
+    "libpq": "18.6",
+    "sqlite3": "3.54.1",
+    "mysqlclient": "24",
+    "PQlibVersion": 180006
+  },
+  "environment": {
+    "postgres_server_version": "16.14",
+    "allocator": "C++ standard allocator; the probes install no allocator override",
+    "allocator_injection_environment_present": false,
+    "mysql": "Enabled regression service; server version not separately queried by this acceptance probe",
+    "connection_settings": "Existing integration-test environment/default service settings; intentionally omitted"
+  },
+  "test_summary": {
+    "ok": 19,
+    "fail": 0,
+    "targets": [
+      {
+        "name": "asterorm:typed query guide snippets",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:typed query guide sqlite",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:sqlite unit tests",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 18,
+            "cases": 2
+          }
+        ]
+      },
+      {
+        "name": "asterorm:sqlite integration",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 373,
+            "cases": 18
+          }
+        ]
+      },
+      {
+        "name": "asterorm:postgres unit tests",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 138,
+            "cases": 7
+          }
+        ]
+      },
+      {
+        "name": "asterorm:typed query guide postgres",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:typed query guide mysql",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:postgres single-row guide",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:bulk mutation guide",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:repository stream guide",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:repository stream memory",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 200012,
+            "cases": 1
+          }
+        ]
+      },
+      {
+        "name": "asterorm:repository cursor memory",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 200012,
+            "cases": 1
+          }
+        ]
+      },
+      {
+        "name": "asterorm:repository stream memory controls",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 100011,
+            "cases": 1
+          },
+          {
+            "assertions": 8204,
+            "cases": 1
+          },
+          {
+            "assertions": 8204,
+            "cases": 1
+          }
+        ]
+      },
+      {
+        "name": "asterorm:pg integration",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 102490,
+            "cases": 69
+          }
+        ]
+      },
+      {
+        "name": "asterorm:typed DSL compile checks",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:core unit tests",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 2026,
+            "cases": 160
+          }
+        ]
+      },
+      {
+        "name": "asterorm:migration serialization",
+        "result": "OK",
+        "assertion_summaries": []
+      },
+      {
+        "name": "asterorm:mysql unit tests",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 45,
+            "cases": 5
+          }
+        ]
+      },
+      {
+        "name": "asterorm:mysql integration",
+        "result": "OK",
+        "assertion_summaries": [
+          {
+            "assertions": 401,
+            "cases": 10
+          }
+        ]
+      }
+    ],
+    "detail_log_path": "/tmp/asterorm-streaming-acceptance-test-detail.json",
+    "detail_log_sha256": "4f3b874aef47df1427a230e0ce769ed5d45a4083152e81a53257357e2edbb9bf"
+  },
+  "standards": {
+    "exit_code": 1,
+    "errors": 53,
+    "warnings": 12,
+    "infos": 0,
+    "exactly_matches_previous_baseline": true,
+    "report_path": "/tmp/asterorm-streaming-acceptance-standards.json",
+    "report_sha256": "9495ae2bbe4bd5b3b78e04de24287d307d88e58bc7e5fccdc17d1304ed687343",
+    "previous_report_sha256": "9495ae2bbe4bd5b3b78e04de24287d307d88e58bc7e5fccdc17d1304ed687343"
+  },
+  "command_receipts": [
+    {
+      "command": "just test",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-tests.log",
+      "log_sha256": "d517446dba71bb3dff8c922c1e660f3f7e59e329f9588ad1f7c3f5e9557ada08"
+    },
+    {
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-final-build.log",
+      "log_sha256": "4b5aedd2c8b7d7e4dbda6d039116dc3e0406aa3ba9f0778e6a7f4a0ab1dce94c"
+    },
+    {
+      "command": "just format-check",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-format.log",
+      "log_sha256": "23fa13205f711b80f5c68fdd3363e649217d592821f23d967f45ec1978c04eef"
+    },
+    {
+      "command": "just lint",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-lint.log",
+      "log_sha256": "c11605a0e65ec3bfbcc089393bd6aad39690b91341e8a165de2f0dc284f18fe4"
+    },
+    {
+      "command": "clang-tidy -p buildDir --extra-arg=-isysroot --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk tests/integration/test_repository_stream.cpp",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-targeted-lint.log",
+      "log_sha256": "fa22557344b2936fbe2272909d179ebbe68cc677384adbde7903f272eda394bc"
+    },
+    {
+      "command": "python3 docs/evidence/streaming-acceptance/check_consumers.py",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-consumers.log",
+      "log_sha256": "d34bf64a2ef8af66d4bc82d4f667ef9891b30f2c760ae1a09d2798cac8f93161"
+    },
+    {
+      "command": "python3 docs/evidence/streaming-acceptance/check_toolchain.py --build-root buildDir --json-out docs/evidence/streaming-acceptance/toolchain.json",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-toolchain.log",
+      "log_sha256": "d43b55b00b1cfdbdf20c247e93284f96c20b7bebbd9b219fe6c92237dab0789b"
+    },
+    {
+      "command": "python3 tests/check_repository_stream_memory.py buildDir/tests/pg_integration --matrix --json-out /tmp/asterorm-streaming-acceptance-final-memory.json",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-streaming-acceptance-final-memory.log",
+      "log_sha256": "25b69459cfc68a830f3ae4d6eb375c45393fbecd21f6a3c4440ad00d7cf55caa"
+    },
+    {
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-streaming-acceptance-standards.json",
+      "exit_code": 1,
+      "log_path": "/tmp/asterorm-streaming-acceptance-standards.log",
+      "log_sha256": "99b585fd1da1c0b9e307ab85ae73d52c786f3f39788965c999cc7cd447b7d2e8"
+    }
+  ],
+  "source_sha256": {
+    ".clang-format": "5487b608c8c20ccbc33b4a912b2e6ad33425adea9dfe9ef7c9e5cc4470d7573d",
+    ".clang-tidy": "e04b2e7820dda9f058d41f3c02682fb7662651c0fc849533aa375ed4c2e8dcbc",
+    "cmake/AsterORMConfig.cmake": "ee7861ae6584655999f9af6a7800dd4dabffd78b535ca04e57fe5a43cef1c766",
+    "cmake/AsterORMConfigVersion.cmake": "681c1a3d0c1e7db807109a26c2802062145a7d140a27d2b508f1a7b682712c4d",
+    "examples/meson.build": "646f92bd7902842b3598d9136f43c2a1c430968c5f9c3fe0fcba0918f9175702",
+    "examples/quickstart.cpp": "d89fb207fb6020ba94dcf9f5154466ba5c0292288378b3c82950b78dc308b105",
+    "examples/typed_query_migration.cpp": "60901127c9c6e460163c647fe9ad7f091c293019dbc6123134c9396cd51d6ec3",
+    "include/asterorm/clickhouse/connection.hpp": "a274493b75a444475df3e36798dfe7af854d28f583e132ba77509dd49e309c6d",
+    "include/asterorm/clickhouse/detail/params.hpp": "250aa84bdacba4e4451975b9825875345c5d187eff1b192c6efe1c882e56a363",
+    "include/asterorm/clickhouse/driver.hpp": "2bcb9e0534e59a243bb09c9824b71856ee19dfb683105fe012701f4fa10afdac",
+    "include/asterorm/clickhouse/result.hpp": "51ca1cb7dee34051b260673233ab3ae71cd7a249fc06c927f957f319892d4ccc",
+    "include/asterorm/clickhouse/types.hpp": "20e8f76b3704bcf7f7cb498281333195468e5940a7a7b51ee88e386887ccccc2",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004",
+    "include/asterorm/core/entity_traits.hpp": "ab1483da85e2a6a969c31ac5dcf9fadb1fe34727c1395bb6756663173307f349",
+    "include/asterorm/core/error.hpp": "18967418922e7a5beafc1b970f54303f1434c1c3c20458e92852cc4a531e9a2d",
+    "include/asterorm/core/hydration.hpp": "3c571621be62bcc657c6fee6ddf2a1e785f842d426fcd49e26e3ad1882543a35",
+    "include/asterorm/core/migration.hpp": "b3c8538a83891a00bbba71d3165cdc4aef6efd64b4a296ecec0bb4ee6eadd42e",
+    "include/asterorm/core/observer.hpp": "c335fa07bc095471848e3fa99cd95ca8c3901db92b4b09c355570f88983e5774",
+    "include/asterorm/core/parameter.hpp": "c105511394a148dc6aab998b17a1ee501f8b607ad5a5db88d90e85dab9484f8d",
+    "include/asterorm/core/repository.hpp": "5e81865933642b749741f60d99b7e653fb6eb069d81fd85f44df9e811c09f5db",
+    "include/asterorm/core/result.hpp": "04998f129a85e8bf2e8c9f257e6229e7323ce3fc00460d5e61ff13ddbefbc0c9",
+    "include/asterorm/core/row_count.hpp": "93a80e0d00ca32fc00ea62d9a99064973bff7dd4aed680692e6d483e6e741d6e",
+    "include/asterorm/core/row_stream.hpp": "fa1d0a8f1bbe19063eb0dae44393cd6dc25f31311423be3e1891d73f033586cd",
+    "include/asterorm/core/session.hpp": "aed81130a8713dfce427fc801419ab66caa1a791f2ea820bd154f79aba317d25",
+    "include/asterorm/core/statement_timeout.hpp": "4cb16f37a012c794b9b85e50b3825e9fbc2855fca5ce8709e6c9a1160290140e",
+    "include/asterorm/core/stream_reservation.hpp": "66aae5d768cf9bcef18a21f38c97ce0820caed1c82792f313314f02add70f291",
+    "include/asterorm/core/types.hpp": "fade685d84b5002422f72441e190e5db05a36e9bb79bc1c0f88993cbf5fd0766",
+    "include/asterorm/entity_traits.hpp": "255e909a998600570356eeb139e306d77e1bcb5d7ce696e093ea4a358bf2cc60",
+    "include/asterorm/migration.hpp": "9bc810cb996f9fb9b41e9e1d69e0c2f4c6fd4bf7157fc34becc956531c19233a",
+    "include/asterorm/mysql/connection.hpp": "cc45541bb90fbab623b06dbcec7971cf50d163cef5a3ad3174d90bf6b79a6781",
+    "include/asterorm/mysql/detail/params.hpp": "89fc17a87f108569ee4dcb2a4a39a3fc43bc30dd12b76788a79f73bd764ad10e",
+    "include/asterorm/mysql/driver.hpp": "df61ab6e3715cde9a8641c7e96fcfd9d8758441a94f3fc7b88ee22a2dcbe01f9",
+    "include/asterorm/mysql/result.hpp": "0b8b72f192b0209afb34fc1a5810c66a3eaf858005090fd0e3014d022e21e43c",
+    "include/asterorm/pool/connection_pool.hpp": "c1aee2769f8b2ae6d44245bcfee95a9246627723b1d2f9b47ffc5a4b389737f2",
+    "include/asterorm/postgres/connection.hpp": "8f280316976f39f5e5fa600bc5ebde9c9914ac7ff84d47fb6c624c8774b038fd",
+    "include/asterorm/postgres/copy.hpp": "c5db800c6c02cfe0108e12c337e96ec0d97ea1cff5d28cf4200e9d340f08427e",
+    "include/asterorm/postgres/cursor.hpp": "6f811ee976164b4c8bbad528a10c3da0f61eef492f1d72900469e69614feb3df",
+    "include/asterorm/postgres/driver.hpp": "6e821ddb738d97fcd9729f15bd7bbe7580f5c7ff7d5d6b5318953cba68b717a5",
+    "include/asterorm/postgres/result.hpp": "478dc82cf040a098357b19660db28e797e1c6e3f9f73f1cbf4d41dbe884d2475",
+    "include/asterorm/postgres/single_row.hpp": "2905844357fb42e8a5d6c4c492b7ffac9f3ae4261ae109faa4cbcf9fdff7ffc7",
+    "include/asterorm/postgres/types.hpp": "a3e6c11819307fec05056dedca2ba23c467bcc15e2da236aa6f937e33162926f",
+    "include/asterorm/repository.hpp": "66b1cda3ac6131a4a1ba5300e43cfc163b426e533883817ed99bfb5b61acca3f",
+    "include/asterorm/row_stream.hpp": "2319537d36ce7d5a3bea28ebe7866d2ed8dcebd5b033e956b141bd02b94f35e8",
+    "include/asterorm/session.hpp": "1a7260d3084949887b75a44381efba501f638b560fa820f604b56a7e92de185b",
+    "include/asterorm/sql/ast.hpp": "269e353c629d6db246f266566f558ee400663a9632bf385204f7ab25ca0ec00e",
+    "include/asterorm/sql/compiler.hpp": "be99e806f17c9d470279d3f3276c113aa965f05668171fa6c0d1f7cd547b7336",
+    "include/asterorm/sql/typed.hpp": "cc4cbd696bd7540755bbf69185612dc81fb9a122185c51554e847047ec15f28b",
+    "include/asterorm/sql/typed_query.hpp": "a4848164dd9e11ad4cc8351aa4031729ab241e8d2edc1c46c21263e323b6c47d",
+    "include/asterorm/sqlite/connection.hpp": "2b4cdbae5bde4b1c7aaa4fd081f39f062ea802516adf0dbb61b955dcfc937f10",
+    "include/asterorm/sqlite/driver.hpp": "eced73d059d6328a9f87c2cfb2e79cc97a2a9855cbe8176d893e6434012a9aac",
+    "include/asterorm/sqlite/result.hpp": "6b83fd9ca2ffe880a60e0601a60c2f44e940421dd55843e937f4e7ecd8caa4d2",
+    "justfile": "d20e5cc4e66bdaf40fc14f23f7dc2c25bb7d36c3976938a61fe4ebf8f4c36218",
+    "meson.build": "015a926b42e2fe06e45acd4d593d3decd89408ce898efaa5ae4a89d0e35ad5f6",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    "src/core/error.cpp": "c414c94ad55f2ec63edfa6a13a503ce33f2431eb11eaa0c656d1980ec3ed7dad",
+    "src/core/result.cpp": "60f9604ed96e5d0fd3f165293a8fb190e5f807e2655ef3b691b38a9c60b3a831",
+    "src/core/session.cpp": "174fa9170014e579d09dbfae609f177f013f2521f9263080615e7c8a6351f56f",
+    "src/crud/repository.cpp": "8498b13a23e85af0ac02f456f4e22dda0f81d86eaabd405f7a3c13f685d499ef",
+    "src/database/clickhouse/codecs.cpp": "439d0f8f40c1eacdd096e9bd5f576814506eb4430af9318f0f433c558a0a0230",
+    "src/database/clickhouse/connection.cpp": "8adf5659a1d250b9f3a4cc06f8918133cc05c166e8fd34f681db848dbdbd4d7f",
+    "src/database/clickhouse/driver.cpp": "09d646db2da97723a66505036b7e32a1db2592f8a530def67d990abfa2f758ba",
+    "src/database/clickhouse/result.cpp": "fa1be1975d9e02c0309b60de2d022b395f15e75cb9a033b1a03d3a5dc749fc85",
+    "src/database/meson.build": "c00aa7fcc995a0d50a681b5cd54338218f21e62f20a632f0274ddcfffddf0132",
+    "src/database/mysql/client.hpp": "899a5f71005c23f0a08fccc7aec17f27d23ce9433c92b8f2f4b9e1ed258c9bef",
+    "src/database/mysql/connection.cpp": "61f9d8ee1979f0a86264d0388b4b44079231acfcdd15a4599264d117ecdd99ba",
+    "src/database/mysql/driver.cpp": "a20caf646d68a219fd7e98f45ea7cc79192354fa02e6aceca141c33f5bd2738c",
+    "src/database/mysql/result.cpp": "f6f4eaf85e2f4d7b8ac80e602d0d77167fc57ffed720c5da3e344a476cdece45",
+    "src/database/postgres/codecs.cpp": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/database/postgres/connection.cpp": "777edb0bff7af0b5b7166ecaa885713c012adb53dfb0ef9eef7d718e55bf5877",
+    "src/database/postgres/driver.cpp": "c70c5a035e781fc6046ebf66e3f60590ebd310d01ddff291e97e085c1e91f092",
+    "src/database/postgres/result.cpp": "21b8254d1a3a2f9e95b0189da9b5fbd730b1572c493321f75c5c83af6ef8e700",
+    "src/database/sqlite/connection.cpp": "d834e5b9ab1386a85f27fd7b92f37d14fbc0f9fbfd513c131f6c1e73e8d86b73",
+    "src/database/sqlite/driver.cpp": "29a18f3f96d9a40d7c4823c483789e67a9596c8cf9e19d1c29d02d725464f3e0",
+    "src/database/sqlite/result.cpp": "b89ff37580b5416e46f68705c9c374c37118256929da3e44d37889390de9cb89",
+    "src/meson.build": "391d509790d0945cf5462551775594cc08a06c9859a85b9859546c43e263dc08",
+    "src/pool/connection_pool.cpp": "8446c9f6b2d8a0f3f333943b70f0ab68415f3d14bca4e47caeef845c14052578",
+    "src/sql/ast.cpp": "d4fd7aae8dc6ed5fef8ce4742c6e8480906c8b32e104639c680820aedb302022",
+    "src/sql/compiler.cpp": "8208d391c462f0c8f593c2324a9eca2fcef51bacb97c91ab9feb58416ee5ce37",
+    "tests/check_bulk_predicate_guide.py": "0a7763c2feef99df7969a9ec7e90cf9eac600d998263fd17dfc77e57d4ed5321",
+    "tests/check_migration_serialization.py": "c4db7e21cd1f30aec1716e7c71dbe32e138980f26c7c4b0d48b2a4ff613aebce",
+    "tests/check_repository_stream_memory.py": "4a3e2a384f5fbb64fc9f792f526ec640f03db14631cf282b7181340db31d5c2c",
+    "tests/check_single_row_guide.py": "5b2d51ddb8e438f706343872e5f7d9e2d477c1b476a8cff15a57116999433e1a",
+    "tests/check_typed_query_guide.py": "5d9b92fde53bd82134e936e27c40493488223fd6141dbbdeec1f23c617923508",
+    "tests/compile/check_typed_dsl.py": "34d0fb019e2b52a40f908a1ed955e255ea8cbf2befed98b5b39ab9f02d76dbb1",
+    "tests/compile/test_typed_dsl.cpp": "ac95c4f07a727a426ec1fa841a05ceda34d1c2ea98821d82888dd76ad7d37fe8",
+    "tests/integration/test_advisory_lock.cpp": "489bda5930744e55464310bfdff719dae423f8ce1fa650372b34b3ca698ffe87",
+    "tests/integration/test_arrays_copy.cpp": "a5b1cc49e053908b437c9f991a2078ebfb774257da5812a55f3b243eef07a4a2",
+    "tests/integration/test_crud.cpp": "15ef4535fbb61a7246f709a51bc4d82ca8aadfa3f4047ad8395ff5112cc60f6b",
+    "tests/integration/test_cursor.cpp": "ed214a27ab3ec1b1cc8bef7e26bd46f9d8b6746278238d4d5fc127f78f7aaa93",
+    "tests/integration/test_extras.cpp": "a30b210f33afac629d7394c8d1dc166eba30f3c8f6af3fafc0e878dbeba21c69",
+    "tests/integration/test_migrations.cpp": "f12c9cd497df1803cc6991a07e0664c0e07de9efabd84d2d9c48303ab0c8e730",
+    "tests/integration/test_mysql_crud.cpp": "ea4221caad18affca6bc41135e93fa5650054b4312c0a9f5fc2a7daafb2d7ac5",
+    "tests/integration/test_pool.cpp": "f8654e6061f80f29094dcddc70720ad6fd7ae2eb7a093e28cba244a79838bad2",
+    "tests/integration/test_repository_stream.cpp": "6881e31b1b836a1dd753b542ffedcd22cb06bb8dccabe6c7bac2af23267969a4",
+    "tests/integration/test_single_row.cpp": "21ac516499f4268971b2b741a63db99176f6ee0a916737dc93c23b9c35d93d83",
+    "tests/integration/test_sql.cpp": "d0332cbc954603def63e124b6b314da857f15476a8d890e2defae9de94ee9a52",
+    "tests/integration/test_sqlite_crud.cpp": "df1c8f8eab8e71a74f89daf218f216d85503eb47e52dfd89aa84bf70323dfedf",
+    "tests/integration/test_statement_timeout.cpp": "78cd20514b6d8f3afb7880f4886ccbd8cd5a75af5381c778273092a8e146c795",
+    "tests/integration/test_transactions.cpp": "0b2d7f011524ab4323352a98f5c5ecd434c330ae6dcf4b45630431a22508ef28",
+    "tests/meson.build": "bbfa0b48592dee6b9e347ee307fb1cb4845b2f68f699551dccd3ba4b6e1f7f3e",
+    "tests/support/bulk_predicate.hpp": "ec67959d286219f49099ad75e11a464e58f6e00d1bbd010938f4c3ed967aa97f",
+    "tests/support/insert_select.hpp": "0610d084f4246e10af76b962bac08d71f0e3e78f3686ed755b1a20c72cffc0f3",
+    "tests/support/migration_worker.cpp": "4f8dfd829df6a837c50a230271e73a66efc91cd7ecc8ddba7528ffa657d0d4f6",
+    "tests/support/select_locking.hpp": "ee67a68fc992f23366f8f245e5b2571d197b7baf4ae13d8908a12cd3d9fe243d",
+    "tests/support/typed_query_observer.hpp": "075e048d33463accaeff1dfec8eab882a074ebe235763bb6d9e2697bad8d2a22",
+    "tests/unit/test_advisory_lock.cpp": "6f47498fbb6d7508c91ae251986dc871694e5c339326aa7a2558056f161bd782",
+    "tests/unit/test_ast.cpp": "f9fd7ecc7af6a936bdfe196c8769e2b783a7aa86fce9a3ad4799364e443b88b8",
+    "tests/unit/test_bulk_predicate.cpp": "01ce74cc2bdf89147fd0454138e44c195464adaf45d77cabd7f1fe009baa474d",
+    "tests/unit/test_clickhouse.cpp": "03b0a242041934efbe0dde0be2002f706015437957fa727079c9304ebe46b3f1",
+    "tests/unit/test_codecs.cpp": "3561106406d2cd96d25a68b936acd5eed347b069e163dce88765f1e2c61de1e2",
+    "tests/unit/test_core.cpp": "789f56e26c3c1abd75b7da58a8cd3d15777e42eaaa8d44d8d61fe608c252723b",
+    "tests/unit/test_entity_traits.cpp": "df264c86ac0607105da0412415892430ca9a9ce16f4d4066d73777b7ad357512",
+    "tests/unit/test_mysql.cpp": "6dbe4be361d898a41c864225fec10ba2da36ff67da31e9210049c11a2a84d9f1",
+    "tests/unit/test_mysql_dialect.cpp": "1177cc09e415efa8f0e631f44ec5aff77ccbdee5c895a0e4cc3bf3592e07721e",
+    "tests/unit/test_pool.cpp": "fe4423163354fde90b89ac24364c4eedea4595fc43a28a3d9056c54c325ce758",
+    "tests/unit/test_pool_timeout.cpp": "fb8d975dad298cd48a0624cecc1d512a86dd4886f6788da04057c5ea06464253",
+    "tests/unit/test_postgres_connection.cpp": "4d35f146b1ef15f11640b65af77faf3d9b582bada6ccf5e2b4592b59567efc47",
+    "tests/unit/test_postgres_single_row.cpp": "5207472ccbadb4c5b731257913129b5c03530aa2a5679fa0d71a4ce280dddc78",
+    "tests/unit/test_repository_stream.cpp": "0ea9b533cc60cf5ff0c0a752d288ea774f60bc2d55402c518d3c0ddfa43d4eec",
+    "tests/unit/test_select_locking.cpp": "0672073fb4d9b6d1e1f9096d2cb0ed6e0a7a06157239b3013489a0852fbcb3c2",
+    "tests/unit/test_sqlite_result.cpp": "63c49ad9cdd227316b87122c84099d4bcd2dd4c64e181a8370de3adf1a6ed86b",
+    "tests/unit/test_stream_reservation.cpp": "4fec1cafea1ec4d82c046a091b9ee8246c630d0a874264b32b6ea2a23d3afcd9",
+    "tests/unit/test_timeout_scope.cpp": "97a9fe1f45c1791267f5a1402f83e60d2ebf427ea9afda2c9b041d38510f1588",
+    "tests/unit/test_transactions.cpp": "7d6458156da8d5f4b87718139d64bc6c2112e09e68d8b0942772c7c0cdc355ff",
+    "tests/unit/test_typed_dsl.cpp": "1aaf9ab497cc10cd2cab7bf20904923f3c41ef532f3ac3ef22c99b6621316430",
+    "tests/unit/test_typed_query.cpp": "7f912123aaf939783032226132a545090865dfff257ec38baf0f88db66959aed",
+    "tests/unit/test_typed_query_header.cpp": "1d2b96ae5627fe35f5a178df97178747f10aad09f190c6bf438ecb3da0685fb6",
+    "tools/run_clang_format.py": "d863dd804b1f1b0fe7d09e344be1c1bb0dcdcb688df67dc4ccd413552f00469b",
+    "tools/run_clang_tidy.py": "f1ebc631ab67933a9b6c073bd4c5c4c70e36aa45b5a9de4cae6aca967e4ff86e"
+  },
+  "document_sha256": {
+    "CHANGELOG.md": "6d9f541782f4431c929cf36f8e3f163b4509a11b79a38c32c5d63c0ac6710c12",
+    "README.md": "df4a5b0d9cfcf0de62d8af453295c8c7b9c1f8ce31282dfbc41d65a159620e91",
+    "docs/explanation/README.md": "590587c32dbe0839f9a0e88acf2459995698a38fda559a97997420008898a804",
+    "docs/how-to/postgresql-single-row-reader.md": "574351a3b1677a32fac56d81f8ad32578ccc6fc4759c29cca2e268bdb9470c73",
+    "docs/how-to/stream-entities.md": "69dfcf283cf3c9a1948478ae832a400d886244e4b67ee00a586e3f05cd3f444f",
+    "docs/how-to/testing.md": "f37c8cfae210ca920775b5d11e5d19b8e987ae0e33c218c7db76edbda9cfb97d",
+    "docs/reference/backends.md": "6e8d3add3d9092a2d16184b8ad0c582606088e8d27aa1007b0d7e66dc1f92dd0",
+    "docs/reference/connections.md": "d7c275785c9ab650bab79a3c896b7de5db50b5343c1211b441b300ed7ab5c677",
+    "docs/reference/entities-and-repositories.md": "82349593599a4e560568731355ae81a382190ded92531a10953bf02d318c209d",
+    "docs/streaming-acceptance.md": "b5f9697138de5eb595ced9dca888fdef09632599bb1fb5f4a9be61eef6fed251",
+    "docs/streaming-design.md": "a3fc17bc5b9af312abc93c66af0d6b4437f00dcca23505d1d5131dcde98fbd4f"
+  },
+  "evidence_sha256": {
+    "docs/evidence/streaming-acceptance/README.md": "7ff0f86997592245e55c8a3b49d560db202b33fa62c6c37aa0378ee9e1257770",
+    "docs/evidence/streaming-acceptance/check_consumers.py": "66a6b3587ff52b28ffe158ee6eb954ab1839b22d65a3f2b8e30b58ed242922f3",
+    "docs/evidence/streaming-acceptance/check_toolchain.py": "e0506f037826e0a91ccc48aea9b88d05fdef3778b946a228f09c4a1532d40101",
+    "docs/evidence/streaming-acceptance/memory.json": "e69ca35a1aa071d1ac7256bcaaaf14dc37eda30842c70950d1e3e6b6c9d19367",
+    "docs/evidence/streaming-acceptance/toolchain.json": "6749beb591b575b2f75fdd201d50bc8fd5fe95350c1f2298a231d433566bc267",
+    "docs/evidence/streaming-acceptance/verify_snapshot.py": "72e728884aa30df4d6509b7a430a21b519772b7c11c8522484af0e9c410dc0cf"
+  },
+  "canonical_context_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "0bb88335b18a67d2ed68dd61b83c6fcff21980b3edb2fa07db60291092bc805b",
+    ".agents/contexts/specs/feature-expansion/README.md": "3d465fe431beab311cb59511545fd5d9213e500ea298e1b0977855c2d23a617f",
+    ".agents/contexts/specs/feature-expansion/RUNTIME_AND_CONNECTIONS.md": "6f5bb886e920c3510a004793c354be243bf6bfff828b21c6b18ce8e5546c4960"
+  },
+  "limits": [
+    "Local evidence only; not remote CI, release readiness, sanitizer or all-platform proof",
+    "Shared CMake/pkg-config consumers only; static linking not tested",
+    "Peak RSS fixtures do not bound arbitrary row widths, caller retention or server memory",
+    "Server cleanup polling is an observation deadline, not an API deadline",
+    "Unsigned metadata and receipt hashes are not independent attestations"
+  ]
+}

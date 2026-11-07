@@ -19,8 +19,10 @@ maps the revised v1 requirements to current code and fresh verification.
 The [streaming inventory and contract](../streaming-design.md) defines the portable
 reader/error interface, connection ownership, cancellation limits and memory checks.
 Session ownership, the native PostgreSQL single-row reader and repository entity
-streaming are implemented, including declared-cursor batches. Combined acceptance
-remains open. See the [entity streaming guide](../how-to/stream-entities.md).
+streaming are implemented, including declared-cursor batches. The
+[local acceptance review](../streaming-acceptance.md) records the revised v1 scope,
+fresh memory/cleanup evidence and remaining release boundaries. See the
+[entity streaming guide](../how-to/stream-entities.md).
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

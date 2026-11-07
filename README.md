@@ -65,8 +65,8 @@ The [bulk predicate DML review](docs/bulk-predicate-dml-acceptance.md) records i
 accepted v1 limits and fresh three-backend verification.
 The [streaming inventory and contract](docs/streaming-design.md) records the portable
 reader API, both implementations and native feasibility probes.
-Both PostgreSQL streaming strategies are implemented; combined streaming acceptance
-remains planned.
+Both PostgreSQL streaming strategies are implemented and
+[locally accepted within the revised v1 contract](docs/streaming-acceptance.md).
 
 ## Backends
 

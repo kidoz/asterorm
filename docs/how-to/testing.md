@@ -60,3 +60,16 @@ Compose containers on success through `just db-down`, which runs
 
 For code style checks, use `just format-check` and `just lint`. For performance
 work, follow the [benchmark guide](../../benchmarks/README.md).
+
+PostgreSQL streaming memory checks use a fresh process per scenario. The normal
+suite runs both 100k-row/1 KiB streams and a control group containing buffered
+`find_all` plus two 64 KiB-value scans. The buffered control deliberately exceeds
+the streaming fixture's 32 MiB RSS growth budget. For a standalone matrix receipt:
+
+```sh
+python3 tests/check_repository_stream_memory.py buildDir/tests/pg_integration --matrix --json-out /tmp/streaming-memory.json
+```
+
+These checks use Linux/macOS peak RSS and skip elsewhere. See the
+[acceptance review](../streaming-acceptance.md) for fixture limits, server cleanup
+observations and reproducible installed consumer checks.

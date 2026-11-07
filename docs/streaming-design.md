@@ -1,8 +1,9 @@
 # Streaming cursors: inventory and implementation contract
 
-Reviewed on 2026-11-07. **Session ownership, both PostgreSQL native strategies and
-repository entity streaming are implemented; combined feature acceptance remains open.** This document defines the v1
-boundary and remaining delivery sequence. It does not establish feature acceptance.
+Reviewed on 2026-11-07. **Both PostgreSQL streaming strategies are locally accepted
+within the revised v1 contract.** The [acceptance review](streaming-acceptance.md)
+records current source-bound evidence and limits. This document retains the v1
+boundary, inventory and implementation history.
 The [native/toolchain evidence](evidence/streaming-inventory/README.md) freezes the
 pre-implementation observations; the follow-up below records current ownership code.
 
@@ -222,15 +223,15 @@ caller-retained entities remain outside the row-count bound.
 | PostgreSQL single-row native reader — **implemented** | [Adapter unit cases](../tests/unit/test_postgres_single_row.cpp) and [live cases](../tests/integration/test_single_row.cpp): checked single-tuple ownership, parameters, empty/100k-row/late-error reads, diagnostics, moves, abandonment, timeout/loss and reuse; [guide](how-to/postgresql-single-row-reader.md) compiles in the suite |
 | Repository hydration + terminal observation — **implemented** | [No-server cases](../tests/unit/test_repository_stream.cpp), [live cases and separate-process memory fixtures](../tests/integration/test_repository_stream.cpp), and [compiled public guide](how-to/stream-entities.md): explicit backend/query admission, bounded predicates, owned hydration, typed-source lowering, observer/exception lifecycle, real session-pool integration without a materializing executor |
 | Declared cursor strategy — **implemented** | [Native cursor tests](../tests/integration/test_cursor.cpp) and [repository tests](../tests/integration/test_repository_stream.cpp): existing transaction required, parameterized declaration, batch bounds/tail/empty fetch, CLOSE and prior-write retention, failed CLOSE, quiet abandonment, stale guards and independent backend capability rejection |
-| Timeout/cancellation and release review | Pool defaults, `57014`, deliberate read error, loss of connection, destructor discard, no leaked portal/session after eventual server cleanup, fresh no-server + PostgreSQL/SQLite/MySQL regression checks |
-| Memory and public contract | Separate-process **repository** scans of 100k fixed-width rows, incremental consumption with no retained collection, max native batches 1/N, peak RSS growth at most 32 MiB over the recorded post-connect baseline for the 1 KiB fixture; include buffered control and larger-row case. Compile/run installed consumers and public examples; feature-probe optional generator facade before claiming it |
+| Timeout/cancellation and release review — **locally accepted** | [Combined review](streaming-acceptance.md): pool defaults, `57014`, deliberate read error, connection loss, quiet discard, independently observed backend/transaction-lock cleanup and fresh three-backend regressions |
+| Memory and public contract — **locally accepted** | [Combined review](streaming-acceptance.md): five fresh-process repository scenarios, 100k-row/1 KiB streaming gates, buffered control, 64 KiB payload cases, compiled/installed public guide paths and fresh optional-generator feature probe |
 
 The 32 MiB growth budget is proposed for the fixed-schema acceptance fixture and
 must be reported with compiler, allocator/platform, actual row width and baseline.
 If it fails, diagnose and revise with evidence rather than silently disabling it.
-It is not a universal row-width-independent promise. The feature remains partial
-until its remaining runtime slices and combined review close; native probes alone satisfy
-none of the production ownership, decoder, observer or destructor criteria.
+It is not a universal row-width-independent promise. The combined review now
+closes these scoped local criteria; native probes alone never established
+production ownership, decoder, observer or destructor acceptance.
 
 ## Verification of this review
 
@@ -491,3 +492,22 @@ review. Historical native inventory captures remain unchanged.
 These are local checks, without remote-CI, sanitizer, all-platform or release
 claims. Governance findings remain open; combined streaming acceptance is the
 next delivery.
+
+## Combined local acceptance (2026-11-07)
+
+The [acceptance review](streaming-acceptance.md) reconciles the original criteria
+with the delivered portable pull API, two PostgreSQL transport strategies and
+conservative cleanup/observation policy. Five fresh-process repository scenarios
+now include the buffered control and 64 KiB text payloads. An independent monitor
+observes backend disappearance and transaction-lock release after abandonment,
+parent-guard destruction and late errors in both modes. The fixture's observation
+deadline does not become a public server-cleanup guarantee.
+
+Fresh `just test` reports `Ok: 19`, `Fail: 0`; both public guide functions compile
+and run from fresh CMake/pkg-config installations. The configured coroutine probe
+passes; optional `<generator>` remains absent. Source, test, document and receipt
+hashes are bound in the [evidence package](evidence/streaming-acceptance/README.md).
+The runtime implementation is unchanged by this acceptance work. Existing strict
+standards findings remain open; no remote-CI or release conclusion is implied.
+
+Next follow the plan with transactional test harness inventory and contract work.

@@ -130,8 +130,9 @@ Only one consumer may operate a stream at a time; reentrant next/close rejects.
 Returned entities own their fields and survive the next read or discard. A later
 failure cannot retract previously delivered rows or consumer side effects.
 
-The [streaming contract](../streaming-design.md) records remaining combined-acceptance
-work. Each strategy has a separate-process 100k-row test enforcing a 32 MiB RSS
+The [streaming contract](../streaming-design.md) and
+[local acceptance review](../streaming-acceptance.md) record the revised v1 scope
+and memory/cleanup evidence. Each strategy has a separate-process 100k-row test enforcing a 32 MiB RSS
 growth budget for its fixed 1 KiB payload fixture; that is not a byte bound for
 arbitrary row widths or caller-retained entities. See the
 [native reader guide](postgresql-single-row-reader.md) for the lower-level API.
@@ -140,3 +141,9 @@ Native cursor users include `<asterorm/postgres/cursor.hpp>` and call
 `cursor_reader::next()` returns `result<optional<pg::result>>` with an owned batch.
 Explicit `close()` returns `result<void>`; `abandon()` and destruction discard.
 Both native readers follow connection moves and invalidate safely on owner loss.
+
+The acceptance suite includes a materializing `find_all` control and separate
+4,096-row scans with 64 KiB values. Those larger-value scenarios use a separate
+anti-materialization sanity gate; they do not extend the 32 MiB budget to arbitrary
+payloads. Server cleanup is observed after discard from an independent connection,
+without adding a hard server-release deadline to the API.

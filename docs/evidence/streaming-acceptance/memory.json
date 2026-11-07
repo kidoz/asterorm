@@ -1,0 +1,47 @@
+[
+  {
+    "strategy": "single_row",
+    "rows": 100000,
+    "payload_bytes": 1024,
+    "chunk_size": 256,
+    "baseline_bytes": 21151744,
+    "peak_bytes": 21512192,
+    "growth_bytes": 360448
+  },
+  {
+    "strategy": "cursor",
+    "rows": 100000,
+    "payload_bytes": 1024,
+    "chunk_size": 256,
+    "baseline_bytes": 21266432,
+    "peak_bytes": 22020096,
+    "growth_bytes": 753664
+  },
+  {
+    "strategy": "buffered",
+    "rows": 100000,
+    "payload_bytes": 1024,
+    "chunk_size": 256,
+    "baseline_bytes": 21200896,
+    "peak_bytes": 311443456,
+    "growth_bytes": 290242560
+  },
+  {
+    "strategy": "single_row",
+    "rows": 4096,
+    "payload_bytes": 65536,
+    "chunk_size": 64,
+    "baseline_bytes": 21266432,
+    "peak_bytes": 22511616,
+    "growth_bytes": 1245184
+  },
+  {
+    "strategy": "cursor",
+    "rows": 4096,
+    "payload_bytes": 65536,
+    "chunk_size": 64,
+    "baseline_bytes": 21102592,
+    "peak_bytes": 29261824,
+    "growth_bytes": 8159232
+  }
+]

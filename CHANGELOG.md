@@ -6,6 +6,10 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Source-bound local streaming acceptance review with five fresh-process repository
+  memory scenarios, a materializing control, larger payloads, independent server/
+  transaction-lock cleanup checks and reproducible installed guide consumers.
+
 - PostgreSQL `cursor_reader` and repository cursor mode with parameterized DECLARE,
   bounded native batches, managed-transaction admission and explicit CLOSE that
   preserves prior writes. Unfinished destruction, cleanup/read/decode failures and

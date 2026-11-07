@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <utility>
 #if defined(__APPLE__) || defined(__linux__)
 #include <sys/resource.h>
 #endif
@@ -266,11 +268,22 @@ TEST_CASE("PG repository streaming obeys pool timeouts and releases capacity",
     REQUIRE(take_stream(test.db.native_scalar<int>("SELECT 1")) == 1);
 }
 
-static void check_repository_stream_memory(asterorm::stream_mode mode) {
+struct stream_memory_options {
+    asterorm::stream_mode mode{asterorm::stream_mode::single_row};
+    bool buffered{};
+    int row_count{100000};
+    int payload_bytes{1024};
+    std::size_t chunk_size{256};
+};
+
+static void check_repository_stream_memory(stream_memory_options options) {
 #if defined(__APPLE__) || defined(__linux__)
     stream_fixture test;
-    test.execute("CREATE TEMP VIEW repository_stream_memory AS SELECT value AS id,repeat('x',1024) "
-                 "AS name,TRUE AS active FROM generate_series(1,100000) AS value");
+    const auto definition =
+        "CREATE TEMP VIEW repository_stream_memory AS SELECT value AS id,repeat('x'," +
+        std::to_string(options.payload_bytes) + ") AS name,TRUE AS active FROM generate_series(1," +
+        std::to_string(options.row_count) + ") AS value";
+    test.execute(definition.c_str());
     auto transaction = take_stream(test.db.begin());
     auto peak = [] {
         rusage usage{};
@@ -282,37 +295,86 @@ static void check_repository_stream_memory(asterorm::stream_mode mode) {
 #endif
     };
     const auto before = peak();
-    auto stream = take_stream(test.repo.stream<memory_stream_job>(
-        typed::select<memory_stream_job>().build(), {.mode = mode, .chunk_size = 256}));
     std::uint64_t rows = 0;
     std::uint64_t bytes = 0;
-    while (auto row = take_stream(stream.next())) {
+    std::uint64_t identifiers = 0;
+    auto consume = [&](const memory_stream_job& row) {
         ++rows;
-        bytes += row->name->size();
+        REQUIRE(row.name.has_value());
+        bytes += row.name->size();
+        identifiers += static_cast<std::uint64_t>(row.id);
+    };
+    if (options.buffered) {
+        const auto collection = take_stream(test.repo.find_all<memory_stream_job>());
+        for (const auto& row : collection) {
+            consume(row);
+        }
+    } else {
+        auto stream = take_stream(test.repo.stream<memory_stream_job>(
+            typed::select<memory_stream_job>().build(),
+            {.mode = options.mode, .chunk_size = options.chunk_size}));
+        while (auto row = take_stream(stream.next())) {
+            consume(*row);
+        }
     }
     const auto after = peak();
     const auto growth = after - before;
-    REQUIRE(rows == 100000);
-    REQUIRE(bytes == 102400000);
-    REQUIRE(growth <= std::uint64_t{32} * 1024 * 1024);
+    REQUIRE(std::cmp_equal(rows, options.row_count));
+    REQUIRE(bytes == rows * static_cast<std::uint64_t>(options.payload_bytes));
+    REQUIRE(identifiers == rows * (rows + 1) / 2);
+    if (options.buffered) {
+        REQUIRE(growth > std::uint64_t{32} * 1024 * 1024); // positive materialization control
+    } else if (options.payload_bytes == 1024) {
+        REQUIRE(growth <= std::uint64_t{32} * 1024 * 1024);
+    } else {
+        REQUIRE(growth < bytes / 2); // large-row anti-materialization sanity check, not a byte SLA
+    }
     std::cout << "repository_stream_rss_growth_bytes=" << growth << '\n';
     std::cout << "repository_stream_rss_baseline_bytes=" << before << '\n';
     std::cout << "repository_stream_rss_peak_bytes=" << after << '\n';
+    const auto* strategy = "buffered";
+    if (!options.buffered) {
+        strategy = options.mode == asterorm::stream_mode::single_row ? "single_row" : "cursor";
+    }
+    std::cout << R"(repository_stream_memory={"strategy":")" << strategy << R"(","rows":)" << rows
+              << R"(,"payload_bytes":)" << options.payload_bytes << R"(,"chunk_size":)"
+              << options.chunk_size << R"(,"baseline_bytes":)" << before << R"(,"peak_bytes":)"
+              << after << R"(,"growth_bytes":)" << growth << "}\n";
     take_stream(transaction.commit());
 #else
-    (void)mode;
+    (void)options;
     SKIP("RSS fixture is measured on Linux and macOS");
 #endif
 }
 
 TEST_CASE("PG repository stream memory stays bounded for fixed-width rows",
           "[pg][.repository-stream-memory]") {
-    check_repository_stream_memory(asterorm::stream_mode::single_row);
+    check_repository_stream_memory({});
 }
 
 TEST_CASE("PG repository cursor memory stays bounded for fixed-width rows",
           "[pg][.repository-cursor-memory]") {
-    check_repository_stream_memory(asterorm::stream_mode::cursor);
+    check_repository_stream_memory({.mode = asterorm::stream_mode::cursor});
+}
+
+TEST_CASE("PG buffered repository control exceeds the streaming RSS budget",
+          "[pg][.repository-buffered-memory]") {
+    check_repository_stream_memory({.buffered = true});
+}
+
+TEST_CASE("PG single-row repository handles larger payloads without materializing the scan",
+          "[pg][.repository-single-large-memory]") {
+    check_repository_stream_memory({.row_count = 4096, .payload_bytes = 65536, .chunk_size = 64});
+}
+
+TEST_CASE("PG repository cursor handles larger payloads within its row batch",
+          "[pg][.repository-cursor-large-memory]") {
+    check_repository_stream_memory({
+        .mode = asterorm::stream_mode::cursor,
+        .row_count = 4096,
+        .payload_bytes = 65536,
+        .chunk_size = 64,
+    });
 }
 
 TEST_CASE("PG repository cursor EOF retains managed transaction and bound rows",
@@ -492,4 +554,65 @@ TEST_CASE("PG repository cursor FETCH obeys the pool statement timeout",
     REQUIRE_FALSE(test.db.has_active_transaction());
     REQUIRE(test.pool.stats().total == 0);
     REQUIRE_FALSE(transaction.commit().has_value());
+}
+
+TEST_CASE("PG discarded repository streams release their backend and transaction lock",
+          "[pg][streaming-acceptance]") {
+    const auto mode = GENERATE(asterorm::stream_mode::single_row, asterorm::stream_mode::cursor);
+    const auto ending =
+        GENERATE(std::string{"stream"}, std::string{"parent"}, std::string{"error"});
+    stream_fixture test;
+    stream_fixture monitor;
+    test.execute("DROP TABLE repository_stream_jobs");
+    const auto definition =
+        "CREATE TEMP VIEW repository_stream_jobs AS SELECT CASE WHEN value=2 AND " +
+        std::string{ending == "error" ? "TRUE" : "FALSE"} +
+        " THEN 1/(value-value) ELSE value END AS id,repeat('x',1024) AS name,TRUE AS active "
+        "FROM generate_series(1,10000) value";
+    test.execute(definition.c_str());
+    const auto pid = take_stream(test.db.native_scalar<int>("SELECT pg_backend_pid()")).value();
+    const auto lock_available = [&] {
+        return take_stream(monitor.db.native_scalar<bool>(
+                               "SELECT pg_try_advisory_xact_lock($1::int,$2::int)", pid, 709916))
+            .value();
+    };
+    int events = 0;
+    asterorm::row_stream<streamed_job> survivor;
+    {
+        auto transaction = take_stream(test.db.begin());
+        REQUIRE(take_stream(test.db.native_scalar<int>(
+                    "SELECT 1 FROM pg_advisory_xact_lock($1::int,$2::int)", pid, 709916)) == 1);
+        REQUIRE_FALSE(lock_available());
+        test.db.set_observer([&](const auto&) { ++events; });
+        auto stream = take_stream(test.repo.stream<streamed_job>(
+            typed::select<streamed_job>().build(), {.mode = mode, .chunk_size = 1}));
+        REQUIRE(take_stream(stream.next())->id == 1);
+        if (ending == "parent") {
+            survivor = std::move(stream);
+        } else if (ending == "error") {
+            REQUIRE(stream.next().error().sqlstate == "22012");
+        }
+    }
+    REQUIRE_FALSE(test.db.has_active_transaction());
+    REQUIRE(test.pool.stats().total == 0);
+    REQUIRE(events == (ending == "error" ? 1 : 0));
+    bool gone = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    do {
+        gone = take_stream(monitor.db.native_scalar<int>(
+                   "SELECT count(*) FROM pg_stat_activity WHERE pid=$1::int", pid)) == 0;
+        if (gone && lock_available()) {
+            break;
+        }
+        gone = false;
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    } while (std::chrono::steady_clock::now() < deadline);
+    REQUIRE(gone);
+    // This fixture's wait is an observation deadline, not a public cleanup guarantee.
+    if (ending == "parent") {
+        REQUIRE_FALSE(survivor.next().has_value());
+        REQUIRE(events == 1);
+    }
+    test.db.set_observer({});
+    REQUIRE(take_stream(test.db.native_scalar<int>("SELECT 1")) == 1);
 }

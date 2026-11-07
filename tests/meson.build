@@ -125,6 +125,11 @@ if postgres_enabled
     depends : pg_tests,
     timeout : 60,
   )
+  test('repository stream memory controls', python_program,
+    args : [files('check_repository_stream_memory.py'), pg_tests, '--controls'],
+    depends : pg_tests,
+    timeout : 180,
+  )
 
   migration_worker = executable(
     'migration_worker',
