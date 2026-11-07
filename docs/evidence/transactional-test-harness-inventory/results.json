@@ -1,0 +1,107 @@
+{
+  "sessions": {
+    "sqlite": {
+      "backend": "sqlite",
+      "version": "3.54.0",
+      "idle_savepoint_rejected_before_lease": "1",
+      "rollback_to_preserves_boundary": "1",
+      "release_removes_boundary": "1",
+      "ordinary_constraint_error_recovered": "1",
+      "temporary_ddl_rolled_back": "1",
+      "savepoint_does_not_block_managed_commit": "1",
+      "stale_guard_cannot_rollback_fresh_transaction": "1",
+      "transaction_control_observer_events": "0",
+      "nonthrowing_connection_close": "0",
+      "nonthrowing_native_idle_probe": "0",
+      "rolled_back_id": "1",
+      "next_id": "1"
+    },
+    "postgres": {
+      "backend": "postgres",
+      "version": "16.14",
+      "idle_savepoint_rejected_before_lease": "1",
+      "rollback_to_preserves_boundary": "1",
+      "release_removes_boundary": "1",
+      "ordinary_constraint_error_recovered": "1",
+      "temporary_ddl_rolled_back": "1",
+      "savepoint_does_not_block_managed_commit": "1",
+      "stale_guard_cannot_rollback_fresh_transaction": "1",
+      "transaction_control_observer_events": "0",
+      "nonthrowing_connection_close": "1",
+      "nonthrowing_native_idle_probe": "1",
+      "rolled_back_id": "1",
+      "next_id": "2"
+    }
+  },
+  "catch2": {
+    "flow": {
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "events": [
+        "case_start",
+        "partial_start",
+        "body",
+        "partial_end",
+        "partial_start",
+        "body",
+        "partial_end",
+        "partial_start",
+        "body",
+        "partial_end",
+        "partial_start",
+        "body",
+        "partial_end",
+        "case_end"
+      ],
+      "counts": {
+        "case_start": 1,
+        "partial_start": 4,
+        "body": 4,
+        "partial_end": 4,
+        "case_end": 1
+      }
+    },
+    "fatal": {
+      "exit_code": 42,
+      "expected_exit_code": 42,
+      "events": [
+        "case_start",
+        "partial_start",
+        "body",
+        "partial_end",
+        "case_end"
+      ],
+      "counts": {
+        "case_start": 1,
+        "partial_start": 1,
+        "body": 1,
+        "partial_end": 1,
+        "case_end": 1
+      }
+    },
+    "skip": {
+      "exit_code": 4,
+      "expected_exit_code": 4,
+      "events": [
+        "case_start",
+        "partial_start",
+        "body",
+        "partial_end",
+        "case_end"
+      ],
+      "counts": {
+        "case_start": 1,
+        "partial_start": 1,
+        "body": 1,
+        "partial_end": 1,
+        "case_end": 1
+      }
+    },
+    "list": {
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "events": [],
+      "counts": {}
+    }
+  }
+}

@@ -67,6 +67,8 @@ The [streaming inventory and contract](docs/streaming-design.md) records the por
 reader API, both implementations and native feasibility probes.
 Both PostgreSQL streaming strategies are implemented and
 [locally accepted within the revised v1 contract](docs/streaming-acceptance.md).
+The [transactional test harness contract](docs/transactional-test-harness-design.md)
+records the next testing-infrastructure design; that helper remains unimplemented.
 
 ## Backends
 

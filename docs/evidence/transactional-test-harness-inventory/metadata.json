@@ -1,0 +1,99 @@
+{
+  "captured_at_utc": "2026-11-07T18:14:10.381920+00:00",
+  "purpose": "Transactional test harness inventory/contract input; no delivered harness API",
+  "git_base_commit": "7d4b68248c4d4475d9881942da19ad838f878edf",
+  "snapshot_note": "Current working tree, including pre-existing staged streaming acceptance work. Git base is not a clean-tree claim; inspected hashes identify the reviewed files. This inventory changes no runtime implementation.",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "compiler": {
+    "id": "clang",
+    "exelist": [
+      "c++"
+    ],
+    "linker_exelist": [
+      "c++"
+    ],
+    "file_suffixes": [
+      "cpp",
+      "cppm",
+      "cc",
+      "cp",
+      "cxx",
+      "c++",
+      "hh",
+      "hp",
+      "hpp",
+      "ipp",
+      "hxx",
+      "h++",
+      "ino",
+      "ixx",
+      "CPP",
+      "C",
+      "HPP",
+      "H"
+    ],
+    "default_suffix": "cpp",
+    "version": "21.0.0",
+    "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "linker_id": "ld64"
+  },
+  "compile_flags": [
+    "c++",
+    "-Itests/pg_integration.p",
+    "-Itests",
+    "-I../tests",
+    "-I../include",
+    "-Isubprojects/Catch2-3.14.0/src",
+    "-I../subprojects/Catch2-3.14.0/src",
+    "-I/opt/homebrew/opt/libpq/include",
+    "-fdiagnostics-color=always",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+    "-Wall",
+    "-Winvalid-pch",
+    "-Wextra",
+    "-Wpedantic",
+    "-std=c++23",
+    "-O0",
+    "-g",
+    "-Werror"
+  ],
+  "compile_working_directory": "/Users/apavlov/Projects/AsterORM/buildDir",
+  "compile_exit_codes": {
+    "session_probe": 0,
+    "catch2_probe": 0
+  },
+  "probe_sha256": {
+    "session_probe.cpp": "29d63dfbc628a038b2ce5c202132d92f5f3499e743784d86a869dcde6fdf6385",
+    "catch2_probe.cpp": "7a14af54c44b3158b7514d6e80225bbb82d81e5b14927c588e633298e9c62e4d",
+    "capture.py": "39368f5f52d6cac9728de97c7ff18559690a7b6b1574ce8d9d8b29868ee314dc"
+  },
+  "inspected_source_sha256": {
+    "include/asterorm/core/session.hpp": "aed81130a8713dfce427fc801419ab66caa1a791f2ea820bd154f79aba317d25",
+    "include/asterorm/pool/connection_pool.hpp": "c1aee2769f8b2ae6d44245bcfee95a9246627723b1d2f9b47ffc5a4b389737f2",
+    "include/asterorm/core/row_stream.hpp": "fa1d0a8f1bbe19063eb0dae44393cd6dc25f31311423be3e1891d73f033586cd",
+    "src/database/postgres/connection.cpp": "777edb0bff7af0b5b7166ecaa885713c012adb53dfb0ef9eef7d718e55bf5877",
+    "src/database/sqlite/connection.cpp": "d834e5b9ab1386a85f27fd7b92f37d14fbc0f9fbfd513c131f6c1e73e8d86b73",
+    "tests/integration/test_crud.cpp": "15ef4535fbb61a7246f709a51bc4d82ca8aadfa3f4047ad8395ff5112cc60f6b",
+    "tests/integration/test_sqlite_crud.cpp": "df1c8f8eab8e71a74f89daf218f216d85503eb47e52dfd89aa84bf70323dfedf",
+    "tests/integration/test_transactions.cpp": "0b2d7f011524ab4323352a98f5c5ecd434c330ae6dcf4b45630431a22508ef28",
+    "tests/unit/test_transactions.cpp": "7d6458156da8d5f4b87718139d64bc6c2112e09e68d8b0942772c7c0cdc355ff",
+    "tests/meson.build": "bbfa0b48592dee6b9e347ee307fb1cb4845b2f68f699551dccd3ba4b6e1f7f3e",
+    "meson.build": "015a926b42e2fe06e45acd4d593d3decd89408ce898efaa5ae4a89d0e35ad5f6",
+    "subprojects/Catch2.wrap": "5d90c001f921e65bf33516ac402a36fd950a496cfd9792481a9f9e4a79f843a7",
+    "subprojects/Catch2-3.14.0/src/catch2/interfaces/catch_interfaces_reporter.hpp": "427c58bf6d9a50801e57b81575d6fb6eeb7111d70cc2137160fedd9e62cac168",
+    "subprojects/Catch2-3.14.0/src/catch2/internal/catch_run_context.cpp": "735c068835c52a98c4c25273e853923c854de64e0ab9354ddb3153915043354f",
+    "subprojects/Catch2-3.14.0/src/catch2/catch_session.cpp": "4daaa37137fd9bec075438a8f672f90a568b6d6d9b8c0ab08b305dfd416adfd6",
+    "subprojects/Catch2-3.14.0/docs/event-listeners.md": "05ca68b607e8ecfb5b1817f58aa7b784e53eaeb83a7642c37ba3cc32dd0f8ebd"
+  },
+  "results_sha256": "7567095977edd01b8bd4a7903e8b6baaac017d8c82d8b83fcf23eb7c7b9b49ab",
+  "limits": [
+    "Local configured PG/SQLite/Catch2 observations only",
+    "Temporary tables only; no shared application tables changed",
+    "Intentional Catch2 fatal assertion is expected to exit nonzero",
+    "No harness implementation, fixture migration or speedup claim",
+    "Connection settings and credentials omitted"
+  ]
+}

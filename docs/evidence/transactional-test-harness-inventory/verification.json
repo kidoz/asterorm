@@ -1,0 +1,72 @@
+{
+  "captured_at_utc": "2026-11-07T18:14:56.876932+00:00",
+  "scope": "Inventory/contract and standalone probes only; no harness implementation or fixture migration",
+  "metadata_sha256": "bfd5603d3582e2e3b8fddef06579b3b5801be92631307bcd16ddfcf45f1f6d8b",
+  "results_sha256": "7567095977edd01b8bd4a7903e8b6baaac017d8c82d8b83fcf23eb7c7b9b49ab",
+  "document_sha256": {
+    "README.md": "deeec7f03af07528a62f41451f3b0542de73f22f5453487c2ae00f7fbf9a5ca0",
+    "docs/explanation/README.md": "198ce313894a4ce23828563eb3008ec7a3734a0a3806732da1778003740f83a7",
+    "docs/transactional-test-harness-design.md": "dd2a98e0a6f9d4fae778fbd8f16e4212b615af733c5428f62cd4ebc4663ebbf9",
+    "docs/evidence/transactional-test-harness-inventory/README.md": "1d9dd92bda92df21a53c731c4ecbb96f822bb0f976acc000609da830528f0eb6"
+  },
+  "canonical_context_sha256": {
+    ".agents/contexts/specs/feature-expansion/README.md": "98a3ac127edda73211f66af437f7feca295166bd6a9b678302ff1da3160c5d00",
+    ".agents/contexts/specs/feature-expansion/TESTING_MIGRATIONS_AND_OBSERVABILITY.md": "c18ee09668e1cfe9a1c1d6ce07cf201895bad0eec99f34ff80b5a91b6149010f",
+    ".agents/contexts/ARCHITECTURE.md": "e0128d49393468d52c07f07e1597562869601b8dc349b890e72d6e5a55f26467"
+  },
+  "command_receipts": [
+    {
+      "command": "python3 docs/evidence/transactional-test-harness-inventory/capture.py --build-root buildDir",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-inventory.log",
+      "log_sha256": "a6093855892df3192367fe4e041352f19df731ba83d2e1b6b9885379564260dd"
+    },
+    {
+      "command": "just test",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-tests.log",
+      "log_sha256": "d2da269ab76b9860994b2e149e5e40d96a6bdf3e8942e969b31f82be8316557a"
+    },
+    {
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-build.log",
+      "log_sha256": "47bdfeb65c990663c6c8079653a29b1488a64319820f0c544aa94cf91743095e"
+    },
+    {
+      "command": "just format-check",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-format.log",
+      "log_sha256": "23fa13205f711b80f5c68fdd3363e649217d592821f23d967f45ec1978c04eef"
+    },
+    {
+      "command": "just lint",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-lint.log",
+      "log_sha256": "f01a91cd8ae38eb9addb88529a15bf959f94eea2b60459135cb03c1c5d219f44"
+    },
+    {
+      "command": "clang-tidy session_probe.cpp and catch2_probe.cpp -- <configured C++23 flags; macOS SDK extra args>",
+      "exit_code": 0,
+      "log_path": "/tmp/asterorm-transactional-harness-probe-lint.log",
+      "log_sha256": "2b8fe4379ee824fd602e1a1d00abd4d2ba62bac4de32bd0ff590bc1c5b1c82bb"
+    },
+    {
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-07 --json-out /tmp/asterorm-transactional-harness-standards.json",
+      "exit_code": 1,
+      "log_path": "/tmp/asterorm-transactional-harness-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "standards": {
+    "exit_code": 1,
+    "errors": 53,
+    "warnings": 12,
+    "infos": 0,
+    "finding_lists_identical_to_previous": true,
+    "docs_validated": 276,
+    "previous_docs_validated": 165,
+    "report_sha256": "d5ba2a2aada607b1951a3ce2789d0883af9083ef9a1d1540def659f806e93a30"
+  },
+  "note": "Unsigned local snapshot; full logs and connection settings are not published. Earlier staged streaming acceptance and historical evidence are preserved; this file does not rewrite their hashes."
+}
