@@ -1,13 +1,12 @@
 # Bulk predicate DML: inventory and implementation contract
 
-Reviewed on 2026-11-07. **Partially implemented:** checked 64-bit affected-row
-transport, literal `update_where`, and `delete_where` are implemented under the
-bounded contract below. Structured assignment arithmetic is also implemented;
-`insert_select` is implemented with the source-shape and destination limits below;
-combined feature acceptance remains pending.
-See the [mutation guide](how-to/bulk-predicate-mutations.md) and implementation
-verification below. This does not establish acceptance of the whole feature or
-release readiness.
+Reviewed on 2026-11-07. **Implemented within the revised v1 contract**, with scoped
+local acceptance in the [combined review](bulk-predicate-dml-acceptance.md).
+Checked 64-bit affected-row transport, `update_where`, `delete_where`, structured
+assignment arithmetic and `insert_select` follow the bounded contract below.
+See the [mutation guide](how-to/bulk-predicate-mutations.md) for public usage.
+Earlier inventory and implementation checks below are historical; the combined
+review records fresh evidence and remaining limits. This is not release readiness.
 
 ## Inventory before implementation
 
@@ -193,7 +192,7 @@ Its first implementation enforces:
   target's non-generated version field is an explicit projected value, with no
   optimistic-update check implied by insertion.
 
-Typed SELECT builders can later lower through `build()` into this source. Any
+Typed SELECT builders lower through `build()` into this source. Any
 typed convenience wrapper must separately check destination compatibility; a
 typed source alone does not establish compatible target fields.
 
@@ -208,9 +207,10 @@ typed source alone does not establish compatible target fields.
 | Timeout/capability integration | PostgreSQL delayed UPDATE/DELETE/INSERT-from-SELECT under pool/scoped timeout: SQLSTATE 57014 and explicit rollback recovery; disabled/custom/ClickHouse rejection before leasing, plus unchanged ordinary queries |
 | Combined acceptance | Updated README inventory, guides that compile, backend limits and public count/AST ABI notes; fresh unit/integration, normal build, format and lint checks, with separate standards findings |
 
-**Next step:** combined bulk predicate DML acceptance review. Checked counts, literal
-UPDATE/DELETE, structured assignment arithmetic and INSERT-from-SELECT are implemented; the feature remains partial until the required
-remaining APIs and combined acceptance checks close.
+The [combined acceptance review](bulk-predicate-dml-acceptance.md) closes these
+deliveries within the revised v1 scope, with fresh command results and provenance.
+**Next step:** streaming cursors and large result sets inventory/contract review.
+No streaming implementation is claimed by this review.
 
 ## Historical verification for the initial inventory
 
@@ -326,8 +326,8 @@ Fresh verification:
   2026-11-07`): exit 1 with the existing 53 errors and 12 warnings; no findings
   on the three edited canonical contexts.
 
-INSERT-from-SELECT and combined feature acceptance are next; no full-feature,
-remote-CI or release result is claimed. Original inventory captures remain unchanged.
+At this point INSERT-from-SELECT and combined acceptance remained pending; both
+are covered below and in the final review. Original inventory captures remain unchanged.
 
 ## Implementation follow-up: INSERT-from-SELECT (2026-11-07)
 
@@ -377,6 +377,7 @@ Fresh verification:
   2026-11-07`): exit 1 with 53 existing errors and 12 warnings, no findings on the
   three edited canonical contexts.
 
-The next task is combined bulk predicate DML acceptance; this implementation
-slice does not claim that review or remote CI/release validation is complete.
-Earlier captures remain historical.
+This implementation slice was subsequently included in the
+[combined acceptance review](bulk-predicate-dml-acceptance.md), which records fresh
+checks and closes the revised v1 scope. Remote CI/release validation remains
+separate. Earlier captures remain historical.

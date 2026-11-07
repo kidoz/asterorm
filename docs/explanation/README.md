@@ -13,7 +13,8 @@ scope, current evidence, and release boundaries.
 
 The [bulk predicate DML contract](../bulk-predicate-dml-design.md) records the
 implemented predicate UPDATE/DELETE, arithmetic and INSERT-from-SELECT slices
-and their limits. Combined feature acceptance remains pending.
+and their limits. The [local acceptance review](../bulk-predicate-dml-acceptance.md)
+maps the revised v1 requirements to current code and fresh verification.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

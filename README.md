@@ -56,6 +56,8 @@ lazy/eager loading, an identity map, and compile-time checking of raw SQL are
 not implemented. See the [API reference](docs/reference/README.md) for contracts
 and limitations. The [locking and timeout review](docs/locking-timeout-acceptance.md)
 records the accepted v1 scope and local checks.
+The [bulk predicate DML review](docs/bulk-predicate-dml-acceptance.md) records its
+accepted v1 limits and fresh three-backend verification.
 
 ## Backends
 
