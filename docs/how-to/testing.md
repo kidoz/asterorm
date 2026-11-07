@@ -31,7 +31,7 @@ To select the relevant registered tests:
 
 ```sh
 meson test -C build-test-pg 'postgres unit tests' 'pg integration' 'migration serialization' --print-errorlogs
-meson test -C build-test-pg 'sqlite integration' --print-errorlogs
+meson test -C build-test-pg 'sqlite unit tests' 'sqlite integration' --print-errorlogs
 ```
 
 The PostgreSQL migration serialization test starts independent client processes

@@ -41,6 +41,11 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- Relational result affected-row counts and storage are now 64-bit; PostgreSQL
+  native results validate command counts before success. Rebuild consumers.
+- SQLite now requires 3.37+ for `sqlite3_changes64` and `sqlite3_total_changes64`;
+  non-mutating results no longer inherit a previous mutation count.
+
 - Session layout now tracks timeout pins and transaction generations alongside
   advisory ownership; rebuild consumers with the library.
 - Savepoint rollback is rejected while a timeout scope is active; creating and

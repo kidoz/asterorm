@@ -243,7 +243,7 @@ asterorm::result<pg::result> connection::execute(std::string_view sql) {
         return std::unexpected(err);
     }
 
-    return pg::result{res};
+    return pg::result::from_native(res);
 }
 
 asterorm::result<pg::result> connection::execute_params(std::string_view sql,
@@ -273,7 +273,7 @@ asterorm::result<pg::result> connection::execute_params(std::string_view sql,
         return std::unexpected(err);
     }
 
-    return pg::result{res};
+    return pg::result::from_native(res);
 }
 
 asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
@@ -322,7 +322,7 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
             res = PQexecPrepared(conn_, prepared->c_str(), static_cast<int>(params.size()),
                                  param_values.data(), nullptr, nullptr, 0);
             if (command_or_rows_ok(res)) {
-                return pg::result{res};
+                return pg::result::from_native(res);
             }
             err = make_error_from_pgresult(conn_, res, db_error_kind::query_failed);
         }
@@ -330,7 +330,7 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
         return std::unexpected(err);
     }
 
-    return pg::result{res};
+    return pg::result::from_native(res);
 }
 
 void connection::set_max_prepared_statements(size_t max_statements) {

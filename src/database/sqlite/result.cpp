@@ -6,7 +6,7 @@
 namespace asterorm::sqlite {
 
 result::result(std::vector<std::string> column_names,
-               std::vector<std::vector<std::optional<std::string>>> rows, int affected)
+               std::vector<std::vector<std::optional<std::string>>> rows, std::uint64_t affected)
     : column_names_(std::move(column_names)), rows_(std::move(rows)), affected_rows_(affected) {}
 
 int result::rows() const {
@@ -17,7 +17,7 @@ int result::columns() const {
     return static_cast<int>(column_names_.size());
 }
 
-int result::affected_rows() const {
+std::uint64_t result::affected_rows() const {
     return affected_rows_;
 }
 

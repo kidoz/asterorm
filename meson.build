@@ -61,7 +61,12 @@ if sqlite_feature.enabled() and not sqlite_dep.found()
 endif
 sqlite_enabled = sqlite_feature.allowed() and sqlite_dep.found()
 if sqlite_enabled
-  asterorm_pkg_requires_private += ['sqlite3']
+  if not cpp_compiler.has_function('sqlite3_changes64', prefix : '#include <sqlite3.h>', dependencies : sqlite_dep) or not cpp_compiler.has_function('sqlite3_total_changes64', prefix : '#include <sqlite3.h>', dependencies : sqlite_dep)
+    error('SQLite 3.37+ with sqlite3_changes64 and sqlite3_total_changes64 is required.')
+  endif
+endif
+if sqlite_enabled
+  asterorm_pkg_requires_private += ['sqlite3 >= 3.37.0']
 endif
 
 mysql_feature = get_option('mysql')

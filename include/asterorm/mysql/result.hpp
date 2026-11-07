@@ -13,7 +13,7 @@ class result {
     result() = default;
 
     result(std::vector<std::string> column_names,
-           std::vector<std::vector<std::optional<std::string>>> rows, int affected,
+           std::vector<std::vector<std::optional<std::string>>> rows, std::uint64_t affected,
            std::uint64_t insert_id = 0);
 
     result(const result&) = delete;
@@ -23,7 +23,7 @@ class result {
 
     [[nodiscard]] int rows() const;
     [[nodiscard]] int columns() const;
-    [[nodiscard]] int affected_rows() const;
+    [[nodiscard]] std::uint64_t affected_rows() const;
     [[nodiscard]] std::uint64_t last_insert_id() const;
     [[nodiscard]] std::string_view column_name(int col) const;
     [[nodiscard]] bool is_null(int row, int col) const;
@@ -35,7 +35,7 @@ class result {
   private:
     std::vector<std::string> column_names_;
     std::vector<std::vector<std::optional<std::string>>> rows_;
-    int affected_rows_{0};
+    std::uint64_t affected_rows_{0};
     std::uint64_t insert_id_{0};
 };
 

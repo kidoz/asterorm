@@ -21,9 +21,9 @@ build: setup
 test: setup
     meson test -C {{build_dir}} --print-errorlogs
 
-# Run only the SQLite integration suite. Uses :memory:, no external services.
+# Run SQLite unit/integration tests. Uses :memory:, no external services.
 test-sqlite: setup
-    meson test -C {{build_dir}} --suite asterorm "sqlite integration" --print-errorlogs
+    meson test -C {{build_dir}} --suite asterorm "sqlite unit tests" "sqlite integration" --print-errorlogs
 
 # Bring up the PostgreSQL test database from compose.yaml and wait for healthy.
 db-up:

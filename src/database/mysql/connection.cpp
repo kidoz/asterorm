@@ -59,11 +59,11 @@ asterorm::result<mysql::result> finish_results(MYSQL* handle,
     return output;
 }
 
-asterorm::result<int> row_count(my_ulonglong count) {
-    if (count > static_cast<my_ulonglong>(std::numeric_limits<int>::max())) {
-        return std::unexpected(detail::error("MySQL affected-row count exceeds result capacity"));
+asterorm::result<std::uint64_t> row_count(my_ulonglong count) {
+    if (count == std::numeric_limits<my_ulonglong>::max()) {
+        return std::unexpected(detail::error("MySQL affected-row count is unavailable"));
     }
-    return static_cast<int>(count);
+    return static_cast<std::uint64_t>(count);
 }
 
 asterorm::result<mysql::result> execute_statement(MYSQL_STMT* statement,

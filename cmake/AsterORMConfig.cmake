@@ -25,7 +25,7 @@ if(EXISTS "${_asterorm_prefix}/lib/libasterorm_pg${CMAKE_SHARED_LIBRARY_SUFFIX}"
 endif()
 
 if(EXISTS "${_asterorm_prefix}/lib/libasterorm_sqlite${CMAKE_SHARED_LIBRARY_SUFFIX}" AND NOT TARGET AsterORM::sqlite)
-  find_package(SQLite3 QUIET)
+  find_dependency(SQLite3 3.37)
   add_library(AsterORM::sqlite SHARED IMPORTED)
   set_target_properties(AsterORM::sqlite PROPERTIES
     IMPORTED_LOCATION "${_asterorm_prefix}/lib/libasterorm_sqlite${CMAKE_SHARED_LIBRARY_SUFFIX}"

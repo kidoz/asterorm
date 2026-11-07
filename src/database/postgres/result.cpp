@@ -1,13 +1,62 @@
 #include "asterorm/postgres/result.hpp"
 
 #include <charconv>
+#include <memory>
 #include <utility>
+
+#include "asterorm/core/row_count.hpp"
 
 namespace asterorm::pg {
 
-result::result(PGresult* res) : res_(res) {}
+namespace {
+asterorm::result<std::uint64_t> native_row_count(PGresult* native) {
+    const char* count = native ? PQcmdTuples(native) : nullptr;
+    if (!count || *count == '\0') {
+        return 0;
+    }
+    return asterorm::detail::parse_row_count(count);
+}
+} // namespace
 
-result::result(result&& other) noexcept : res_(std::exchange(other.res_, nullptr)) {}
+result::result(PGresult* res) try : res_(res), affected_rows_(native_row_count(res).value()) {
+} catch (...) {
+    if (res) {
+        PQclear(res);
+    }
+    throw;
+}
+
+asterorm::result<result> result::from_native(PGresult* res) {
+    std::unique_ptr<PGresult, decltype(&PQclear)> owner{res, PQclear};
+    if (!res ||
+        (PQresultStatus(res) != PGRES_COMMAND_OK && PQresultStatus(res) != PGRES_TUPLES_OK)) {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "PostgreSQL native result is not successful";
+        if (res) {
+            if (const auto* state = PQresultErrorField(res, PG_DIAG_SQLSTATE)) {
+                error.sqlstate = state;
+                error.kind = classify_sqlstate(state);
+            }
+            if (const auto* message = PQresultErrorMessage(res); message && *message) {
+                error.message = message;
+            }
+        }
+        return std::unexpected(std::move(error));
+    }
+    auto count = native_row_count(res);
+    if (!count) {
+        return std::unexpected(count.error());
+    }
+    result output{nullptr};
+    output.res_ = owner.release();
+    output.affected_rows_ = *count;
+    return output;
+}
+
+result::result(result&& other) noexcept
+    : res_(std::exchange(other.res_, nullptr)),
+      affected_rows_(std::exchange(other.affected_rows_, 0)) {}
 
 result& result::operator=(result&& other) noexcept {
     if (this != &other) {
@@ -15,6 +64,7 @@ result& result::operator=(result&& other) noexcept {
             PQclear(res_);
         }
         res_ = std::exchange(other.res_, nullptr);
+        affected_rows_ = std::exchange(other.affected_rows_, 0);
     }
     return *this;
 }
@@ -29,15 +79,8 @@ int result::rows() const {
     return res_ ? PQntuples(res_) : 0;
 }
 
-int result::affected_rows() const {
-    if (!res_)
-        return 0;
-    const char* tuples = PQcmdTuples(res_);
-    if (!tuples || *tuples == '\0')
-        return 0;
-    int out = 0;
-    auto [ptr, ec] = std::from_chars(tuples, tuples + std::char_traits<char>::length(tuples), out);
-    return ec == std::errc{} ? out : 0;
+std::uint64_t result::affected_rows() const {
+    return affected_rows_;
 }
 
 std::string_view result::command_tag() const {

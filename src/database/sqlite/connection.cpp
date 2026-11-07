@@ -1,5 +1,7 @@
 #include "asterorm/sqlite/connection.hpp"
 
+#include "asterorm/core/row_count.hpp"
+
 #include <cctype>
 #include <utility>
 
@@ -146,6 +148,7 @@ asterorm::result<void> bind_params(sqlite3* db, sqlite3_stmt* stmt,
 }
 
 asterorm::result<sqlite::result> step_and_collect(sqlite3* db, sqlite3_stmt* stmt) {
+    const auto changes_before = sqlite3_total_changes64(db);
     const int col_count = sqlite3_column_count(stmt);
 
     std::vector<std::string> column_names;
@@ -180,12 +183,17 @@ asterorm::result<sqlite::result> step_and_collect(sqlite3* db, sqlite3_stmt* stm
         rows.push_back(std::move(row));
     }
 
-    // For DML, sqlite3_changes reports the rows changed by the most recent
-    // statement on the connection. RETURNING-bearing INSERT/UPDATE/DELETE
-    // also yield rows; the count remains accurate because sqlite3_step has
-    // already finished applying the change before we read changes().
-    const int affected = sqlite3_changes(db);
-    return sqlite::result{std::move(column_names), std::move(rows), affected};
+    // changes64 retains the direct DML count, excluding trigger/cascade work.
+    // A non-mutating statement must not inherit the previous statement's count.
+    const auto native_count =
+        sqlite3_stmt_readonly(stmt) || sqlite3_total_changes64(db) == changes_before
+            ? 0
+            : sqlite3_changes64(db);
+    auto affected = asterorm::detail::checked_row_count<std::uint64_t>(native_count);
+    if (!affected) {
+        return std::unexpected(affected.error());
+    }
+    return sqlite::result{std::move(column_names), std::move(rows), *affected};
 }
 
 } // namespace

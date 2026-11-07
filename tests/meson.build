@@ -57,6 +57,12 @@ if clickhouse_feature.allowed()
 endif
 
 if sqlite_enabled
+  sqlite_unit_tests = executable(
+    'sqlite_unit_tests',
+    'unit/test_sqlite_result.cpp',
+    dependencies : [asterorm_sqlite_dep, catch2_dep],
+  )
+  test('sqlite unit tests', sqlite_unit_tests)
   sqlite_tests = executable(
     'sqlite_integration',
     [

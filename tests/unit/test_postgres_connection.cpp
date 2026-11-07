@@ -61,3 +61,22 @@ TEST_CASE("PostgreSQL advisory adapter reports unavailable connections without a
         REQUIRE(released.error().message == native.error().message);
     }
 }
+
+TEST_CASE("PostgreSQL checked results own native handles and preserve move state",
+          "[pg][row-count]") {
+    auto result = asterorm::pg::result::from_native(PQmakeEmptyPGresult(nullptr, PGRES_COMMAND_OK));
+    REQUIRE(result.has_value());
+    STATIC_REQUIRE(std::is_same_v<decltype(result->affected_rows()), std::uint64_t>);
+    REQUIRE(result->affected_rows() == 0);
+    auto moved = std::move(*result);
+    REQUIRE(result->affected_rows() == 0);
+    REQUIRE(moved.affected_rows() == 0);
+    asterorm::pg::result assigned{nullptr};
+    assigned = std::move(moved);
+    REQUIRE(assigned.affected_rows() == 0);
+    // NOLINTNEXTLINE(bugprone-use-after-move) -- moved-from results are explicitly empty.
+    REQUIRE(moved.rows() == 0);
+    REQUIRE_FALSE(asterorm::pg::result::from_native(nullptr).has_value());
+    REQUIRE_FALSE(asterorm::pg::result::from_native(PQmakeEmptyPGresult(nullptr, PGRES_FATAL_ERROR))
+                      .has_value());
+}

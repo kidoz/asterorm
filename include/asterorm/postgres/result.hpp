@@ -1,9 +1,12 @@
 #pragma once
 #include <libpq-fe.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include "asterorm/core/result.hpp"
 
 namespace asterorm::pg {
 
@@ -19,9 +22,12 @@ class result {
 
     explicit result(PGresult* res);
 
+    // Takes ownership on success and failure; validates the native command count.
+    static asterorm::result<result> from_native(PGresult* res);
+
     int rows() const;
     int columns() const;
-    int affected_rows() const;
+    std::uint64_t affected_rows() const;
     std::string_view command_tag() const;
     std::string_view column_name(int col) const;
     bool is_null(int row, int col) const;
@@ -33,6 +39,7 @@ class result {
 
   private:
     PGresult* res_{nullptr};
+    std::uint64_t affected_rows_{0};
 };
 
 } // namespace asterorm::pg

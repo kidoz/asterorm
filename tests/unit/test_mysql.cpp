@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 
 #include "asterorm/mysql/detail/params.hpp"
 #include "asterorm/mysql/driver.hpp"
@@ -78,4 +79,13 @@ TEST_CASE("MySQL results preserve NULL and validate integers", "[mysql]") {
     REQUIRE_FALSE(rows.get_int64(0, 2));
     REQUIRE(rows.is_null(-1, 0));
     REQUIRE(rows.get_value(5, 5).empty());
+}
+
+TEST_CASE("MySQL result counts retain 64-bit values without a server", "[mysql][row-count]") {
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    asterorm::mysql::result result{{}, {}, maximum};
+    STATIC_REQUIRE(std::is_same_v<decltype(result.affected_rows()), std::uint64_t>);
+    REQUIRE(result.affected_rows() == maximum);
+    auto moved = std::move(result);
+    REQUIRE(moved.affected_rows() == maximum);
 }
