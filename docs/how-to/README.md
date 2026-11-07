@@ -7,6 +7,7 @@ Each addresses a specific task.
 - [Query and project data](query-data.md)
 - [Lock selected rows](select-locking.md)
 - [Scope an advisory lock](advisory-locking.md)
+- [Temporarily limit statements in a transaction](statement-timeouts.md)
 - [Migrate string queries to the typed DSL](../typed-query-migration.md)
 - [Use transactions and retries](transactions.md)
 - [Apply and roll back schema migrations](migrations.md)

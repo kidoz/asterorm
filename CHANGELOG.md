@@ -6,6 +6,8 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PostgreSQL `session::with_statement_timeout` with nested local restoration,
+  transaction-completion gates, and cleanup shared with advisory scopes.
 - Optional PostgreSQL pool statement-timeout baselines on connection creation and
   checkout, with range/backend validation and low-level adapter read/local setters.
 - Automatic PostgreSQL migration serialization across processes, covering history
@@ -37,6 +39,10 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Changed
 
+- Session layout now tracks timeout pins and transaction generations alongside
+  advisory ownership; rebuild consumers with the library.
+- Savepoint rollback is rejected while a timeout scope is active; creating and
+  releasing savepoints and full transaction rollback remain supported.
 - Appended `statement_timeout` to `pool_config`; rebuild the library and consumers
   together for the layout change.
 - PostgreSQL migration operations reject caller-owned transactions before history

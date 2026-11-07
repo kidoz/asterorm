@@ -605,3 +605,37 @@ TEST_CASE("SQLite Integration: bounded prepared statement cache evicts LRU", "[s
     conn.clear_prepared_statement_cache();
     REQUIRE(conn.prepared_statement_count() == 0);
 }
+
+TEST_CASE("SQLite Integration: explicit pool timeout rejects before connecting",
+          "[sqlite][pool-timeout]") {
+    for (std::size_t minimum : {0, 1}) {
+        asterorm::pool_config config;
+        config.min_size = minimum;
+        config.statement_timeout = std::chrono::milliseconds{0};
+        asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{},
+                                                                 config};
+        auto error = pool.warmup_error();
+        REQUIRE(error.has_value());
+        REQUIRE(error->kind == asterorm::db_error_kind::query_failed);
+        REQUIRE(error->message.contains("does not support"));
+        REQUIRE_FALSE(pool.acquire().has_value());
+        REQUIRE(pool.stats().total == 0);
+    }
+}
+
+TEST_CASE("SQLite Integration: timeout scopes reject before leasing", "[sqlite][timeout-scope]") {
+    asterorm::pool_config config;
+    config.min_size = 0;
+    asterorm::connection_pool<asterorm::sqlite::driver> pool{asterorm::sqlite::driver{}, config};
+    asterorm::session db{pool};
+    bool called = false;
+    auto result = db.with_statement_timeout(std::chrono::milliseconds{100},
+                                            [&](auto&) -> asterorm::result<void> {
+                                                called = true;
+                                                return {};
+                                            });
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().kind == asterorm::db_error_kind::query_failed);
+    REQUIRE_FALSE(called);
+    REQUIRE(pool.stats().total == 0);
+}

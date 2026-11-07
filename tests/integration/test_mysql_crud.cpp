@@ -443,3 +443,36 @@ TEST_CASE("MySQL deadlock victim cannot report a successful commit", "[mysql][in
         return asterorm::result<void>{};
     });
 }
+
+TEST_CASE("MySQL Integration: explicit pool timeout rejects before connecting",
+          "[mysql][pool-timeout]") {
+    for (std::size_t minimum : {0, 1}) {
+        asterorm::pool_config config;
+        config.min_size = minimum;
+        config.statement_timeout = std::chrono::milliseconds{0};
+        asterorm::connection_pool<asterorm::mysql::driver> pool{asterorm::mysql::driver{}, config};
+        auto error = pool.warmup_error();
+        REQUIRE(error.has_value());
+        REQUIRE(error->kind == asterorm::db_error_kind::query_failed);
+        REQUIRE(error->message.contains("does not support"));
+        REQUIRE_FALSE(pool.acquire().has_value());
+        REQUIRE(pool.stats().total == 0);
+    }
+}
+
+TEST_CASE("MySQL Integration: timeout scopes reject before leasing", "[mysql][timeout-scope]") {
+    asterorm::pool_config config;
+    config.min_size = 0;
+    asterorm::connection_pool<asterorm::mysql::driver> pool{asterorm::mysql::driver{}, config};
+    asterorm::session db{pool};
+    bool called = false;
+    auto result = db.with_statement_timeout(std::chrono::milliseconds{100},
+                                            [&](auto&) -> asterorm::result<void> {
+                                                called = true;
+                                                return {};
+                                            });
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().kind == asterorm::db_error_kind::query_failed);
+    REQUIRE_FALSE(called);
+    REQUIRE(pool.stats().total == 0);
+}
