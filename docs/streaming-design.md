@@ -1,12 +1,12 @@
 # Streaming cursors: inventory and implementation contract
 
-Reviewed on 2026-11-07. **Session ownership foundation implemented; native readers
-and repository streaming remain unimplemented.** This document defines the v1
+Reviewed on 2026-11-07. **Session ownership, both PostgreSQL native strategies and
+repository entity streaming are implemented; combined feature acceptance remains open.** This document defines the v1
 boundary and remaining delivery sequence. It does not establish feature acceptance.
 The [native/toolchain evidence](evidence/streaming-inventory/README.md) freezes the
 pre-implementation observations; the follow-up below records current ownership code.
 
-## Current implementation
+## Inventory before streaming implementation
 
 | Area | Observed code | Consequence |
 | --- | --- | --- |
@@ -35,8 +35,8 @@ have already been consumed. An outer `result<generator<T>>` cannot carry that
 later failure. The standard generator is a coroutine view, not a database error
 channel ([C++ draft](https://eel.is/c++draft/coro.generator)).
 
-Use a portable move-only pull stream as the required v1 surface. Proposed names
-below are design targets, not current declarations:
+Use a portable move-only pull stream as the required v1 surface. These declarations
+are implemented for single-row and cursor modes:
 
 ```cpp
 enum class stream_mode { single_row, cursor };
@@ -72,6 +72,9 @@ transfers ownership once; a moved-from `next()` returns a local `query_failed`.
 
 ## Query and backend boundary
 
+This shape policy applies to the repository API. The delivered native
+adapter accepts caller-owned SQL as described in its guide.
+
 Initially accept a full mapped-entity `select_ast`: its table and explicit column
 projection must match `entity_traits<T>` in mapping order. No wildcard, aliases,
 joins, function projections, grouping/HAVING or row locking. Ordering uses mapped
@@ -101,8 +104,8 @@ codec and native diagnostics retain their identity and available SQLSTATEs.
 The adapter owns quoting of generated cursor names and renders only validated
 numeric fetch sizes. SELECT parameters stay in their original vector; values
 never become SQL fragments. Do not route either reader through the existing
-materializing `execute_prepared`. Initial single-row dispatch may bypass the
-prepared cache; cached/asynchronous preparation is a later optimization, with no
+materializing `execute_prepared`. Native single-row dispatch bypasses the prepared
+cache; cached/asynchronous preparation is a later optimization, with no
 automatic replay after any row has been exposed.
 
 PostgreSQL documents the activation order, empty completion result and possible
@@ -176,8 +179,11 @@ The server releases session resources after detecting disconnection; no hard
 server-side release deadline is promised. Normal reads and explicit cursor CLOSE
 can block; pool/statement timeouts are not an end-to-end stream deadline.
 
-Plan one logical SELECT `query_event` on normal EOF, terminal failure, or explicit
-close after dispatch, while the stream pin is still held. Internal DECLARE/FETCH/
+Emit one logical SELECT `query_event` on normal EOF, terminal failure, or explicit
+close after dispatch. Normal terminal callbacks run while the stream pin is held.
+If parent-guard abandonment already invalidated the reservation, its next read or
+close reports invalidation after pin loss; a stale reservation cannot affect a
+new generation opened by that observer. Internal DECLARE/FETCH/
 CLOSE commands produce no extra query events. Local preflight rejection produces
 none. Snapshot the observer at stream creation; mark the event delivered before
 invoking it so a throwing callback is never retried. Exceptions preserve identity
@@ -213,8 +219,9 @@ caller-retained entities remain outside the row-count bound.
 | Delivery | Required executable acceptance |
 | --- | --- |
 | Session ownership foundation — **implemented** | [No-server ownership cases](../tests/unit/test_stream_reservation.cpp): one lease, independent transaction/stream pins, busy gates, second stream rejection, moves, stale generations, guard destruction, completion, failure/discard and capacity return. Ordinary SQLite/MySQL paths remain green |
-| PostgreSQL single-row reader + repository hydration — **next** | Compiler/adapter unit cases without a server, malformed/codec/source admission, partial and empty results, late SQL/decode errors, native status ownership, observer exceptions, zero hidden materialization/retry; live full/early/failing scans and idle-pool recovery |
-| Declared cursor strategy | Existing transaction required, parameterized declaration, exact batch bounds/tail/empty fetch, CLOSE and transaction retention, failed CLOSE, destructor abandonment, stale guards and backend capability rejection |
+| PostgreSQL single-row native reader — **implemented** | [Adapter unit cases](../tests/unit/test_postgres_single_row.cpp) and [live cases](../tests/integration/test_single_row.cpp): checked single-tuple ownership, parameters, empty/100k-row/late-error reads, diagnostics, moves, abandonment, timeout/loss and reuse; [guide](how-to/postgresql-single-row-reader.md) compiles in the suite |
+| Repository hydration + terminal observation — **implemented** | [No-server cases](../tests/unit/test_repository_stream.cpp), [live cases and separate-process memory fixtures](../tests/integration/test_repository_stream.cpp), and [compiled public guide](how-to/stream-entities.md): explicit backend/query admission, bounded predicates, owned hydration, typed-source lowering, observer/exception lifecycle, real session-pool integration without a materializing executor |
+| Declared cursor strategy — **implemented** | [Native cursor tests](../tests/integration/test_cursor.cpp) and [repository tests](../tests/integration/test_repository_stream.cpp): existing transaction required, parameterized declaration, batch bounds/tail/empty fetch, CLOSE and prior-write retention, failed CLOSE, quiet abandonment, stale guards and independent backend capability rejection |
 | Timeout/cancellation and release review | Pool defaults, `57014`, deliberate read error, loss of connection, destructor discard, no leaked portal/session after eventual server cleanup, fresh no-server + PostgreSQL/SQLite/MySQL regression checks |
 | Memory and public contract | Separate-process **repository** scans of 100k fixed-width rows, incremental consumption with no retained collection, max native batches 1/N, peak RSS growth at most 32 MiB over the recorded post-connect baseline for the 1 KiB fixture; include buffered control and larger-row case. Compile/run installed consumers and public examples; feature-probe optional generator facade before claiming it |
 
@@ -300,7 +307,187 @@ clang-tidy -p buildDir --extra-arg=-isysroot \
   tests/unit/test_stream_reservation.cpp
 ```
 
-Next implement the PostgreSQL single-row adapter reader, then connect it to owned
-per-row repository hydration and terminal observation. `row_stream<T>`, native
-single-tuple reading, cursor execution and the repository `stream` method are still
-absent. Preserve the historical native capture rather than rewriting its hashes.
+At this point the native reader and repository streaming were still absent. The
+native reader is delivered in the follow-up below. Preserve the historical native
+capture rather than rewriting its hashes.
+
+## Implementation follow-up: PostgreSQL single-row native reader (2026-11-07)
+
+`pg::connection::open_single_row(sql, parameters)` now returns the move-only
+[`pg::single_row_reader`](../include/asterorm/postgres/single_row.hpp). Its synchronous
+`next()` returns an owned one-row `pg::result`, clean EOF, or a retained structured
+error. The [guide](how-to/postgresql-single-row-reader.md) distinguishes this native
+escape hatch from the repository shape/typing contract implemented below.
+
+The implementation stays in the existing PostgreSQL adapter `.cpp` boundary.
+Buffers and a shared ownership record are allocated before dispatch; it calls
+`PQsendQueryParams` and immediately activates single-row mode. Every single-tuple
+result passes a dedicated checked factory; ordinary `result::from_native` still
+rejects that status. Empty terminal tuples, final null and a healthy protocol state
+are required before reuse. This path bypasses the prepared cache and does not
+collect rows, hydrate entities, emit query events, retry or start transactions.
+
+The connection rejects competing execution/COPY/cache-control operations while
+active. Reader moves transfer ownership, connection moves update the shared record,
+and connection destruction invalidates it before releasing the native handle.
+Closing or destroying an unfinished reader discards its connection without a drain
+or SQL. SQL/protocol failures preserve primary diagnostics and discard; returned
+row handles survive that discard. Failed-transaction admission rejects without
+taking over caller rollback. The connection layout changed: rebuild consumers.
+
+The optional pool reuse protocol requires a nonthrowing boolean readiness check
+and nonthrowing close. PostgreSQL reports unread streams as non-reusable. Discard
+closes outside the pool mutex before capacity is freed, including explicit
+`release_to_pool()` while the lease object survives. Tests cover both a reader
+escaped from an unreserved callback and an explicitly released active lease.
+Adapters without the opt-in retain the existing open-connection reuse contract.
+
+Session integration uses the ownership reservation from the previous delivery:
+read callbacks run through its authority, EOF is followed by reservation completion,
+and failure/transaction abandonment invalidates both layers. At this point repository
+`row_stream<T>` construction, per-row hydration, terminal observation and declared
+cursor batching were still absent. These were not closed by native test results.
+
+Fresh adapter tests pass without a server (3 cases, 41 assertions). Thirteen live
+PostgreSQL cases pass (100,198 assertions), including parameter/null/text binding,
+exactly one row per result across 100k rows, empty completion, four rows before a
+late error, full diagnostic fields, unchanged cache/PID after clean EOF, competing
+operation rejection, early close/destruction, reader/connection moves, owner loss,
+failed-transaction admission, reservation pins, explicit release and callback
+escape, `57014` and backend termination. The guide has a dedicated server-free
+syntax-check target. Native API scans here do not establish repository RSS bounds;
+the separate-process memory acceptance remains outstanding.
+
+| Fresh command/check | Observed result |
+| --- | --- |
+| `buildDir/tests/postgres_unit_tests '[pg-single-row-unit]'` | 3 cases, 41 assertions passed without a server |
+| `buildDir/tests/pg_integration '[single-row]'` | 13 cases, 100,198 assertions passed |
+| `just test` | `Ok: 15`, `Fail: 0`, including PostgreSQL/SQLite/MySQL regressions and the native guide compile target |
+| `meson compile -C buildDir`, `just format-check`, `just lint` | Exit 0; lint covered 53 translation units, with existing diagnostics retained |
+| Fresh temporary-prefix build/install and CMake/shared pkg-config consumers | Exit 0 for existing mutation consumers and the native guide; both installed guide programs emitted `1,2,3` and reached reusable EOF |
+| Strict standards validator (`--mode strict-governance --workspace --today 2026-11-07`) | Exit 1: 53 errors and 12 warnings, identical to the previous ownership baseline; no findings on edited canonical contexts |
+
+These are local results, without a remote-CI, sanitizer, all-platform or release
+claim. The existing governance findings are not waived. Historical inventory and
+prior acceptance captures remain unchanged.
+
+At that point repository streaming was still absent. The follow-up below delivers
+the portable single-row bridge; declared-cursor batching and combined feature
+acceptance remain open.
+
+## Implementation follow-up: repository single-row streams (2026-11-07)
+
+The public [`row_stream<T>` facade](../include/asterorm/row_stream.hpp) and
+[`repository::stream<T>`](../include/asterorm/core/repository.hpp) now implement
+the pull interface above. The [guide](how-to/stream-entities.md) is compiled as a
+server-free test. Runtime and typed whole-entity sources share mapped SELECT and
+depth-64/node-1024 predicate validation before leasing. Unsupported capabilities,
+cursor mode, malformed shapes, codec errors and text NULs reject locally. The
+native capability includes a nonthrowing readiness check; a failed-transaction
+admission retains caller rollback ownership and emits no event. Observer snapshot
+copy failure also releases the new stream pin without dispatch or transaction loss.
+
+The stream owns SQL, parameters, observer and native reader. Each `next()` validates
+native row width/names and reuses shared entity hydration into an owned `T{}`;
+there is no collection executor or decoded prefetch. EOF completes the reservation;
+SQL/decode failures preserve their first diagnostic and discard. Explicit early
+close reports local cancellation once and discards; destructor/move replacement
+discards without invoking user code. Shared internal state keeps a terminal call
+alive if its observer replaces or destroys the public handle. Reentrant calls
+reject; only a single consumer is supported. Exceptions retain their identity,
+including an original reader/decoder exception when reporting it also throws.
+
+Terminal events use the opening observer snapshot and mark delivery before calling
+it. Ordinary EOF/error/close callbacks retain the pin; already-invalidated parent
+ownership follows the exception documented above. Adapter-call elapsed time excludes
+hydration and consumer pauses. The error pointer is callback-scoped.
+
+Fresh focused unit tests pass 250 assertions in 15 cases. Six ordinary live cases
+pass 112 assertions, covering typed rows/NULLs, reuse and transaction retention,
+codec failure, rows before `22012`, observer exceptions, explicit/destructor close,
+failed-transaction admission, scope rejection and pool-default timeout `57014`.
+The separate-process hidden case incrementally consumes 100,000 rows with a 1,024-byte
+text field and two scalar fields, retaining no collection (100,009 assertions).
+On this macOS arm64 / Apple Clang 21 / system-allocator host its last measured peak
+RSS growth above the post-connect/view-setup baseline was 327,680 bytes (0.3125 MiB),
+under the fixture's 32 MiB bound. Native batch size is one. This is a local fixture
+result, not a universal row-size or server-memory guarantee. Repository cursor
+bounds, buffered control and larger-row measurements remain combined-acceptance work.
+
+| Fresh command/check | Observed result |
+| --- | --- |
+| `buildDir/tests/core_tests '[repository-stream]'` | 15 cases, 250 assertions passed without a server, including the final fixture cleanup |
+| `buildDir/tests/pg_integration '[repository-stream]'` | 6 cases, 112 assertions passed |
+| `python3 tests/check_repository_stream_memory.py buildDir/tests/pg_integration` | Fresh process, 100,009 assertions passed; RSS growth 327,680 bytes |
+| `just test` | `Ok: 17`, `Fail: 0`, including PostgreSQL/SQLite/MySQL, both compiled guides and the fresh-process memory target |
+| `meson compile -C buildDir`, `just format-check` | Exit 0 |
+| `just lint` | Exit 0 across 55 translation units; existing diagnostics retained. New fixture diagnostics corrected; final targeted lint exits 0 with only Catch2's existing enum-flag diagnostic |
+| Fresh temporary-prefix build/install and CMake/shared pkg-config consumers | Existing mutation consumers pass; both installed entity-guide programs return two mapped rows, emit one pinned terminal event and release the lease at EOF |
+| Strict standards validator (`--mode strict-governance --workspace --today 2026-11-07`) | Exit 1: 53 errors, 12 warnings, 0 infos; JSON report exactly matches the previous native-reader baseline, including no findings on edited canonical contexts |
+
+These checks are local. No remote-CI, sanitizer, cross-platform or release result
+is implied, and existing governance findings remain open. At this point cursor
+batches were the next implementation; they are delivered in the follow-up below.
+
+## Implementation follow-up: declared-cursor batches (2026-11-07)
+
+[`pg::cursor_reader`](../include/asterorm/postgres/cursor.hpp) now owns a private
+quoted NO SCROLL / WITHOUT HOLD portal. `open_cursor` binds the original SELECT
+parameters to DECLARE; each `next()` performs a validated numeric FETCH into one
+owned batch of at most `chunk_size` rows. An empty batch triggers CLOSE and EOF;
+short batches are consumed before that final empty fetch. Normal EOF and successful
+explicit close retain the healthy caller transaction. Destructor/move replacement
+of an unfinished reader discards without SQL. Declaration/fetch/close failures
+retain the primary diagnostic and discard conservatively. A disconnected backend
+can produce either the server SQLSTATE or a libpq socket diagnostic; no SQLSTATE
+is fabricated. Both readers share connection move/invalidation and reuse gates.
+
+The generic entity stream selects an explicitly opted-in transport, owns only one
+native batch and decodes its rows incrementally using the existing hydrator. The
+batch is freed before another fetch or explicit close. Cursor admission requires a
+managed transaction before acquiring any new lease, plus native healthy-transaction
+readiness before dispatch. Single-row and cursor capability flags are independent.
+Repository source validation, terminal observation, exception precedence and parent
+invalidation apply to both modes. Internal DECLARE/FETCH/CLOSE commands emit no
+extra events. Pool statement timeouts apply separately to each native command;
+there is no automatic transaction, retry or whole-stream deadline.
+
+Native tests exercise chunk sizes 1, 2, 3, 7, 256 and 65536, parameters/NULLs,
+empty/tail/full batches, NO SCROLL / WITHOUT HOLD, portal disappearance, cache/PID
+retention, early close, failed CLOSE, late division errors, declaration failure,
+connection/reader moves, owner loss and backend termination. Repository cases
+verify prior writes survive EOF/explicit close, busy gates, no-transaction and
+failed-transaction admission, decode/late errors, timeout, quiet abandonment,
+parent-guard destruction and one terminal event. No-server fake transports also
+verify no native fetch between rows of a batch, independent capabilities and
+cleanup/observer exception precedence.
+
+Each strategy now has its own process for the 100k-row fixture with 1,024-byte text
+plus integer/boolean fields and no retained collection. The last full-suite run
+on macOS arm64 / Apple Clang 21 / system allocator recorded:
+
+| Strategy | Native row bound | Post-connect/setup RSS baseline | Peak RSS | Growth |
+| --- | --- | --- | --- | --- |
+| Single-row | 1 | 21,250,048 bytes | 21,577,728 bytes | 327,680 bytes |
+| Cursor | 256 | 21,217,280 bytes | 21,954,560 bytes | 737,280 bytes |
+
+Both passed 100,011 assertions and the 32 MiB fixture growth bound. This does not
+bound arbitrary row widths, caller retention or server memory. The next step is
+combined acceptance: add repository buffered-control and larger-row measurements,
+reconcile the remaining runtime/cleanup matrix and publish the source-bound local
+review. Historical native inventory captures remain unchanged.
+
+| Fresh command/check | Observed result |
+| --- | --- |
+| `buildDir/tests/core_tests '[repository-cursor],[repository-stream]'` | 21 cases, 388 assertions pass; cursor-only filter passes 6 cases / 138 assertions |
+| `buildDir/tests/postgres_unit_tests '[pg-cursor-unit]'` | 1 case, 19 assertions pass without a server |
+| `buildDir/tests/pg_integration '[cursor],[repository-cursor]'` | 16 cases, 692 assertions pass; final native-only `[cursor]` check also passes 10 cases / 464 assertions after fixture cleanup |
+| `just test` | `Ok: 18`, `Fail: 0`, including PostgreSQL/SQLite/MySQL regression paths, both guides and both fresh-process RSS targets |
+| `meson compile -C buildDir`, `just format-check` | Exit 0 |
+| `just lint` | Exit 0 across 56 translation units; new diagnostics corrected and final targeted checks pass. Existing adapter style, typed-DSL analyzer and Catch2 diagnostics retained |
+| Fresh temporary-prefix build/install and CMake/shared pkg-config consumers | Both guide functions compile/run, return two rows, emit one pinned SELECT event each and leave no private cursor portal after EOF |
+| Strict standards validator (`--mode strict-governance --workspace --today 2026-11-07`) | Exit 1: 53 errors, 12 warnings, 0 infos; JSON report exactly matches the previous repository-stream baseline, with no findings on the edited canonical contexts |
+
+These are local checks, without remote-CI, sanitizer, all-platform or release
+claims. Governance findings remain open; combined streaming acceptance is the
+next delivery.

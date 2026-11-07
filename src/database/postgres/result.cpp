@@ -54,6 +54,19 @@ asterorm::result<result> result::from_native(PGresult* res) {
     return output;
 }
 
+asterorm::result<result> result::from_single_tuple(PGresult* res) {
+    std::unique_ptr<PGresult, decltype(&PQclear)> owner{res, PQclear};
+    if (!res || PQresultStatus(res) != PGRES_SINGLE_TUPLE || PQntuples(res) != 1) {
+        db_error error;
+        error.kind = db_error_kind::query_failed;
+        error.message = "Expected exactly one PostgreSQL single-tuple row";
+        return std::unexpected(std::move(error));
+    }
+    result output{nullptr};
+    output.res_ = owner.release();
+    return output;
+}
+
 result::result(result&& other) noexcept
     : res_(std::exchange(other.res_, nullptr)),
       affected_rows_(std::exchange(other.affected_rows_, 0)) {}

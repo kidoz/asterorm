@@ -16,6 +16,9 @@ Scoped advisory locks are PostgreSQL-only. Other built-in adapters reject
 | Default build | Enabled | Enabled | Disabled | Disabled |
 | Client | libpq | sqlite3 | mysqlclient or bundled Connector/C | clickhouse-cpp |
 | Value binding | Native parameters | Native parameters | Native prepared statements | Interpolated literals |
+| Native single-row reader | Yes | No | No | No |
+| Native declared-cursor batches | Yes, transaction required | No | No | No |
+| Repository entity stream | Single-row or cursor mode | Rejected | Rejected | Rejected |
 | Mutable single-row refresh | `RETURNING` | `RETURNING` | Write plus key lookup | Experimental |
 | INSERT-from-SELECT | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
 | Predicate UPDATE/DELETE | Yes, restricted v1 | Yes, restricted v1 | Yes, restricted v1 | Rejected |
@@ -46,6 +49,19 @@ Parameters and results use text format. Each connection owns a bounded prepared
 statement cache. PostgreSQL-specific extras include arrays, JSONB, UUID, bytea,
 date/time/numeric codecs, enum labels, and raw or structured COPY IN/OUT through
 `postgres/copy.hpp`. There is no binary protocol or pipeline API.
+
+`open_single_row(sql, parameters)` returns a native `single_row_reader` with
+`next()` yielding `result<optional<pg::result>>`. Normal EOF completes the protocol;
+early close, destruction or failure discards the physical connection. The adapter
+does not hydrate entities or emit session query events. See the
+[native reader guide](../how-to/postgresql-single-row-reader.md). The
+[repository bridge](../how-to/stream-entities.md) adds mapped entities and terminal
+observation. `open_cursor(sql, parameters, chunk_size)` returns a `cursor_reader`
+whose `next()` owns at most `chunk_size` native rows. It requires a healthy
+transaction, uses a private quoted NO SCROLL / WITHOUT HOLD portal and closes it
+on empty fetch. Explicit `close()` retains the transaction when successful;
+unfinished destruction and failures discard. Both strategies bypass the prepared
+cache and block competing native work. Rebuild consumers after the connection layout change.
 
 PostgreSQL connections additionally expose `statement_timeout()` returning
 `result<chrono::milliseconds>`, `set_statement_timeout(milliseconds)` for an idle

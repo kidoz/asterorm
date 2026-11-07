@@ -6,9 +6,23 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PostgreSQL `cursor_reader` and repository cursor mode with parameterized DECLARE,
+  bounded native batches, managed-transaction admission and explicit CLOSE that
+  preserves prior writes. Unfinished destruction, cleanup/read/decode failures and
+  terminal observer exceptions discard; each strategy has a fresh-process RSS test.
+
+- Portable move-only `row_stream<T>` and PostgreSQL repository `stream<T>` with
+  mapped SELECT validation before leasing, owned per-row hydration, structured
+  late errors and terminal query observation.
+- Explicit PostgreSQL single-row capability and nonthrowing readiness admission
+  for repository streams, preserving caller rollback ownership on local rejection.
+
+- Native PostgreSQL `open_single_row` / `single_row_reader` with owned single-tuple
+  results, terminal protocol checks, preserved diagnostics and connection discard
+  on abandonment.
+
 - Internal session stream reservations with independent connection pins, busy-state
-  gates, generation validation and nonthrowing abandonment. Native readers and the
-  repository streaming API remain planned.
+  gates, generation validation and nonthrowing abandonment.
 
 - Repository `insert_select` and dedicated INSERT-from-SELECT AST/compiler support,
   with generated/default destination inference, source-shape checks and observed execution.
@@ -53,6 +67,10 @@ All notable changes to AsterORM will be documented in this file.
   package configuration, examples, and CI build and test workflows.
 
 ### Changed
+
+- PostgreSQL connection layout includes reader ownership; rebuild consumers.
+- Pools honor an optional nonthrowing reuse check and close opted-in discarded
+  connections outside the pool mutex before freeing their capacity slot.
 
 - Session layout now includes stream ownership and active-operation tracking;
   rebuild the library and consumers together.

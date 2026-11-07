@@ -38,6 +38,11 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - Typed SELECT filters, ordering, pagination, grouping, aggregates, and inferred
   tuple or named DTO projections.
 - Runtime SQL builders and native SQL with entity, scalar, or custom row mapping.
+- [Native PostgreSQL single-row reads](docs/how-to/postgresql-single-row-reader.md)
+  with owned row results, explicit completion and connection discard on abandonment.
+- [Mapped entity streams](docs/how-to/stream-entities.md) on PostgreSQL with
+  single-row or declared-cursor batches, owned hydration, structured late errors
+  and one terminal query event.
 - [Scoped advisory locks](docs/how-to/advisory-locking.md) on PostgreSQL, with
   connection pinning, nested scopes, and cleanup on errors and exceptions.
 - [SELECT row locking](docs/how-to/select-locking.md) on PostgreSQL and MySQL,
@@ -51,16 +56,17 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - PostgreSQL codecs for JSONB, arrays, UUID, bytea, date/time, exact numeric values,
   and enum labels, plus raw and structured COPY helpers.
 
-Relationship loading is explicit. Async APIs, streaming cursors, automatic
+Relationship loading is explicit. Async APIs, automatic
 lazy/eager loading, an identity map, and compile-time checking of raw SQL are
 not implemented. See the [API reference](docs/reference/README.md) for contracts
 and limitations. The [locking and timeout review](docs/locking-timeout-acceptance.md)
 records the accepted v1 scope and local checks.
 The [bulk predicate DML review](docs/bulk-predicate-dml-acceptance.md) records its
 accepted v1 limits and fresh three-backend verification.
-The [streaming inventory and contract](docs/streaming-design.md) records the planned
-reader API and native feasibility probes. Its internal session ownership foundation
-is implemented; native readers and repository streaming remain planned.
+The [streaming inventory and contract](docs/streaming-design.md) records the portable
+reader API, both implementations and native feasibility probes.
+Both PostgreSQL streaming strategies are implemented; combined streaming acceptance
+remains planned.
 
 ## Backends
 

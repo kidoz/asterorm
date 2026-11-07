@@ -16,6 +16,11 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 
 `connection_pool<Driver>::acquire()` returns `result<lease_type>`. A lease is
 move-only and returns its connection on destruction or `release_to_pool()`.
+An optional `bool is_pool_reusable() const noexcept` plus `void close() noexcept`
+lets an adapter reject idle reuse. Opted-in discarded connections close outside
+the pool mutex before their capacity slot is freed, including explicit release.
+PostgreSQL uses this to discard connections with unread single-row results or
+owned cursor portals.
 `warmup_error()` reports retained invalid configuration or a startup/setup failure. `stats()` returns pool
 counts and shutdown state. `close()` prevents further acquisition and waits
 for outstanding leases up to an internal deadline.
@@ -45,6 +50,21 @@ defaults. A scalar's empty optional means no row; SQL NULL still follows the
 selected `T` codec. `native_map()` preserves the mapper's return type, so a
 mapper returning `result<T>` yields a vector of per-row results inside the
 outer query result.
+
+An active [repository stream](../how-to/stream-entities.md) holds an independent
+connection pin. Unrelated session work, second streams, transaction completion,
+savepoints and advisory/timeout scopes reject while it is active. Clean EOF keeps
+a caller transaction, as does successful explicit cursor close. Early single-row
+close, failure or unfinished destruction discards and invalidates it. Cursor mode
+requires an existing healthy managed transaction before reserving a lease.
+
+Streams snapshot the observer on opening and emit one logical SELECT event at EOF,
+error or explicit close. Normal callbacks run before the stream pin is released;
+if a parent guard already invalidated it, the next call reports that invalidation
+after pin loss. Destruction emits no event. Callback exceptions preserve identity,
+discard ownership and are never replayed. Stream elapsed time sums native calls,
+excluding hydration and consumer pauses. An event's error pointer is valid only
+during the callback; copy fields that must outlive it.
 
 ## Transactions
 

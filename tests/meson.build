@@ -16,6 +16,7 @@ core_tests = executable(
     'unit/test_advisory_lock.cpp',
     'unit/test_timeout_scope.cpp',
     'unit/test_stream_reservation.cpp',
+    'unit/test_repository_stream.cpp',
     'unit/test_typed_query_header.cpp',
     'compile/test_typed_dsl.cpp',
   ],
@@ -82,10 +83,17 @@ endif
 if postgres_enabled
   postgres_unit_tests = executable(
     'postgres_unit_tests',
-    'unit/test_postgres_connection.cpp',
+    ['unit/test_postgres_connection.cpp', 'unit/test_postgres_single_row.cpp'],
     dependencies : [asterorm_pg_dep, catch2_dep],
   )
   test('postgres unit tests', postgres_unit_tests)
+  test('postgres single-row guide', python_program,
+    args : [files('check_single_row_guide.py'), '--build-root', meson.project_build_root()],
+  )
+  test('repository stream guide', python_program,
+    args : [files('check_single_row_guide.py'), '--build-root', meson.project_build_root(),
+            '--guide', 'docs/how-to/stream-entities.md'],
+  )
 
   pg_tests = executable(
     'pg_integration',
@@ -95,6 +103,9 @@ if postgres_enabled
       'integration/test_advisory_lock.cpp',
       'integration/test_pool.cpp',
       'integration/test_statement_timeout.cpp',
+      'integration/test_single_row.cpp',
+      'integration/test_cursor.cpp',
+      'integration/test_repository_stream.cpp',
       'integration/test_sql.cpp',
       'integration/test_extras.cpp',
       'integration/test_arrays_copy.cpp',
@@ -104,6 +115,16 @@ if postgres_enabled
   )
 
   test('pg integration', pg_tests)
+  test('repository stream memory', python_program,
+    args : [files('check_repository_stream_memory.py'), pg_tests],
+    depends : pg_tests,
+    timeout : 60,
+  )
+  test('repository cursor memory', python_program,
+    args : [files('check_repository_stream_memory.py'), pg_tests, '[.repository-cursor-memory]'],
+    depends : pg_tests,
+    timeout : 60,
+  )
 
   migration_worker = executable(
     'migration_worker',

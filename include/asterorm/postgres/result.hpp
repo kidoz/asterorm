@@ -24,6 +24,8 @@ class result {
 
     // Takes ownership on success and failure; validates the native command count.
     static asterorm::result<result> from_native(PGresult* res);
+    // Takes ownership; admits exactly one PGRES_SINGLE_TUPLE row, no other status.
+    static asterorm::result<result> from_single_tuple(PGresult* res);
 
     int rows() const;
     int columns() const;

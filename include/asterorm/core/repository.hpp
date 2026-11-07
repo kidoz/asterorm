@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 #include "asterorm/core/entity_traits.hpp"
 #include "asterorm/core/hydration.hpp"
 #include "asterorm/core/row_count.hpp"
+#include "asterorm/core/row_stream.hpp"
 #include "asterorm/core/session.hpp"
 #include "asterorm/sql/ast.hpp"
 #include "asterorm/sql/compiler.hpp"
@@ -307,6 +309,112 @@ template <typename T> result<void> validate_bulk_predicate(const sql::predicate_
         return left;
     }
     return validate_bulk_predicate<T>(*binary.right);
+}
+
+template <typename Session> constexpr bool supports_repository_stream() {
+    if constexpr (requires { typename Session::connection_type; }) {
+        using connection = typename Session::connection_type;
+        if constexpr (requires(connection& native, std::string_view statement,
+                               const query_parameters& parameters) {
+                          connection::supports_single_row_stream;
+                          connection::sql_dialect;
+                          { native.single_row_ready() } noexcept -> std::same_as<bool>;
+                          native.open_single_row(statement, parameters);
+                      }) {
+            return connection::supports_single_row_stream &&
+                   connection::sql_dialect == sql::dialect::postgres &&
+                   has_stream_cleanup<connection>;
+        }
+    }
+    return false;
+}
+
+template <typename Session> constexpr bool supports_repository_cursor() {
+    if constexpr (requires { typename Session::connection_type; }) {
+        using connection = typename Session::connection_type;
+        if constexpr (requires(connection& native, std::string_view statement,
+                               const query_parameters& parameters) {
+                          connection::supports_cursor_stream;
+                          connection::sql_dialect;
+                          { native.cursor_ready() } noexcept -> std::same_as<bool>;
+                          native.open_cursor(statement, parameters, std::size_t{});
+                      }) {
+            return connection::supports_cursor_stream &&
+                   connection::sql_dialect == sql::dialect::postgres &&
+                   has_stream_cleanup<connection>;
+        }
+    }
+    return false;
+}
+
+template <typename T>
+result<void> validate_stream_predicate(const sql::predicate_ast& predicate, std::size_t& nodes,
+                                       std::size_t depth = 0) {
+    if (depth > 64 || ++nodes > 1024) {
+        return std::unexpected(
+            bulk_mutation_error("Stream predicate exceeds its depth/node limit"));
+    }
+    if (const auto* binary = std::get_if<sql::binary_predicate>(&predicate.val)) {
+        if (!binary->left || !binary->right ||
+            (binary->op != sql::op_kind::and_ && binary->op != sql::op_kind::or_)) {
+            return std::unexpected(bulk_mutation_error("Invalid stream logical predicate"));
+        }
+        auto left = validate_stream_predicate<T>(*binary->left, nodes, depth + 1);
+        if (!left) {
+            return left;
+        }
+        return validate_stream_predicate<T>(*binary->right, nodes, depth + 1);
+    }
+    return validate_bulk_predicate<T>(predicate); // checked mapped comparison/NULL leaves
+}
+
+template <typename T> result<void> validate_stream_source(const sql::select_ast& source) {
+    constexpr auto width = std::tuple_size_v<decltype(entity_traits<T>::columns)>;
+    if (width == 0 || source.table != entity_traits<T>::table || source.table_alias ||
+        source.columns.size() != width || !source.items.empty() || !source.joins.empty() ||
+        !source.group_bys.empty() || source.having_clause ||
+        source.locking.strength != sql::select_lock_strength::none ||
+        source.locking.wait != sql::select_lock_wait::block) {
+        return std::unexpected(
+            bulk_mutation_error("Streaming requires a full mapped single-table SELECT"));
+    }
+    std::size_t index = 0;
+    result<void> valid;
+    std::apply(
+        [&](const auto&... column) {
+            (
+                [&] {
+                    if (!valid) {
+                        return;
+                    }
+                    if (source.columns[index] != column.name ||
+                        std::find(source.columns.begin(),
+                                  source.columns.begin() + static_cast<std::ptrdiff_t>(index),
+                                  source.columns[index]) !=
+                            source.columns.begin() + static_cast<std::ptrdiff_t>(index)) {
+                        valid = std::unexpected(
+                            bulk_mutation_error("Stream projection must match mapping order"));
+                        return;
+                    }
+                    valid = validate_bulk_column<T>(source.columns[index++]);
+                }(),
+                ...);
+        },
+        entity_traits<T>::columns);
+    if (!valid) {
+        return valid;
+    }
+    for (const auto& order : source.order_bys) {
+        valid = validate_bulk_column<T>(order.column);
+        if (!valid) {
+            return valid;
+        }
+    }
+    if (source.where_clause) {
+        std::size_t nodes = 0;
+        return validate_stream_predicate<T>(*source.where_clause, nodes);
+    }
+    return {};
 }
 
 template <typename T>
@@ -671,6 +779,70 @@ build_versioned_update(const T& entity, bool include_returning, sql::dialect dia
 template <typename Session> class repository {
   public:
     explicit repository(Session& sess) : session_(&sess) {}
+
+    template <typename T>
+    asterorm::result<row_stream<T>> stream(sql::select_ast source, stream_options options = {}) {
+        if constexpr (!detail::supports_repository_stream<Session>() &&
+                      !detail::supports_repository_cursor<Session>()) {
+            return std::unexpected(detail::stream_ownership_error(
+                "This session does not support repository streaming"));
+        } else {
+            if (options.chunk_size == 0 || options.chunk_size > 65536) {
+                return std::unexpected(
+                    detail::bulk_mutation_error("Stream chunk size must be between 1 and 65536"));
+            }
+            if (options.mode != stream_mode::single_row && options.mode != stream_mode::cursor) {
+                return std::unexpected(detail::bulk_mutation_error("Invalid stream mode"));
+            }
+            if (options.mode == stream_mode::cursor &&
+                !detail::supports_repository_cursor<Session>()) {
+                return std::unexpected(detail::stream_ownership_error(
+                    "This session does not support repository cursor streaming"));
+            }
+            if (options.mode == stream_mode::single_row &&
+                !detail::supports_repository_stream<Session>()) {
+                return std::unexpected(detail::stream_ownership_error(
+                    "This session does not support repository single-row streaming"));
+            }
+            auto valid = detail::validate_stream_source<T>(source);
+            if (!valid) {
+                return std::unexpected(std::move(valid.error()));
+            }
+            sql::compiler compiler{sql::dialect_for_session<Session>()};
+            auto compiled = compiler.compile(source);
+            if (!compiled) {
+                return std::unexpected(std::move(compiled.error()));
+            }
+            if (compiled->params.size() >
+                static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                return std::unexpected(
+                    detail::stream_ownership_error("Too many stream parameters"));
+            }
+            for (const auto& parameter : compiled->params) {
+                if (parameter.error) {
+                    return std::unexpected(*parameter.error);
+                }
+                if (parameter.value && parameter.value->contains('\0')) {
+                    return std::unexpected(detail::stream_ownership_error(
+                        "Stream text parameter contains a NUL byte"));
+                }
+            }
+            if constexpr (detail::supports_repository_cursor<Session>()) {
+                if (options.mode == stream_mode::cursor) {
+                    return detail::row_stream_access::open<T, true>(
+                        *session_, std::move(compiled->sql), std::move(compiled->params),
+                        options.chunk_size);
+                }
+            }
+            if constexpr (detail::supports_repository_stream<Session>()) {
+                return detail::row_stream_access::open<T>(*session_, std::move(compiled->sql),
+                                                          std::move(compiled->params));
+            } else {
+                return std::unexpected(detail::stream_ownership_error(
+                    "This session does not support repository single-row streaming"));
+            }
+        }
+    }
 
     // Batch insert. All rows go into a single INSERT statement; skipped
     // generated columns are handled per-row (rows must agree on which

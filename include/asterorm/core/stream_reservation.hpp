@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "asterorm/core/observer.hpp"
 #include "asterorm/core/result.hpp"
 
 namespace asterorm::detail {
@@ -64,6 +65,13 @@ template <typename Session> class stream_reservation {
             owner_ = nullptr;
         }
         return completed;
+    }
+
+    result<query_observer> observer_snapshot() {
+        if (!owner_) {
+            return std::unexpected(stream_ownership_error("Stream reservation is not active"));
+        }
+        return owner_->stream_observer_snapshot(generation_);
     }
 
     void discard() noexcept {

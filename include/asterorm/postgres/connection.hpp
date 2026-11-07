@@ -13,7 +13,9 @@
 #include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/postgres/copy.hpp"
+#include "asterorm/postgres/cursor.hpp"
 #include "asterorm/postgres/result.hpp"
+#include "asterorm/postgres/single_row.hpp"
 #include "asterorm/sql/compiler.hpp"
 
 namespace asterorm::pg {
@@ -21,6 +23,8 @@ namespace asterorm::pg {
 class connection {
   public:
     static constexpr bool supports_bulk_predicate_dml = true;
+    static constexpr bool supports_single_row_stream = true;
+    static constexpr bool supports_cursor_stream = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::postgres;
 
     connection(const connection&) = delete;
@@ -33,6 +37,9 @@ class connection {
 
     bool is_open() const;
     void close() noexcept;
+    [[nodiscard]] bool is_pool_reusable() const noexcept;
+    [[nodiscard]] bool single_row_ready() const noexcept;
+    [[nodiscard]] bool cursor_ready() const noexcept;
 
     [[nodiscard]] bool is_transaction_idle() const noexcept;
     asterorm::result<std::chrono::milliseconds> statement_timeout();
@@ -50,6 +57,10 @@ class connection {
                                                 const query_parameters& params);
     asterorm::result<pg::result> execute_prepared(std::string_view sql,
                                                   const query_parameters& params);
+    asterorm::result<single_row_reader> open_single_row(std::string_view sql,
+                                                        const query_parameters& params = {});
+    asterorm::result<cursor_reader>
+    open_cursor(std::string_view sql, const query_parameters& params, std::size_t chunk_size);
 
     void set_max_prepared_statements(size_t max_statements);
     [[nodiscard]] size_t prepared_statement_count() const;
@@ -61,11 +72,14 @@ class connection {
     asterorm::result<std::vector<copy_row>> copy_out_rows(std::string_view sql);
 
   private:
+    friend class single_row_reader;
+    friend class cursor_reader;
     asterorm::result<std::string> prepare_statement(std::string_view sql, size_t param_count);
     void evict_one_prepared_statement();
     void forget_prepared_statement(std::string_view sql);
 
     PGconn* conn_{nullptr};
+    std::shared_ptr<stream_detail::state> active_reader_;
     std::unordered_map<std::string, std::string> prepared_statements_;
     std::deque<std::string> prepared_statement_order_;
     size_t next_stmt_id_{0};

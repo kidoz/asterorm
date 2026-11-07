@@ -40,6 +40,7 @@ Construct `asterorm::repository repo{db}` with an existing session.
 | `insert_many(const vector<T>&)` | `size_t` | One multi-row insert; leaves generated IDs unset |
 | `upsert_many(vector<T>&)` | `size_t` | Bulk upsert with refresh; unsupported on MySQL |
 | `find_all<T>(options)` | `vector<T>` | Fetches mapped entities |
+| `stream<T>(select_ast, stream_options={})` | `row_stream<T>` | PostgreSQL single-row or cursor entity stream; validates before leasing |
 | `find_by<T>(predicate, options)` | `vector<T>` | Filters using a runtime AST predicate |
 | `find_one_by<T>(predicate)` | `optional<T>` | Empty optional when no row matches |
 
@@ -56,6 +57,24 @@ and optional `offset`. Each `query_order` has a mapped `column` name and
 Projection helpers include `select_projection<T, Projection>`, `select_projection_by<T, Projection>`,
 `select_map<T>`, and `select_map_by<T>`. Consult the header for their column-list
 and mapper arguments. Typed projections are documented in [SQL reference](sql.md).
+
+`row_stream<T>` is move-only; `next()` returns `result<optional<T>>` and `close()`
+returns `result<void>`. The source must select every mapped bare column in mapping
+order from the mapped table. Mapped filters, ordering and LIMIT/OFFSET are accepted;
+joins, aliases, projections, grouping and locking reject. The typed whole-entity
+builder lowers through `build()`. Default `stream_mode::single_row` and explicit
+`stream_mode::cursor` are implemented; unsupported capabilities reject before
+leasing. Cursor mode requires a healthy managed transaction. `chunk_size` must
+be 1–65536, bounds native cursor batches and does not change single-row granularity.
+
+Consume through EOF to release the stream pin while retaining a caller transaction.
+Explicit cursor close retains the transaction after successful CLOSE. Early
+single-row close, unfinished abandonment and read/decode/cleanup failures discard the connection and
+invalidate associated transactions. The session and pool must outlive the handle;
+the repository and source builder need not. One observer snapshot emits once at
+EOF, failure or explicit close; destruction invokes no callback. See the
+[streaming guide](../how-to/stream-entities.md) for validation, observer timing,
+exception precedence and memory limits.
 
 ## Optimistic locking
 

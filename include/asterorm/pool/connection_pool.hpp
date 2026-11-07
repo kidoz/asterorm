@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <condition_variable>
 #include <exception>
 #include <memory>
@@ -35,6 +36,12 @@ struct pool_stats {
 };
 
 namespace detail {
+template <typename Connection>
+concept has_pool_reuse_check = requires(Connection& connection) {
+    { connection.is_pool_reusable() } noexcept -> std::same_as<bool>;
+    { connection.close() } noexcept -> std::same_as<void>;
+};
+
 template <typename Conn, typename = void> struct has_prepared_cache_limit : std::false_type {};
 
 template <typename Conn>
@@ -309,21 +316,30 @@ template <typename Driver> class connection_pool {
     }
 
     void release(connection_type&& conn) {
-        std::lock_guard lock(mutex_);
-        if (closed_) {
-            // Pool was closed; drop the connection. Decrement so close()'s wait
-            // predicate can make progress as leases return. Guard against the
-            // post-timeout path where current_size_ was already reset to 0.
+        std::unique_lock lock(mutex_);
+        const bool reusable = !closed_ && [&] {
+            if (!conn.is_open()) {
+                return false;
+            }
+            if constexpr (detail::has_pool_reuse_check<connection_type>) {
+                return conn.is_pool_reusable();
+            }
+            return true;
+        }();
+        if (reusable) {
+            idle_connections_.push_back(std::move(conn));
+        } else {
+            if constexpr (detail::has_pool_reuse_check<connection_type>) {
+                // Explicit release_to_pool() can leave the lease object alive.
+                // Close unread native work before its capacity slot is freed.
+                lock.unlock();
+                conn.close();
+                lock.lock();
+            }
+            // close() may have expired and reset accounting while unlocked.
             if (current_size_ > 0) {
                 --current_size_;
             }
-            cv_.notify_all();
-            return;
-        }
-        if (conn.is_open()) {
-            idle_connections_.push_back(std::move(conn));
-        } else {
-            --current_size_;
         }
         cv_.notify_all();
     }

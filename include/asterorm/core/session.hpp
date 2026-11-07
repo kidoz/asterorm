@@ -763,6 +763,15 @@ template <typename Pool> class session {
         }
     }
 
+    result<query_observer> stream_observer_snapshot(std::uint64_t generation) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (generation != active_stream_id_ || stream_call_active_) {
+            return std::unexpected(
+                detail::stream_ownership_error("Stream reservation was invalidated"));
+        }
+        return observer_;
+    }
+
     result<void> complete_stream(std::uint64_t generation) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (generation != active_stream_id_ || stream_call_active_) {
