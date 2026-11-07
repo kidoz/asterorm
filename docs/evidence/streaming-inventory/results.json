@@ -1,0 +1,43 @@
+{
+  "protocol": {
+    "server_version": "160014",
+    "libpq_version": "180006",
+    "repository_stream_present": "false",
+    "result_factory_single_tuple_rejected": "true",
+    "single_row_rows": "7",
+    "single_row_empty_terminal": "1",
+    "normal_reuse": "true",
+    "late_error_prefix_rows": "4",
+    "late_error_sqlstate": "22012",
+    "cursor_outside_transaction_sqlstate": "25P01",
+    "cursor_parameter_binding": "true",
+    "cursor_batches": "3,3,1,0",
+    "cursor_closed": "true",
+    "cancel_sqlstate": "57014",
+    "cancel_drained_reuse": "true"
+  },
+  "buffered": {
+    "mode": "buffered",
+    "rows": "100000",
+    "payload_bytes": "102400000",
+    "max_batch_rows": "100000",
+    "peak_rss_before_bytes": "17956864",
+    "peak_rss_after_bytes": "158810112"
+  },
+  "single-row": {
+    "mode": "single-row",
+    "rows": "100000",
+    "payload_bytes": "102400000",
+    "max_batch_rows": "1",
+    "peak_rss_before_bytes": "17973248",
+    "peak_rss_after_bytes": "18071552"
+  },
+  "cursor": {
+    "mode": "cursor",
+    "rows": "100000",
+    "payload_bytes": "102400000",
+    "max_batch_rows": "256",
+    "peak_rss_before_bytes": "18038784",
+    "peak_rss_after_bytes": "18513920"
+  }
+}

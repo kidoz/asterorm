@@ -1,0 +1,12 @@
+{
+  "coroutine": {
+    "source": "#include <coroutine>\nstruct Task { struct promise_type {\nTask get_return_object() { return {}; }\nstd::suspend_never initial_suspend() noexcept { return {}; }\nstd::suspend_never final_suspend() noexcept { return {}; }\nvoid return_void() noexcept {} void unhandled_exception() noexcept {}\n}; }; Task example() { co_return; }\n",
+    "exit_code": 0,
+    "stderr": ""
+  },
+  "generator": {
+    "source": "#include <generator>\n#ifndef __cpp_lib_generator\n#error generator feature macro absent\n#endif\nstd::generator<int> example() { co_yield 1; }\n",
+    "exit_code": 1,
+    "stderr": "\u001b[1m<stdin>:1:10: \u001b[0m\u001b[0;1;31mfatal error: \u001b[0m\u001b[1m'generator' file not found\u001b[0m\n    1 | #include <generator>\u001b[0m\n      | \u001b[0;1;32m         ^~~~~~~~~~~\n\u001b[0m1 error generated.\n"
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "captured_at_utc": "2026-11-07T14:29:24.322205+00:00",
+  "purpose": "Pre-implementation native/toolchain inventory; no AsterORM stream acceptance",
+  "git_base_commit": "ede4c4f1482fb6aeb73edc95aceba28539c2a0bc",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "compiler": {
+    "id": "clang",
+    "exelist": [
+      "c++"
+    ],
+    "linker_exelist": [
+      "c++"
+    ],
+    "file_suffixes": [
+      "cpp",
+      "cppm",
+      "cc",
+      "cp",
+      "cxx",
+      "c++",
+      "hh",
+      "hp",
+      "hpp",
+      "ipp",
+      "hxx",
+      "h++",
+      "ino",
+      "ixx",
+      "CPP",
+      "C",
+      "HPP",
+      "H"
+    ],
+    "default_suffix": "cpp",
+    "version": "21.0.0",
+    "full_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "linker_id": "ld64"
+  },
+  "compile_command": [
+    "c++",
+    "-Itests/pg_integration.p",
+    "-Itests",
+    "-I../tests",
+    "-I../include",
+    "-Isubprojects/Catch2-3.14.0/src",
+    "-I../subprojects/Catch2-3.14.0/src",
+    "-I/opt/homebrew/opt/libpq/include",
+    "-fdiagnostics-color=always",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+    "-Wall",
+    "-Winvalid-pch",
+    "-Wextra",
+    "-Wpedantic",
+    "-std=c++23",
+    "-O0",
+    "-g",
+    "-Werror",
+    "/Users/apavlov/Projects/AsterORM/docs/evidence/streaming-inventory/probe.cpp",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/libasterorm_core.dylib",
+    "/Users/apavlov/Projects/AsterORM/buildDir/src/database/libasterorm_pg.dylib",
+    "-L/opt/homebrew/opt/libpq/lib",
+    "-lpq",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src",
+    "-Wl,-rpath,/Users/apavlov/Projects/AsterORM/buildDir/src/database",
+    "-o",
+    "<temporary executable>"
+  ],
+  "compile_working_directory": "/Users/apavlov/Projects/AsterORM/buildDir",
+  "compile_exit_code": 0,
+  "native_probe_exit_codes": {
+    "protocol": 0,
+    "buffered": 0,
+    "single-row": 0,
+    "cursor": 0
+  },
+  "connection_configuration": "ASTERORM_TEST_CONNINFO or existing Compose defaults; values omitted",
+  "evidence_sha256": {
+    "capture.py": "de6ac9ce76f37781ca1ef04707e5f03da86e3136422cac76193e37fa60165e4a",
+    "probe.cpp": "42b1a2acb5e6ee1f061b34956c5b10b67ebeb7462adf4095f4a6c8afdefd48df",
+    "results.json": "0a567a027de8f3215a7cc38760d2cffcc17bb8d867b4e672104eaa3b9507aba5",
+    "toolchain.json": "6749beb591b575b2f75fdd201d50bc8fd5fe95350c1f2298a231d433566bc267"
+  },
+  "inspected_source_sha256": {
+    "include/asterorm/core/repository.hpp": "32693c968cccbbcdcbc2adb9a013899a91cd9cb423e28de88180b1fe435e0182",
+    "include/asterorm/core/session.hpp": "f9947098f6a6accccc4034a5358537237b483e8974ffc4f5380701d2d07ae590",
+    "include/asterorm/core/hydration.hpp": "3c571621be62bcc657c6fee6ddf2a1e785f842d426fcd49e26e3ad1882543a35",
+    "include/asterorm/core/observer.hpp": "e2952012f127d1b9b0da3fc99abeebf8de6e9ef470f637c6ab6d2e41647d1077",
+    "include/asterorm/pool/connection_pool.hpp": "ab6651fe7a92b6823e4aa91d021e0af77c5e6c289b07d9006030f367975c5839",
+    "include/asterorm/postgres/connection.hpp": "ba8d86a81cee56e89c6a0fe75810cb3adf130ae7a65e345638b9469171246d6b",
+    "src/database/postgres/connection.cpp": "6bb82bc9a78d9ec662ab10d9ed1781f8f9f8313899efd5018e8b5296241344a4",
+    "src/database/postgres/result.cpp": "258d983d70ddda401faf166f6246c999bd626f4638da179676a96f10f28e7c08",
+    "src/database/sqlite/connection.cpp": "d834e5b9ab1386a85f27fd7b92f37d14fbc0f9fbfd513c131f6c1e73e8d86b73",
+    "src/database/mysql/connection.cpp": "61f9d8ee1979f0a86264d0388b4b44079231acfcdd15a4599264d117ecdd99ba",
+    "src/database/clickhouse/connection.cpp": "8adf5659a1d250b9f3a4cc06f8918133cc05c166e8fd34f681db848dbdbd4d7f",
+    "meson.build": "015a926b42e2fe06e45acd4d593d3decd89408ce898efaa5ae4a89d0e35ad5f6",
+    ".github/workflows/ci.yml": "948070c6c7e78dc7d8b0c79d0e452df636686fc0a35fc01bb9126eeec06e5059"
+  },
+  "limits": [
+    "Local unsigned inventory, not CI/release evidence",
+    "Read-only native queries and transaction-local cursors; no persistent schema changes",
+    "Each scan uses a fresh process; getrusage peak RSS is normalized to bytes",
+    "100000 rows of 1024-byte payload; proposed growth bound is 32 MiB",
+    "Client result batching only; server plan memory and caller retention are not bounded",
+    "No production streaming, session-busy gate, decoder or destructor cancellation exercised",
+    "Generator failure is recorded as a toolchain finding, not a capture failure"
+  ]
+}
