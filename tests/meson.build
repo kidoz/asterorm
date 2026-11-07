@@ -15,6 +15,7 @@ core_tests = executable(
     'unit/test_select_locking.cpp',
     'unit/test_advisory_lock.cpp',
     'unit/test_timeout_scope.cpp',
+    'unit/test_stream_reservation.cpp',
     'unit/test_typed_query_header.cpp',
     'compile/test_typed_dsl.cpp',
   ],

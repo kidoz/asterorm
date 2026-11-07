@@ -18,7 +18,8 @@ maps the revised v1 requirements to current code and fresh verification.
 
 The [streaming inventory and contract](../streaming-design.md) defines the proposed
 reader/error interface, connection ownership, cancellation limits and memory checks.
-Streaming remains unimplemented.
+The internal session ownership foundation is implemented; native readers and
+repository streaming remain unimplemented.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

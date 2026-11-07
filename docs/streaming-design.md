@@ -1,9 +1,10 @@
 # Streaming cursors: inventory and implementation contract
 
-Reviewed on 2026-11-07. **Inventory complete; streaming remains unimplemented.**
-This document defines the proposed v1 boundary and delivery sequence. It does not
-establish feature acceptance. The [native/toolchain evidence](evidence/streaming-inventory/README.md)
-records current behavior independently of future repository APIs.
+Reviewed on 2026-11-07. **Session ownership foundation implemented; native readers
+and repository streaming remain unimplemented.** This document defines the v1
+boundary and remaining delivery sequence. It does not establish feature acceptance.
+The [native/toolchain evidence](evidence/streaming-inventory/README.md) freezes the
+pre-implementation observations; the follow-up below records current ownership code.
 
 ## Current implementation
 
@@ -211,8 +212,8 @@ caller-retained entities remain outside the row-count bound.
 
 | Delivery | Required executable acceptance |
 | --- | --- |
-| Session ownership foundation — **next implementation** | No-server fake readers/pools: one lease, independent transaction/stream pins, every busy gate, second stream rejection, moves, stale generations, guard destruction, explicit close, failure/discard and capacity return. Ordinary SQLite/MySQL paths remain green |
-| PostgreSQL single-row reader + repository hydration | Compiler/adapter unit cases without a server, malformed/codec/source admission, partial and empty results, late SQL/decode errors, native status ownership, observer exceptions, zero hidden materialization/retry; live full/early/failing scans and idle-pool recovery |
+| Session ownership foundation — **implemented** | [No-server ownership cases](../tests/unit/test_stream_reservation.cpp): one lease, independent transaction/stream pins, busy gates, second stream rejection, moves, stale generations, guard destruction, completion, failure/discard and capacity return. Ordinary SQLite/MySQL paths remain green |
+| PostgreSQL single-row reader + repository hydration — **next** | Compiler/adapter unit cases without a server, malformed/codec/source admission, partial and empty results, late SQL/decode errors, native status ownership, observer exceptions, zero hidden materialization/retry; live full/early/failing scans and idle-pool recovery |
 | Declared cursor strategy | Existing transaction required, parameterized declaration, exact batch bounds/tail/empty fetch, CLOSE and transaction retention, failed CLOSE, destructor abandonment, stale guards and backend capability rejection |
 | Timeout/cancellation and release review | Pool defaults, `57014`, deliberate read error, loss of connection, destructor discard, no leaked portal/session after eventual server cleanup, fresh no-server + PostgreSQL/SQLite/MySQL regression checks |
 | Memory and public contract | Separate-process **repository** scans of 100k fixed-width rows, incremental consumption with no retained collection, max native batches 1/N, peak RSS growth at most 32 MiB over the recorded post-connect baseline for the 1 KiB fixture; include buffered control and larger-row case. Compile/run installed consumers and public examples; feature-probe optional generator facade before claiming it |
@@ -220,8 +221,8 @@ caller-retained entities remain outside the row-count bound.
 The 32 MiB growth budget is proposed for the fixed-schema acceptance fixture and
 must be reported with compiler, allocator/platform, actual row width and baseline.
 If it fails, diagnose and revise with evidence rather than silently disabling it.
-It is not a universal row-width-independent promise. The milestone remains planned
-until its runtime slices and combined review close; native probes alone satisfy
+It is not a universal row-width-independent promise. The feature remains partial
+until its remaining runtime slices and combined review close; native probes alone satisfy
 none of the production ownership, decoder, observer or destructor criteria.
 
 ## Verification of this review
@@ -234,7 +235,72 @@ none of the production ownership, decoder, observer or destructor criteria.
 | `just format-check` | Exit 0, including the new native probe |
 | Strict standards validator (`--mode strict-governance --workspace --today 2026-11-07`) | Exit 1: 53 errors and 12 warnings, identical to the pre-review baseline; no findings in the three edited canonical contexts |
 
-This review changes documentation and inventory probes only. Production source,
-public headers, build targets and CI configuration are unchanged. Current tests
-remain regression evidence; they do not test the proposed streaming API. No remote
-CI, full production streaming acceptance or release conclusion is claimed.
+That inventory review changed documentation and probes only. Its results remain
+historical and do not test the proposed streaming API. The implementation below
+has its own verification. No remote CI, full streaming acceptance or release
+conclusion is claimed.
+
+## Implementation follow-up: session stream ownership (2026-11-07)
+
+[stream_reservation.hpp](../include/asterorm/core/stream_reservation.hpp) adds a
+move-only internal reservation entered through `detail::session_stream_access`.
+It advertises no backend streaming capability and sends no SQL. A connection must
+offer nonthrowing close before admission can acquire a lease. The future reader
+path must validate backend/query admission and enforce native protocol completion.
+
+[session.hpp](../include/asterorm/core/session.hpp) now owns an independent stream
+generation and pin. A reservation shares the existing transaction lease or takes
+one lease itself. Its internal callback is the only authorized connection path;
+ordinary session/native/typed/repository work, another reservation, transaction
+completion, savepoints, advisory and timeout admission reject while it is active.
+Reservation from an ordinary connection callback/observer or scoped callback also
+rejects, so no nested operation silently borrows another connection. Mutexes are
+held per transition/callback, not between reads. Observer configuration and status
+remain usable.
+
+`complete()` is an internal assertion that the future reader has already reached
+a clean native terminal state or closed its cursor. It releases the stream pin
+while retaining a caller transaction. No native EOF or cursor cleanup is implemented
+by this method. `discard()`/destruction closes the physical connection, releases
+capacity and invalidates transaction ownership without SQL or observer callbacks.
+The reservation and pool/session lifetime precondition remains as specified above.
+
+Callback errors preserve the primary `db_error`; callback exceptions preserve
+identity. Both discard. Transaction-guard destruction or move replacement with a
+live reservation uses the abandonment path rather than a blocked rollback. Stale
+reservations/guards cannot act on a fresh generation. If abandonment occurs inside
+the authorized callback, the closed connection object and busy gate remain until
+that callback unwinds, preventing a dangling reference or premature pool reuse.
+
+The [15 ownership test cases](../tests/unit/test_stream_reservation.cpp) use fake
+connections and the real pool/session. They cover gates with zero SQL/events,
+independent sessions, move-only results, normal transaction-pin retention, error/
+exception identity, stale handles, guard destruction/replacement, deferred release,
+acquisition failure, cleanup-capability rejection, callback/observer exception
+recovery and cross-thread busy rejection between reads. Session layout changed;
+rebuild library and consumers together.
+
+Fresh verification of the ownership implementation:
+
+| Command | Observed result |
+| --- | --- |
+| `buildDir/tests/core_tests '[stream]'` | 252 assertions passed in 15 test cases, without a database server |
+| `just test` | `Ok: 14`, `Fail: 0`, including PostgreSQL/SQLite/MySQL regression paths |
+| `meson compile -C buildDir` and `just format-check` | Exit 0 |
+| `just lint` | Exit 0 across 51 translation units |
+| `python3 docs/evidence/bulk-predicate-dml-acceptance/check_consumers.py` | Fresh temporary-prefix build/install; CMake and shared pkg-config consumers compile/run with the new installed header |
+| Strict standards validator (`--mode strict-governance --workspace --today 2026-11-07`) | Exit 1: unchanged 53 errors and 12 warnings; no findings on edited canonical contexts |
+
+New fixture style diagnostics from the full lint run were corrected. Final targeted
+lint also exited 0, retaining a diagnostic originating in Catch2's enum-flag macro:
+
+```sh
+clang-tidy -p buildDir --extra-arg=-isysroot \
+  --extra-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk \
+  tests/unit/test_stream_reservation.cpp
+```
+
+Next implement the PostgreSQL single-row adapter reader, then connect it to owned
+per-row repository hydration and terminal observation. `row_stream<T>`, native
+single-tuple reading, cursor execution and the repository `stream` method are still
+absent. Preserve the historical native capture rather than rewriting its hashes.

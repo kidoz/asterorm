@@ -19,6 +19,7 @@
 #include "asterorm/core/observer.hpp"
 #include "asterorm/core/result.hpp"
 #include "asterorm/core/statement_timeout.hpp"
+#include "asterorm/core/stream_reservation.hpp"
 #include "asterorm/pool/connection_pool.hpp"
 
 namespace asterorm {
@@ -136,9 +137,7 @@ template <typename Session> class transaction_guard {
 
     transaction_guard& operator=(transaction_guard&& other) noexcept {
         if (this != &other) {
-            if (session_) {
-                auto _ = rollback();
-            }
+            abandon();
             session_ = other.session_;
             transaction_id_ = other.transaction_id_;
             other.session_ = nullptr;
@@ -148,9 +147,7 @@ template <typename Session> class transaction_guard {
     }
 
     ~transaction_guard() {
-        if (session_) {
-            auto _ = rollback(); // ignores error in dtor
-        }
+        abandon();
     }
 
     asterorm::result<void> commit() {
@@ -176,6 +173,19 @@ template <typename Session> class transaction_guard {
     }
 
   private:
+    void abandon() {
+        if (session_) {
+            if constexpr (requires { session_->abandon_stream_transaction(transaction_id_); }) {
+                if (session_->abandon_stream_transaction(transaction_id_)) {
+                    session_ = nullptr;
+                    transaction_id_ = 0;
+                    return;
+                }
+            }
+            auto _ = rollback(); // ignores error in dtor/move replacement
+        }
+    }
+
     Session* session_;
     std::uint64_t transaction_id_;
 };
@@ -203,6 +213,7 @@ template <typename Pool> class session {
     auto observed_execute(Conn& conn, std::string_view sql, const query_parameters& params)
         -> decltype(conn.execute_prepared(sql, params)) {
         query_observer observer;
+        std::optional<operation_scope> operation;
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
             if (auto blocked = scope_access_error()) {
@@ -211,6 +222,7 @@ template <typename Pool> class session {
             if (transaction_invalidated_) {
                 return std::unexpected(invalidated_transaction_error());
             }
+            operation.emplace(*this);
             observer = observer_;
         }
 
@@ -516,6 +528,7 @@ template <typename Pool> class session {
                 return std::unexpected(*blocked);
             }
         }
+        operation_scope operation{*this};
         if (active_lease_) {
             if (transaction_invalidated_) {
                 if constexpr (std::is_void_v<decltype(func(**active_lease_))>) {
@@ -659,6 +672,135 @@ template <typename Pool> class session {
 
   private:
     template <typename> friend class transaction_guard;
+    template <typename> friend class detail::stream_reservation;
+    friend struct detail::session_stream_access;
+
+    class operation_scope {
+      public:
+        explicit operation_scope(session& owner) : owner_(owner) {
+            std::lock_guard<std::recursive_mutex> lock(owner_.mutex_);
+            ++owner_.operation_depth_;
+        }
+        operation_scope(const operation_scope&) = delete;
+        operation_scope& operator=(const operation_scope&) = delete;
+        ~operation_scope() {
+            std::lock_guard<std::recursive_mutex> lock(owner_.mutex_);
+            --owner_.operation_depth_;
+        }
+
+      private:
+        session& owner_;
+    };
+
+    result<detail::stream_reservation<session>> reserve_stream(bool require_transaction) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if constexpr (!detail::has_stream_cleanup<connection_type>) {
+            return std::unexpected(detail::stream_ownership_error(
+                "Stream reservation requires nonthrowing connection cleanup"));
+        } else {
+            if (auto blocked = scope_access_error()) {
+                return std::unexpected(*blocked);
+            }
+            if (scope_depth_ != 0 || operation_depth_ != 0) {
+                return std::unexpected(detail::stream_ownership_error(
+                    "Cannot reserve a stream inside a connection callback or scoped operation"));
+            }
+            if (transaction_invalidated_) {
+                return std::unexpected(invalidated_transaction_error());
+            }
+            if (require_transaction && !in_transaction_) {
+                return std::unexpected(detail::stream_ownership_error(
+                    "This stream requires an active managed transaction"));
+            }
+            if (!active_lease_) {
+                auto lease = pool_->acquire();
+                if (!lease) {
+                    return std::unexpected(lease.error());
+                }
+                active_lease_ = std::move(*lease);
+            }
+            active_stream_id_ = ++next_stream_id_;
+            if (active_stream_id_ == 0) {
+                active_stream_id_ = ++next_stream_id_;
+            }
+            return detail::stream_reservation<session>{*this, active_stream_id_};
+        }
+    }
+
+    template <typename Callback>
+    auto with_stream_connection(std::uint64_t generation, Callback&& callback)
+        -> std::invoke_result_t<Callback, connection_type&> {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (generation != active_stream_id_ || !active_lease_ || stream_call_active_) {
+            return std::unexpected(detail::stream_ownership_error(
+                "Stream reservation was invalidated or is already executing"));
+        }
+        stream_call_active_ = true;
+        struct call_release {
+            session& owner;
+            ~call_release() {
+                owner.stream_call_active_ = false;
+                if (owner.active_stream_id_ == 0 && !owner.in_transaction_ &&
+                    owner.scope_depth_ == 0) {
+                    owner.active_lease_.reset();
+                }
+            }
+        } release{*this};
+        try {
+            auto outcome = std::invoke(std::forward<Callback>(callback), **active_lease_);
+            if (!outcome) {
+                discard_stream(generation);
+                return outcome;
+            }
+            if (generation != active_stream_id_) {
+                return decltype(outcome){std::unexpected(
+                    detail::stream_ownership_error("Stream reservation was invalidated"))};
+            }
+            return outcome;
+        } catch (...) {
+            discard_stream(generation);
+            throw;
+        }
+    }
+
+    result<void> complete_stream(std::uint64_t generation) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (generation != active_stream_id_ || stream_call_active_) {
+            return std::unexpected(detail::stream_ownership_error(
+                "Stream reservation was invalidated or is already executing"));
+        }
+        active_stream_id_ = 0;
+        if (!in_transaction_) {
+            active_lease_.reset();
+        }
+        return {};
+    }
+
+    void discard_stream(std::uint64_t generation) noexcept {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (generation == 0 || generation != active_stream_id_) {
+            return;
+        }
+        if constexpr (detail::has_stream_cleanup<connection_type>) {
+            (*active_lease_)->close();
+        }
+        active_stream_id_ = 0;
+        in_transaction_ = false;
+        transaction_invalidated_ = false;
+        active_transaction_id_ = 0;
+        if (!stream_call_active_) {
+            active_lease_.reset();
+        }
+    }
+
+    bool abandon_stream_transaction(std::uint64_t generation) noexcept {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (active_stream_id_ != 0 && in_transaction_ && generation == active_transaction_id_) {
+            discard_stream(active_stream_id_);
+            return true;
+        }
+        return false;
+    }
 
     class advisory_scope {
       public:
@@ -758,6 +900,9 @@ template <typename Pool> class session {
     }
 
     [[nodiscard]] std::optional<db_error> scope_access_error() const {
+        if (active_stream_id_ != 0 || stream_call_active_) {
+            return detail::stream_ownership_error("Session is busy with an active stream");
+        }
         if (scope_poisoned_) {
             return scope_connection_error();
         }
@@ -825,6 +970,10 @@ template <typename Pool> class session {
 
     asterorm::result<void> commit_transaction(std::uint64_t expected_transaction_id) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (active_stream_id_ != 0) {
+            return std::unexpected(
+                detail::stream_ownership_error("Session is busy with an active stream"));
+        }
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -862,6 +1011,10 @@ template <typename Pool> class session {
 
     asterorm::result<void> rollback_transaction(std::uint64_t expected_transaction_id) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (active_stream_id_ != 0) {
+            return std::unexpected(
+                detail::stream_ownership_error("Session is busy with an active stream"));
+        }
         if (!in_transaction_ || !active_lease_) {
             db_error err;
             err.kind = db_error_kind::query_failed;
@@ -936,6 +1089,10 @@ template <typename Pool> class session {
     bool scope_poisoned_{false};
     std::uint64_t active_transaction_id_{0};
     std::uint64_t next_transaction_id_{0};
+    std::uint64_t active_stream_id_{0};
+    std::uint64_t next_stream_id_{0};
+    std::size_t operation_depth_{0};
+    bool stream_call_active_{false};
     query_observer observer_;
 
     static db_error invalidated_transaction_error() {

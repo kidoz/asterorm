@@ -6,6 +6,10 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Internal session stream reservations with independent connection pins, busy-state
+  gates, generation validation and nonthrowing abandonment. Native readers and the
+  repository streaming API remain planned.
+
 - Repository `insert_select` and dedicated INSERT-from-SELECT AST/compiler support,
   with generated/default destination inference, source-shape checks and observed execution.
 
@@ -49,6 +53,9 @@ All notable changes to AsterORM will be documented in this file.
   package configuration, examples, and CI build and test workflows.
 
 ### Changed
+
+- Session layout now includes stream ownership and active-operation tracking;
+  rebuild the library and consumers together.
 
 - `sql::value_source` includes immutable arithmetic nodes; rebuild consumers and
   update exhaustive variant visitors. SELECT/predicate expression shapes are unchanged.

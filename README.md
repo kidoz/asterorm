@@ -59,7 +59,8 @@ records the accepted v1 scope and local checks.
 The [bulk predicate DML review](docs/bulk-predicate-dml-acceptance.md) records its
 accepted v1 limits and fresh three-backend verification.
 The [streaming inventory and contract](docs/streaming-design.md) records the planned
-reader API, native feasibility probes, and session ownership work still required.
+reader API and native feasibility probes. Its internal session ownership foundation
+is implemented; native readers and repository streaming remain planned.
 
 ## Backends
 
