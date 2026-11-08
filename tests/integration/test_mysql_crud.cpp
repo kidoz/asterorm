@@ -9,6 +9,7 @@
 #include "asterorm/mysql/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/advanced_query.hpp"
 #include "support/aggregate_extensions.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
@@ -505,4 +506,12 @@ TEST_CASE("MySQL Integration: window query execution", "[mysql][window]") {
 
 TEST_CASE("MySQL Integration: aggregate extensions", "[mysql][aggregate-extension]") {
     asterorm::test::check_aggregate_extensions(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("mysql Integration: combined advanced query", "[mysql][advanced-query]") {
+    const auto* configured = std::getenv("ASTERORM_MYSQL_TEST_CONNINFO");
+    asterorm::test::check_composed_query(
+        asterorm::mysql::driver{},
+        configured ? configured
+                   : "host=127.0.0.1 port=3307 dbname=orm_test user=orm_test password=orm_test");
 }

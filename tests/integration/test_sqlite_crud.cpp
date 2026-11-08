@@ -9,6 +9,7 @@
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
+#include "support/advanced_query.hpp"
 #include "support/aggregate_extensions.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
@@ -716,4 +717,8 @@ TEST_CASE("SQLite Integration: window query execution", "[sqlite][window]") {
 
 TEST_CASE("SQLite Integration: aggregate extensions", "[sqlite][aggregate-extension]") {
     asterorm::test::check_aggregate_extensions(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("sqlite Integration: combined advanced query", "[sqlite][advanced-query]") {
+    asterorm::test::check_composed_query(asterorm::sqlite::driver{}, ":memory:");
 }

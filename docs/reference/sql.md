@@ -44,7 +44,9 @@ PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
 MySQL profile options offer baseline 8.0.19 and modern 8.0.31, with no hidden
 version query. `compound_ast` and the constrained recursive form are implemented.
 Windows, typed helpers and aggregate extensions are implemented. There is no implicit
-conversion to narrow INSERT SELECT/stream leaves.
+conversion to narrow INSERT SELECT/stream leaves. The
+[acceptance review](../advanced-query-acceptance.md) records the revised v1 subset,
+local verification and compatibility limits.
 
 ## Set expressions
 

@@ -6,11 +6,17 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Source-bound local advanced-query acceptance across ordinary/recursive CTEs,
+  sets, windows/typed helpers and backend-specific aggregates. Fresh composition
+  cases check binding, NULL/duplicate results, pagination, pre-lease rejection and
+  observer/session behavior; all five public guides and the composition fixture
+  run through installed CMake/shared pkg-config consumers.
+
 - PG/SQLite aggregate FILTER, including aggregate windows, with owned predicates,
   typed nullable results and shared validation/binding. PostgreSQL DISTINCT ON
   adds checked ordering and an explicit tie policy; unsupported backends reject
   before leasing. Rebuild library/consumers: SELECT and containing query layouts
-  changed. Combined advanced-query acceptance remains next.
+  changed. The subsequent combined review records scoped local v1 acceptance.
 
 - Inline OVER windows, checked ROWS frames, ranking/navigation/frame-value helpers
   and typed window aggregates on PostgreSQL/SQLite/MySQL. Typed selectables now

@@ -132,6 +132,6 @@ with codec/native errors and observer exceptions preserved. Recursive steps stil
 reject functions, including windows. Rebuild the library and consumers together:
 `func_expr`, `param_expr` and `compiler` layouts changed. The
 [extension guide](aggregate-extensions.md) covers implemented PG/SQLite FILTER,
-including aggregate windows, and PostgreSQL DISTINCT ON. Combined advanced-query
-review remains next. See the [design](../advanced-query-design.md)
+including aggregate windows, and PostgreSQL DISTINCT ON. The combined
+[acceptance review](../advanced-query-acceptance.md) records the accepted v1 subset. See the [design](../advanced-query-design.md)
 and [delivery evidence](../evidence/window-functions/README.md).

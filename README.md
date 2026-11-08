@@ -89,8 +89,8 @@ records the generic scope, Catch2 adapter and worked fixture migration, now
 [locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
 The [advanced-query inventory and contract](docs/advanced-query-design.md) defines
 implemented ordinary/recursive CTEs, set operations and windows with typed helpers.
-PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. Combined acceptance
-review remains next.
+PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. The complete subset is
+[locally accepted within the revised v1 contract](docs/advanced-query-acceptance.md).
 
 ## Backends
 

@@ -151,4 +151,5 @@ retry, CASE emulation or hidden schema query. DISTINCT ON adds a field to
 `select_ast` and changes containing query layouts: rebuild the library and consumers
 together. The [design](../advanced-query-design.md) and
 [evidence](../evidence/aggregate-extensions/README.md) record the implemented subset.
-The next step is the combined advanced-query acceptance review.
+The [combined acceptance review](../advanced-query-acceptance.md) records scoped
+local acceptance and cross-feature checks. Next inventory the production pool.

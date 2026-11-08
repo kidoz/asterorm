@@ -2,7 +2,8 @@
 
 Reviewed on 2026-11-08. **Ordinary CTEs, set expressions and the query-root/execution foundation are
 implemented, including constrained recursive CTEs, inline windows/typed helpers,
-PG/SQLite FILTER and PostgreSQL DISTINCT ON; combined review remains planned.** The [capture](evidence/advanced-query-inventory/README.md)
+PG/SQLite FILTER and PostgreSQL DISTINCT ON; the subset is
+[locally accepted within the revised v1 contract](advanced-query-acceptance.md).** The [capture](evidence/advanced-query-inventory/README.md)
 compiled the then-current AST probes and executes native SQL on PostgreSQL 16.14, SQLite
 3.54.0 and MySQL 8.4.13. Those observations establish feasibility and constraints,
 not implementation or acceptance of the proposed API below.
@@ -260,7 +261,7 @@ legacy scalar functions retain their existing native resolution behavior.
 | **Implemented: recursive CTE** | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
 | **Implemented: windows and typed helpers** | OVER/FILTER ownership, types and frame validation; ranking/peer/NULL/navigation/running/full-partition cases; static argument diagnostics and identical runtime/typed lowering |
 | **Implemented: extensions** | PG DISTINCT ON and PG/SQLite FILTER, including window aggregates; explicit tie policy, backend rejection, bounded predicates and no silent emulation; typed/native parity and installed guide consumers |
-| **Next: combined acceptance review** | Cross-feature CTE/set/recursion/window/extension composition, current public guides and fresh consumers; source-bound regression/build/format/lint/standards evidence and explicit layout/version notes across the complete subset |
+| **Locally accepted: combined review** | Cross-feature CTE/set/recursion/window/extension composition, current public guides and fresh consumers; source-bound regression/build/format/lint/standards evidence and explicit layout/version notes across the complete subset |
 
 The first delivery is deliberately ordinary CTEs plus the query-root/execution
 foundation. It does not expose unimplemented operations as successful no-ops:
@@ -321,7 +322,8 @@ Older inventory/CTE receipts remain historical.
 At set delivery the next task was the constrained recursive form above: a two-arm
 UNION ALL CTE, checked anchor/step references and a real parent/child traversal.
 That follow-up, windows, typed helpers and extensions are implemented below.
-Combined advanced-query acceptance remains next.
+Combined advanced-query acceptance is now recorded in the
+[separate review](advanced-query-acceptance.md).
 
 
 ## Recursive CTE implementation follow-up (2026-11-08)
@@ -351,8 +353,8 @@ termination, visited sets and native resource limits are not compiler guarantees
 
 At recursive delivery the next task was inline windows and typed helpers with
 checked frames/result nullability. That follow-up and FILTER/DISTINCT ON are
-implemented below; combined review remains next. The broader advanced-query
-feature remains in progress; earlier captures stay historical.
+implemented below. The broader revised v1 subset is now locally accepted in the
+[combined review](advanced-query-acceptance.md); earlier captures stay historical.
 
 
 ## Window implementation follow-up (2026-11-08)
@@ -386,8 +388,9 @@ The [guide](how-to/window-functions.md) and
 result equality, peer/default versus ROWS frames, nullable navigation, empty/full
 frames, derived filtering, scopes and compile diagnostics. func_expr, param_expr
 and compiler layouts changed; rebuild library/consumers. At window delivery the
-next task was PG DISTINCT ON and PG/SQLite FILTER, implemented below. Combined
-advanced-query acceptance remains next. Earlier evidence stays historical.
+next task was PG DISTINCT ON and PG/SQLite FILTER, implemented below. The
+[combined review](advanced-query-acceptance.md) now records scoped local acceptance.
+Earlier evidence stays historical.
 
 ## Aggregate extension implementation follow-up (2026-11-08)
 
@@ -421,7 +424,10 @@ native runtime/typed equality, empty/NULL/HAVING/filtered-window results, PG win
 selection and combined DISTINCT ON/window behavior, zero-lease rejection, graph
 limits, compile controls and installed CMake/shared pkg-config consumers.
 
-The next task is a combined acceptance review across CTEs, sets, constrained
-recursion, windows and these extensions, with fresh composition cases and a
-source-bound aggregate evidence record. Individual delivery checks do not close
-that review or establish remote CI/release, performance or older-server coverage.
+At extension delivery the next task was combined acceptance across CTEs, sets,
+constrained recursion, windows and these extensions. The
+[combined review](advanced-query-acceptance.md) now records scoped local acceptance
+with fresh composition cases, public-guide consumers and source-bound evidence.
+Individual delivery captures remain historical. This establishes no remote
+CI/release, performance or older-server coverage. Next inventory the production
+connection pool and reconcile its v1 contract with the existing ownership paths.

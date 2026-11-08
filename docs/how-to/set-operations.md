@@ -105,5 +105,5 @@ reads of one TEMP source in a statement.
 UNION ALL arms; ordinary set operands retain these derived wrappers. The
 [window guide](window-functions.md) covers the implemented inline windows/typed
 helpers. [Aggregate extensions](aggregate-extensions.md) cover implemented FILTER
-and DISTINCT ON. The [design](../advanced-query-design.md) records the remaining
-combined review. Existing INSERT SELECT/stream leaf restrictions remain in place.
+and DISTINCT ON. The [design](../advanced-query-design.md) and [acceptance review](../advanced-query-acceptance.md) record the accepted
+v1 subset. Existing INSERT SELECT/stream leaf restrictions remain in place.

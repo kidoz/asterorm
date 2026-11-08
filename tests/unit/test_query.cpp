@@ -9,6 +9,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include <stdexcept>
 
+#include "../../docs/evidence/advanced-query-acceptance/composition.hpp"
 #include "asterorm/session.hpp"
 
 struct cte_unit_row {
@@ -802,4 +803,78 @@ TEST_CASE("Extensions execution: backend rejection precedes lease and valid FILT
     REQUIRE(events == 1);
     REQUIRE(state.calls == 1);
     REQUIRE(state.params == asterorm::query_parameters{"0"});
+}
+
+TEST_CASE("Advanced query: typed and runtime composition share SQL, labels and lexical bindings",
+          "[advanced-query]") {
+    const auto target = GENERATE(sql::dialect::postgres, sql::dialect::sqlite, sql::dialect::mysql);
+    const bool filtered = target != sql::dialect::mysql;
+    const bool distinct = target == sql::dialect::postgres;
+    auto runtime = asterorm::acceptance::composed_query(filtered, distinct);
+    auto typed = asterorm::acceptance::composed_query(filtered, distinct, true);
+    sql::compiler renderer{target};
+    auto compiled = renderer.compile(runtime);
+    auto typed_compiled = renderer.compile(typed);
+    REQUIRE(compiled);
+    REQUIRE(typed_compiled);
+    REQUIRE(compiled->sql == typed_compiled->sql);
+    REQUIRE(compiled->params == typed_compiled->params);
+    REQUIRE(compiled->result_columns ==
+            std::vector<std::string>{"id", "parent", "number", "total", "previous"});
+    asterorm::query_parameters expected{"1", "9", "0", "0"};
+    if (filtered) {
+        expected.emplace_back("10");
+    }
+    expected.insert(expected.end(), {"-1", "5", "98"});
+    REQUIRE(compiled->params == expected);
+    REQUIRE(compiled->sql.starts_with("WITH RECURSIVE "));
+    REQUIRE(compiled->sql.find("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW") !=
+            std::string::npos);
+    auto invalid = asterorm::acceptance::composed_query(true, true);
+    std::get<sql::select_ast>(invalid.ctes[2].body->body).items[3].fn->args.clear();
+    REQUIRE_FALSE(renderer.compile(invalid));
+    // Compiler reuse must reset both numbering and statement-wide affinity casts.
+    auto plain = renderer.compile(
+        sql::select({"id"}).from("plain").where(sql::col("id") == sql::val(2)).build());
+    REQUIRE(plain);
+    REQUIRE(plain->params == asterorm::query_parameters{"2"});
+    REQUIRE(plain->sql.find("CAST(") == std::string::npos);
+    REQUIRE(renderer.compile(runtime)->sql == compiled->sql);
+}
+
+TEST_CASE("Advanced query: invalid later definitions and branches reject before leasing",
+          "[advanced-query]") {
+    auto query = asterorm::acceptance::composed_query();
+    SECTION("later window has malformed FILTER") {
+        auto& ranked = std::get<sql::select_ast>(query.ctes[2].body->body);
+        ranked.items[3].fn->filter =
+            std::make_shared<const sql::predicate_ast>(sql::sum(sql::col("value")) > sql::val(0));
+    }
+    SECTION("forward reference hidden in a CTE set branch") {
+        auto& seeds = std::get<sql::compound_ast>(query.ctes[0].body->body);
+        std::get<sql::select_ast>(seeds.right->body).table = "ranked";
+    }
+    SECTION("recursive step gains a window") {
+        auto& walk = std::get<sql::compound_ast>(query.ctes[1].body->body);
+        auto& step = std::get<sql::select_ast>(walk.right->body);
+        step.where_clause = sql::over(sql::count_all(), {}) > sql::val(0);
+    }
+    SECTION("unselected compound operand has wrong arity") {
+        auto& compound = std::get<sql::compound_ast>(query.body);
+        std::get<sql::select_ast>(compound.right->body).columns.pop_back();
+    }
+    SECTION("global budget spans multiple CTEs") {
+        auto& seeds = std::get<sql::compound_ast>(query.ctes[0].body->body);
+        auto& first = std::get<sql::select_ast>(seeds.left->body);
+        first.group_bys.assign(2100, "id");
+        REQUIRE(sql::compiler{}.compile(query));
+        auto& ranked = std::get<sql::select_ast>(query.ctes[2].body->body);
+        ranked.group_bys.assign(2100, "id");
+    }
+    unsupported_session<sql::dialect::postgres> db;
+    auto rejected = sql::query_as<asterorm::acceptance::composed_row>(db, query);
+    REQUIRE_FALSE(rejected);
+    REQUIRE(rejected.error().kind == asterorm::db_error_kind::parse_failed);
+    REQUIRE(db.acquisitions == 0);
+    REQUIRE(db.events == 0);
 }

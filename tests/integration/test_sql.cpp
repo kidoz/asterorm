@@ -10,6 +10,7 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/advanced_query.hpp"
 #include "support/aggregate_extensions.hpp"
 #include "support/cte_query.hpp"
 #include "support/recursive_query.hpp"
@@ -333,6 +334,14 @@ TEST_CASE("PG Integration: window query execution", "[pg][window]") {
 TEST_CASE("PG Integration: aggregate extensions", "[pg][aggregate-extension]") {
     const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
     asterorm::test::check_aggregate_extensions(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("pg Integration: combined advanced query", "[pg][advanced-query]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_composed_query(
         asterorm::pg::driver{}, configured ? configured
                                            : "host=127.0.0.1 port=5432 dbname=orm_test "
                                              "user=orm_test password=orm_test sslmode=disable");
