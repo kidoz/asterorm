@@ -165,10 +165,10 @@ constexpr typed_predicate<Entity> operator||(typed_predicate<Entity> lhs,
 // select_item AST node.
 
 template <typename T>
-concept selectable = requires {
+concept selectable = requires(const T& item) {
     typename T::projected_type;
     typename T::entity_type;
-    { T::to_select_item() } -> std::convertible_to<select_item>;
+    { item.to_select_item() } -> std::convertible_to<select_item>;
 };
 
 // ---------------------------------------------------------------------------
@@ -199,9 +199,9 @@ template <auto MemberPtr> struct typed_col {
     template <typename U>                                                                          \
         requires detail::compatible_for_compare_v<compare_type, U>                                 \
     friend typed_predicate<entity_type> operator op_token(typed_col, typed_val<U> right_value) {   \
-        return typed_predicate<entity_type>{predicate_ast{                                         \
-            comparison_predicate{op_enum, column_expr{std::string{column_name()}},                 \
-                                 param_expr{asterorm::encode_parameter(right_value.value)}}}};     \
+        return typed_predicate<entity_type>{                                                       \
+            predicate_ast{comparison_predicate{op_enum, column_expr{std::string{column_name()}},   \
+                                               ::asterorm::sql::val(right_value.value)}}};         \
     }
     ASTERORM_TYPED_VAL_CMP(==, op_kind::eq)
     ASTERORM_TYPED_VAL_CMP(!=, op_kind::neq)
@@ -504,7 +504,8 @@ template <typename Entity> select_ast make_entity_select_ast() {
 template <typename Item> struct is_plain_typed_column : std::false_type {};
 template <auto MemberPtr> struct is_plain_typed_column<typed_col<MemberPtr>> : std::true_type {};
 
-template <typename Entity, typename... Items> select_ast make_projection_select_ast() {
+template <typename Entity, typename... Items>
+select_ast make_projection_select_ast(const Items&... items) {
     select_ast initial_ast;
     initial_ast.table = entity_traits<Entity>::table;
     if constexpr ((is_plain_typed_column<Items>::value && ...)) {
@@ -512,7 +513,7 @@ template <typename Entity, typename... Items> select_ast make_projection_select_
         (initial_ast.columns.emplace_back(Items::column_name()), ...);
     } else {
         initial_ast.items.reserve(sizeof...(Items));
-        (initial_ast.items.emplace_back(Items::to_select_item()), ...);
+        (initial_ast.items.emplace_back(items.to_select_item()), ...);
     }
     return initial_ast;
 }
@@ -528,7 +529,7 @@ template <typename Entity> typed_select_builder<Entity, Entity> select() {
 // must be selectable; the result is initialised from projected types in order.
 // A default result type keeps explicit DTO calls unambiguous even if the DTO
 // itself satisfies the public selectable concept.
-template <typename DTO = void, selectable... Items> auto select_cols(Items...) {
+template <typename DTO = void, selectable... Items> auto select_cols(Items... items) {
     static_assert(sizeof...(Items) > 0, "asterorm: select_cols requires at least one item");
 
     using entity = detail::pick_entity_t<typename Items::entity_type...>;
@@ -547,7 +548,7 @@ template <typename DTO = void, selectable... Items> auto select_cols(Items...) {
                   "Each projected type must aggregate-initialize the DTO in declared order.");
 
     return typed_select_builder<entity, result_type, Items...>{
-        detail::make_projection_select_ast<entity, Items...>()};
+        detail::make_projection_select_ast<entity, Items...>(items...)};
 }
 
 } // namespace asterorm::sql::typed

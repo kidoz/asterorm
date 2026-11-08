@@ -70,6 +70,9 @@ class compiler {
   private:
     [[nodiscard]] result<std::string>
     compile_query_body(const query_ast& ast, query_parameters& params, std::size_t& next_alias);
+    [[nodiscard]] result<void> validate_select_windows(const select_ast& ast) const;
+    [[nodiscard]] result<std::string> compile_over(const over_clause& clause) const;
+    bool cast_window_parameters_{};
     dialect dialect_;
     query_compile_options query_options_;
     [[nodiscard]] asterorm::result<std::string> compile_select(const select_ast& ast,

@@ -41,8 +41,10 @@ rules and the delivery plan. The [ordinary CTE guide](../how-to/common-table-exp
 covers the implemented owned root and explicit named execution. The
 [set-operation guide](../how-to/set-operations.md) covers owned grouping and
 portable operand wrappers. The [recursive CTE guide](../how-to/recursive-common-table-expressions.md)
-covers checked anchor/step traversal and native termination limits. Windows and
-extensions remain planned.
+covers checked anchor/step traversal and native termination limits.
+[Inline windows](../how-to/window-functions.md) now share runtime/typed lowering,
+checked frames and conservative nullable results. Extensions and combined review
+remain planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

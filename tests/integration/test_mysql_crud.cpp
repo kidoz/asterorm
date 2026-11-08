@@ -15,6 +15,7 @@
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
+#include "support/window_query.hpp"
 
 struct MysqlUser {
     std::optional<std::int64_t> id;
@@ -495,4 +496,8 @@ TEST_CASE("MySQL Integration: set query execution", "[mysql][set-query]") {
 
 TEST_CASE("MySQL Integration: recursive query execution", "[mysql][recursive-query]") {
     asterorm::test::check_recursive_query(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: window query execution", "[mysql][window]") {
+    asterorm::test::check_window_query(asterorm::mysql::driver{}, conninfo());
 }

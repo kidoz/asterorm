@@ -15,6 +15,7 @@
 #include "support/set_query.hpp"
 #include "support/transactional_session.hpp"
 #include "support/typed_query_observer.hpp"
+#include "support/window_query.hpp"
 
 TEST_CASE("SQLite Integration: typed query observation", "[sqlite][typed-query][observer]") {
     asterorm::test::check_typed_query_observer(asterorm::sqlite::driver{}, ":memory:");
@@ -706,4 +707,8 @@ TEST_CASE("SQLite Integration: set query execution", "[sqlite][set-query]") {
 
 TEST_CASE("SQLite Integration: recursive query execution", "[sqlite][recursive-query]") {
     asterorm::test::check_recursive_query(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("SQLite Integration: window query execution", "[sqlite][window]") {
+    asterorm::test::check_window_query(asterorm::sqlite::driver{}, ":memory:");
 }

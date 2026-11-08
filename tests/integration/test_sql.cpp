@@ -15,6 +15,7 @@
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
+#include "support/window_query.hpp"
 
 TEST_CASE("PG Integration: SELECT locking", "[pg][select-locking]") {
     const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
@@ -315,6 +316,14 @@ TEST_CASE("PG Integration: set query execution", "[pg][set-query]") {
 TEST_CASE("PG Integration: recursive query execution", "[pg][recursive-query]") {
     const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
     asterorm::test::check_recursive_query(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("PG Integration: window query execution", "[pg][window]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_window_query(
         asterorm::pg::driver{}, configured ? configured
                                            : "host=127.0.0.1 port=5432 dbname=orm_test "
                                              "user=orm_test password=orm_test sslmode=disable");

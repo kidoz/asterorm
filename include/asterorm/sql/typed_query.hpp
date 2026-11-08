@@ -13,6 +13,7 @@
 #include "asterorm/core/result.hpp"
 #include "asterorm/sql/compiler.hpp"
 #include "asterorm/sql/typed.hpp"
+#include "asterorm/sql/window.hpp"
 
 // Bridge between the typed DSL (sql/typed.hpp) and a session/connection. A
 // free function instead of a repository method so users opt in by including
@@ -23,6 +24,27 @@ namespace asterorm::sql::typed {
 
 namespace detail {
 
+template <typename Session> constexpr bool window_session() {
+    if constexpr (requires { typename Session::connection_type; }) {
+        using connection_type = typename Session::connection_type;
+        if constexpr (requires { connection_type::sql_dialect; }) {
+            if constexpr (std::same_as<std::remove_cv_t<decltype(connection_type::sql_dialect)>,
+                                       dialect>) {
+                return (connection_type::sql_dialect == dialect::postgres ||
+                        connection_type::sql_dialect == dialect::sqlite ||
+                        connection_type::sql_dialect == dialect::mysql) &&
+                    requires(Session & owner, connection_type & connection,
+                             const compiled_query & statement)
+                {
+                    {owner.observed_execute(connection, statement.sql, statement.params)}
+                        ->std::same_as<decltype(connection.execute_prepared(statement.sql,
+                                                                            statement.params))>;
+                };
+            }
+        }
+    }
+    return false;
+}
 template <typename Session, typename Connection>
 auto execute_select(Session& session, Connection& connection, const compiled_query& statement) {
     if constexpr (requires {
@@ -96,6 +118,13 @@ template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
 query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder) {
     auto select_ast_value = builder.build();
+    if (window_detail::contains_window(select_ast_value) && !detail::window_session<Session>()) {
+        db_error error;
+        error.kind = db_error_kind::parse_failed;
+        error.message =
+            "Typed windows require an explicit supported dialect and compatible observed_execute";
+        return std::unexpected(error);
+    }
     if ((select_ast_value.locking.strength != select_lock_strength::none ||
          select_ast_value.locking.wait != select_lock_wait::block) &&
         !asterorm::sql::session_supports_select_locking<Session>()) {

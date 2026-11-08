@@ -55,6 +55,17 @@ def main() -> int:
         (16, "inferred projection without an entity",
          r"requires at least one entity-bound column"),
         (17, "empty inferred projection", r"select_cols requires at least one item"),
+        (18, "mixed window keys", r"window keys must share one entity"),
+        (19, "ranking without order", r"window function requires ORDER BY"),
+        (20, "frame value without frame", r"requires an explicit ROWS frame"),
+        (21, "boolean window offset", r"offset requires a signed integer"),
+        (22, "widening window default", r"window default must match the column type"),
+        (23, "fractional nth position", r"position requires a signed integer"),
+        (24, "OVER on plain column", r"OVER requires a supported aggregate"),
+        (25, "mixed window argument and key", r"arguments and keys must share one entity"),
+        (26, "nonnullable navigation DTO", r"DTO field types do not match"),
+        (27, "boolean window SUM", r"requires a numeric non-boolean column"),
+        (28, "fractional frame bound", r"no matching function|constraints not satisfied"),
     ]
     failures = 0
     for case_number, description, diagnostic_pattern in cases:

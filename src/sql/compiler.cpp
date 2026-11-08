@@ -1,7 +1,10 @@
 #include "asterorm/sql/compiler.hpp"
+#include "window_validation.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <limits>
 #include <string_view>
 
 namespace asterorm::sql {
@@ -254,7 +257,37 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
             return std::unexpected(invalid_sql("SQL parameter contains a NUL byte"));
         }
         params.push_back(parameter);
-        return placeholder(params.size());
+        auto token = placeholder(params.size());
+        const auto kind = std::get<param_expr>(expr).kind;
+        if (kind != parameter_kind::other && kind != parameter_kind::signed_integer &&
+            kind != parameter_kind::unsigned_integer && kind != parameter_kind::real &&
+            kind != parameter_kind::boolean) {
+            return std::unexpected(invalid_sql("Invalid AST parameter kind"));
+        }
+        if (cast_window_parameters_ && kind != parameter_kind::other &&
+            dialect_ != dialect::postgres) {
+            if (dialect_ == dialect::sqlite && kind == parameter_kind::unsigned_integer &&
+                parameter.value) {
+                std::uint64_t value{};
+                auto parsed =
+                    std::from_chars(parameter.value->data(),
+                                    parameter.value->data() + parameter.value->size(), value);
+                if (parsed.ec != std::errc{} ||
+                    parsed.ptr != parameter.value->data() + parameter.value->size() ||
+                    value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                    return std::unexpected(invalid_sql(
+                        "SQLite window numeric parameters require signed 64-bit range"));
+                }
+            }
+            const auto type =
+                kind == parameter_kind::real
+                    ? (dialect_ == dialect::mysql ? "DOUBLE" : "REAL")
+                    : (dialect_ == dialect::sqlite
+                           ? "INTEGER"
+                           : (kind == parameter_kind::unsigned_integer ? "UNSIGNED" : "SIGNED"));
+            return "CAST(" + token + " AS " + type + ')';
+        }
+        return token;
     }
     const auto& pointer = std::get<std::shared_ptr<func_expr>>(expr);
     if (!pointer) {
@@ -271,6 +304,13 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
         return std::unexpected(invalid_sql("SQL fragment contains a NUL byte"));
     }
 
+    auto window_valid = window_detail::validate_function(function, dialect_);
+    if (!window_valid) {
+        return std::unexpected(window_valid.error());
+    }
+    if (function.over && !projection_root) {
+        return std::unexpected(invalid_sql("Windows are only allowed at projection boundaries"));
+    }
     std::string out = function.name;
     out += '(';
     if (function.distinct) {
@@ -285,12 +325,22 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
                 return std::unexpected(argument.error());
             }
             out += *argument;
+            if (i == 0 && function.window_position) {
+                out += ", " + std::to_string(*function.window_position);
+            }
             if (i + 1 < function.args.size()) {
                 out += ", ";
             }
         }
     }
     out += ')';
+    if (function.over) {
+        auto clause = compile_over(*function.over);
+        if (!clause) {
+            return std::unexpected(clause.error());
+        }
+        out += *clause;
+    }
     return out;
 }
 
@@ -427,6 +477,8 @@ compiler::upsert_clause(std::string_view table, const std::vector<std::string>& 
 }
 
 asterorm::result<compiled_query> compiler::compile(const select_ast& ast) {
+    window_detail::parameter_scope parameter_scope{cast_window_parameters_,
+                                                   window_detail::contains_window(ast)};
     compiled_query query;
     auto rendered = compile_select(ast, query.params);
     if (!rendered) {
@@ -438,6 +490,10 @@ asterorm::result<compiled_query> compiler::compile(const select_ast& ast) {
 
 asterorm::result<std::string> compiler::compile_select(const select_ast& ast,
                                                        query_parameters& params) { // NOLINT
+    auto windows_valid = validate_select_windows(ast);
+    if (!windows_valid) {
+        return std::unexpected(windows_valid.error());
+    }
     auto locking = compile_select_lock(ast, dialect_);
     if (!locking) {
         return std::unexpected(locking.error());

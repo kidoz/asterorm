@@ -14,9 +14,52 @@ struct column_expr {
     std::string name;
 };
 
+enum class parameter_kind { other, signed_integer, unsigned_integer, real, boolean };
 struct param_expr {
     query_parameter encoded_value;
+    parameter_kind kind{parameter_kind::other};
 };
+template <typename T> constexpr parameter_kind parameter_kind_for() {
+    using value = std::decay_t<T>;
+    if constexpr (asterorm::is_optional_v<value>) {
+        return parameter_kind_for<typename value::value_type>();
+    } else if constexpr (std::is_same_v<value, bool>) {
+        return parameter_kind::boolean;
+    } else if constexpr (std::is_integral_v<value>) {
+        return std::is_signed_v<value> ? parameter_kind::signed_integer
+                                       : parameter_kind::unsigned_integer;
+    } else if constexpr (std::is_floating_point_v<value>) {
+        return parameter_kind::real;
+    } else {
+        return parameter_kind::other;
+    }
+}
+
+struct order_by_ast {
+    std::string column;
+    bool ascending{true};
+};
+enum class frame_bound_kind {
+    unbounded_preceding,
+    preceding,
+    current_row,
+    following,
+    unbounded_following
+};
+struct frame_bound {
+    frame_bound_kind kind{frame_bound_kind::current_row};
+    std::int64_t offset{};
+};
+struct rows_frame {
+    frame_bound start;
+    frame_bound end;
+};
+struct over_clause {
+    std::vector<std::string> partition_bys;
+    std::vector<order_by_ast> order_bys;
+    std::optional<rows_frame> rows;
+};
+struct predicate_ast;
 
 // Function call such as COUNT(*), SUM(x), MAX(x). `raw_args` is emitted
 // verbatim (no parameterization) and must be rendered by the caller (e.g.
@@ -30,7 +73,10 @@ struct func_expr {
     std::vector<expr_ast> args;
     bool distinct{false};
     std::optional<std::string> raw_arg; // e.g. "*"
-    std::optional<std::string> alias;   // rendered as AS "alias"
+    std::optional<std::string> alias;   // rendered at the projection boundary
+    std::optional<over_clause> over{};
+    std::optional<std::int64_t> window_position{}; // checked LAG/LEAD offset or NTH_VALUE position
+    std::shared_ptr<const predicate_ast> filter{}; // reserved for the extension delivery
 };
 
 inline column_expr col(std::string name) {
@@ -38,7 +84,7 @@ inline column_expr col(std::string name) {
 }
 
 template <typename T> inline param_expr val(T&& v) {
-    return {asterorm::encode_parameter(std::forward<T>(v))};
+    return {asterorm::encode_parameter(std::forward<T>(v)), parameter_kind_for<T>()};
 }
 
 // `name` must be a bare identifier (`count`, `char_length`). The compiler
@@ -144,11 +190,6 @@ inline predicate_ast operator||(predicate_ast lhs, predicate_ast rhs) {
                                           std::make_unique<predicate_ast>(std::move(lhs)),
                                           std::make_unique<predicate_ast>(std::move(rhs))}};
 }
-
-struct order_by_ast {
-    std::string column;
-    bool ascending{true};
-};
 
 enum class join_kind : std::uint8_t { inner, left, right, full, cross };
 

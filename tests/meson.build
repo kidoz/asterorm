@@ -10,6 +10,7 @@ core_tests = executable(
     'unit/test_query.cpp',
     'unit/test_set_query.cpp',
     'unit/test_recursive_query.cpp',
+    'unit/test_window.cpp',
     'unit/test_bulk_predicate.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
@@ -81,6 +82,9 @@ if sqlite_enabled
   test('sqlite unit tests', sqlite_unit_tests)
   test('transactional scope guide', python_program,
     args : [files('check_transactional_guide.py'), '--build-root', meson.project_build_root()],
+  )
+  test('window function guide', python_program,
+    args : [files('check_window_guide.py'), '--build-root', meson.project_build_root()],
   )
   test('recursive CTE guide', python_program,
     args : [files('check_recursive_guide.py'), '--build-root', meson.project_build_root()],

@@ -3,6 +3,7 @@
 #include <tuple>
 
 #include "asterorm/sql/typed.hpp"
+#include "asterorm/sql/typed_window.hpp"
 
 #ifndef ASTERORM_COMPILE_CASE
 #define ASTERORM_COMPILE_CASE 0
@@ -48,6 +49,15 @@ namespace typed = asterorm::sql::typed;
 
 [[maybe_unused]] void check_typed_dsl() {
 #if ASTERORM_COMPILE_CASE == 0
+    auto window = typed::window().order_by(typed::col<&compile_user::age>);
+    (void)typed::select_cols(typed::over(typed::row_number(), window));
+    (void)typed::select_cols(
+        typed::col<&compile_user::age>,
+        typed::over(typed::lag(typed::col<&compile_user::age>, 1, typed::val(0)), window));
+    (void)typed::select_cols(
+        typed::over(typed::last_value(typed::col<&compile_user::score>),
+                    window.rows_between(asterorm::sql::unbounded_preceding(),
+                                        asterorm::sql::unbounded_following())));
     // These controls use the same traits, operators and projection API as the
     // negative cases. The normal core test build also compiles this branch.
     (void)(typed::col<&compile_user::active> == typed::val(true));
@@ -106,6 +116,37 @@ namespace typed = asterorm::sql::typed;
     (void)typed::select_cols(typed::count_all());
 #elif ASTERORM_COMPILE_CASE == 17
     (void)typed::select_cols();
+#elif ASTERORM_COMPILE_CASE == 18
+    (void)typed::window()
+        .partition_by(typed::col<&compile_user::age>)
+        .order_by(typed::col<&compile_other::age>);
+#elif ASTERORM_COMPILE_CASE == 19
+    (void)typed::over(typed::row_number(),
+                      typed::window().partition_by(typed::col<&compile_user::age>));
+#elif ASTERORM_COMPILE_CASE == 20
+    (void)typed::over(typed::first_value(typed::col<&compile_user::age>),
+                      typed::window().order_by(typed::col<&compile_user::age>));
+#elif ASTERORM_COMPILE_CASE == 21
+    (void)typed::lag(typed::col<&compile_user::age>, true);
+#elif ASTERORM_COMPILE_CASE == 22
+    (void)typed::lag(typed::col<&compile_user::age>, 1, typed::val(1.5));
+#elif ASTERORM_COMPILE_CASE == 23
+    (void)typed::nth_value(typed::col<&compile_user::age>, 1.5);
+#elif ASTERORM_COMPILE_CASE == 24
+    (void)typed::over(typed::col<&compile_user::age>,
+                      typed::window().order_by(typed::col<&compile_user::age>));
+#elif ASTERORM_COMPILE_CASE == 25
+    (void)typed::over(typed::lag(typed::col<&compile_user::age>),
+                      typed::window().order_by(typed::col<&compile_other::age>));
+#elif ASTERORM_COMPILE_CASE == 26
+    (void)typed::select_cols<std::tuple<int>>(
+        typed::over(typed::lag(typed::col<&compile_user::age>),
+                    typed::window().order_by(typed::col<&compile_user::age>)));
+#elif ASTERORM_COMPILE_CASE == 27
+    (void)typed::over(typed::sum(typed::col<&compile_user::active>),
+                      typed::window().order_by(typed::col<&compile_user::age>));
+#elif ASTERORM_COMPILE_CASE == 28
+    (void)asterorm::sql::preceding(1.5);
 #else
 #error Unknown ASTERORM_COMPILE_CASE
 #endif

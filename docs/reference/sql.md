@@ -43,7 +43,7 @@ for names, budgets, mapping/alias rules and migration notes.
 PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
 MySQL profile options offer baseline 8.0.19 and modern 8.0.31, with no hidden
 version query. `compound_ast` and the constrained recursive form are implemented.
-Windows and extensions remain planned. There is no implicit
+Windows and typed helpers are implemented; extensions remain planned. There is no implicit
 conversion to narrow INSERT SELECT/stream leaves.
 
 ## Set expressions
@@ -78,6 +78,25 @@ and forward/mutual references remain rejected. The library does not detect data
 cycles, prove termination or impose native iteration/time/result limits. See the
 [recursive guide](../how-to/recursive-common-table-expressions.md) for the precise
 subset, nullable parent/child example and timeout recovery notes.
+
+## Inline windows
+
+`sql/window.hpp` provides runtime ranking/navigation/frame-value helpers and
+`over(function, over_clause)`. Clauses own partition columns, ordered keys and
+optional checked ROWS bounds. `sql/typed_window.hpp` adds entity-checked window
+specs and stateful selectables; existing static custom selectables remain valid.
+Typed navigation/frame-value/SUM/AVG/MIN/MAX results are optional; COUNT/ranking
+results are `int64_t`. Missing required order/frame and bad argument/entity/DTO
+types have compile-time diagnostics; runtime values validate before leasing.
+
+Only top-level projections admit windows. Native types/order remain native; use a
+CTE to filter a computed result. Window-bearing SELECTs use bounded graph preflight
+and numeric placeholder casts on SQLite/MySQL to preserve parameter affinity.
+Plain legacy SELECT behavior/SQL is retained. `param_expr` carries primitive kind
+hints and `func_expr` owns OVER/position and reserved shared-const FILTER data.
+These AST/compiler layout changes require rebuilding consumers. FILTER remains
+rejected until the extension delivery. See the [window guide](../how-to/window-functions.md)
+for exact types, frames, binding, backend policy and a complete installed example.
 
 ## INSERT-from-SELECT
 

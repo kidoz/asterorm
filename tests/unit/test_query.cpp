@@ -1,5 +1,7 @@
 // Intentionally first: the advanced execution header is self-contained.
 #include "asterorm/sql/query.hpp"
+#include "asterorm/sql/typed_query.hpp"
+#include "asterorm/sql/typed_window.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -704,4 +706,52 @@ TEST_CASE(
     REQUIRE(state.calls == 1);
     REQUIRE(events == 1);
     REQUIRE(pool.stats().in_use == 0);
+}
+
+TEST_CASE("Window execution: invalid specs reject before lease and typed windows observe once",
+          "[window][observer]") {
+    execution_state state;
+    asterorm::pool_config config;
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<query_driver> pool{query_driver{&state}, config};
+    asterorm::session db{pool};
+    auto function = sql::over(sql::row_number(), {});
+    sql::select_ast leaf;
+    leaf.table = "source";
+    leaf.items = {{.column_name = {}, .fn = function, .alias = "id"},
+                  {.column_name = "note", .fn = {}, .alias = {}}};
+    auto query = sql::query(std::move(leaf)).build();
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(db, query));
+    REQUIRE(state.connections == 0);
+    REQUIRE(state.calls == 0);
+    function->over->order_bys = {{.column = "id"}};
+    int events{};
+    db.set_observer([&](const auto&) { ++events; });
+    auto rows = sql::query_as<cte_unit_row>(db, query);
+    REQUIRE(rows);
+    REQUIRE(events == 1);
+    namespace typed = sql::typed;
+    auto window = typed::window().order_by(typed::col<&cte_unit_row::id>);
+    sql::select_ast ast;
+    ast.table = "source";
+    ast.items = {typed::over(typed::row_number(), window).to_select_item()};
+    using item = decltype(typed::over(typed::row_number(), window));
+    typed::typed_select_builder<cte_unit_row, std::tuple<std::int64_t>, item> rebuilt{
+        std::move(ast)};
+    auto typed_rows = typed::query(db, rebuilt);
+    REQUIRE(typed_rows);
+    REQUIRE(std::get<0>(typed_rows->front()) == 7);
+    REQUIRE(events == 2);
+    REQUIRE(state.calls == 2);
+    unsupported_session<sql::dialect::clickhouse> unsupported;
+    // Use the actual window AST so the dialect guard also covers custom selectables.
+    sql::select_ast guarded;
+    guarded.table = "source";
+    guarded.items = {{.column_name = {}, .fn = function, .alias = "id"}};
+    typed::typed_select_builder<cte_unit_row, std::tuple<std::int64_t>, item> guarded_builder{
+        std::move(guarded)};
+    REQUIRE_FALSE(typed::query(unsupported, guarded_builder));
+    REQUIRE(unsupported.acquisitions == 0);
+    REQUIRE(unsupported.events == 0);
 }

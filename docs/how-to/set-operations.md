@@ -103,5 +103,6 @@ reads of one TEMP source in a statement.
 
 [Constrained recursive CTEs](recursive-common-table-expressions.md) now emit direct
 UNION ALL arms; ordinary set operands retain these derived wrappers. The
-[design](../advanced-query-design.md) records the remaining windows/typed helpers
-and extensions. Existing INSERT SELECT/stream leaf restrictions remain in place.
+[window guide](window-functions.md) covers the implemented inline windows/typed
+helpers. The [design](../advanced-query-design.md) records the remaining extensions
+and combined review. Existing INSERT SELECT/stream leaf restrictions remain in place.

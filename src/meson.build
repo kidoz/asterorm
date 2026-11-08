@@ -10,6 +10,7 @@ asterorm_core = library(
     'sql/ast.cpp',
     'sql/compiler.cpp',
     'sql/query.cpp',
+    'sql/window.cpp',
     'crud/repository.cpp',
   ],
   include_directories : inc,

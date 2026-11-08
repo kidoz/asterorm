@@ -1,4 +1,5 @@
 #include "asterorm/sql/compiler.hpp"
+#include "window_validation.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -89,6 +90,32 @@ class query_validator {
         return body(root, root.ctes.size(), 1);
     }
 
+    result<void> validate_legacy_windows(const select_ast& leaf) {
+        legacy_ = true;
+        if (!visit(0)) {
+            return std::unexpected(*failure_);
+        }
+        for (const auto& item : leaf.items) {
+            if (item.fn && !expression(expr_ast{item.fn}, 1, true)) {
+                return std::unexpected(*failure_);
+            }
+        }
+        for (const auto& join : leaf.joins) {
+            if (join.on_clause && !predicate(*join.on_clause, 1)) {
+                return std::unexpected(*failure_);
+            }
+        }
+        if (leaf.where_clause && !predicate(*leaf.where_clause, 1)) {
+            return std::unexpected(*failure_);
+        }
+        if (leaf.having_clause && !predicate(*leaf.having_clause, 1)) {
+            return std::unexpected(*failure_);
+        }
+        return {};
+    }
+    [[nodiscard]] bool has_windows() const {
+        return has_windows_;
+    }
     [[nodiscard]] std::optional<std::size_t> recursive_definition_index() const {
         return recursive_definition_;
     }
@@ -105,6 +132,8 @@ class query_validator {
     std::optional<std::size_t> recursive_definition_;
     std::optional<std::size_t> allowed_self_;
     bool recursive_step_{};
+    bool legacy_{};
+    bool has_windows_{};
 
     [[nodiscard]] db_error error(std::string message) const {
         db_error diagnostic;
@@ -329,6 +358,9 @@ class query_validator {
             return false;
         }
         if (const auto* source = std::get_if<column_expr>(&operand)) {
+            if (legacy_) {
+                return true;
+            }
             return (!source->name.contains('*') && identifier(source->name)) ||
                    fail("Advanced queries require explicit columns");
         }
@@ -355,12 +387,41 @@ class query_validator {
         if (node.alias && !projection) {
             return fail("Function aliases belong in the projection");
         }
-        if (node.raw_arg && (folded(node.name) != "count" || *node.raw_arg != "*" ||
-                             !node.args.empty() || node.distinct)) {
+        auto window_valid = window_detail::validate_function(node, target_);
+        if (!window_valid) {
+            failure_ = window_valid.error();
+            failure_->detail = path_;
+            return false;
+        }
+        if (node.over && !projection) {
+            return fail("Windows are only allowed at projection boundaries");
+        }
+        if (!legacy_ && node.raw_arg &&
+            (folded(node.name) != "count" || *node.raw_arg != "*" || !node.args.empty() ||
+             node.distinct)) {
             return fail("Advanced queries only allow the structured COUNT(*) raw argument");
         }
         for (const auto& argument : node.args) {
             if (!expression(argument, depth + 1)) {
+                return false;
+            }
+        }
+        if (node.over) {
+            has_windows_ = true;
+            if (!visit(depth + 1)) {
+                return false;
+            }
+            for (const auto& key : node.over->partition_bys) {
+                if (!column(key, depth + 2)) {
+                    return false;
+                }
+            }
+            for (const auto& key : node.over->order_bys) {
+                if (!column(key.column, depth + 2)) {
+                    return false;
+                }
+            }
+            if (node.over->rows && (!visit(depth + 2) || !visit(depth + 3) || !visit(depth + 3))) {
                 return false;
             }
         }
@@ -491,6 +552,13 @@ class query_validator {
 };
 } // namespace
 
+result<void> compiler::validate_select_windows(const select_ast& ast) const {
+    if (!window_detail::contains_window(ast)) {
+        return {};
+    }
+    return query_validator{*this, dialect_, query_options_}.validate_legacy_windows(ast);
+}
+
 result<std::string> compiler::compile_query_body(const query_ast& ast, query_parameters& params,
                                                  std::size_t& next_alias) {
     if (const auto* leaf = std::get_if<select_ast>(&ast.body)) {
@@ -564,6 +632,8 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
     if (!labels) {
         return std::unexpected(labels.error());
     }
+    window_detail::parameter_scope parameter_scope{cast_window_parameters_,
+                                                   validator.has_windows()};
     compiled_query query;
     query.result_columns = std::move(*labels);
     std::size_t next_alias = 0;
