@@ -52,8 +52,9 @@ The [production-pool inventory and v1 contract](../production-pool-design.md)
 distinguish current borrow/cache/close behavior from proposed shared ownership,
 bounded health checks, age retirement, metrics and proxy restrictions. The
 [ownership foundation](../how-to/pool-ownership-and-shutdown.md) now implements
-shared lease state, validation, nonthrowing returns and non-draining close. Bounded
-health and dirty-return handling are next.
+shared lease state, validation, nonthrowing returns and non-draining close.
+[Bounded health and dirty-return handling](../how-to/pool-health-and-reuse.md) now
+add optional PG pre-ping and native reuse checks. Aging and diagnostics are next.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

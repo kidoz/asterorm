@@ -244,10 +244,8 @@ TEST_CASE("PG Integration: configured pool discards returned active and failed t
     }
     lease->release_to_pool();
     auto rejected = pool.acquire();
-    REQUIRE_FALSE(rejected.has_value());
-    REQUIRE(rejected.error().kind == asterorm::db_error_kind::query_failed);
-    REQUIRE(pool.stats().total == 0);
-    auto replacement = pool.acquire();
+    REQUIRE(rejected.has_value()); // Dirty work was discarded on return, before checkout.
+    auto replacement = std::move(rejected);
     REQUIRE(replacement.has_value());
     auto current = timeout_take((*replacement)->execute("SELECT pg_backend_pid()"));
     REQUIRE(current.get_value(0, 0) != original_pid);

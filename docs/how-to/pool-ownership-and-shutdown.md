@@ -94,5 +94,5 @@ Legacy adapters retain their documented fallback and own native resource cleanup
 This implements the [contract's](../production-pool-design.md) ownership,
 configuration and shutdown foundation. [Evidence](../evidence/pool-ownership/README.md)
 covers concurrency, allocation failure, native/session/stream regression and
-installed consumers. Bounded health checking and dirty-return handling are next;
-aging, histograms/warnings and cache/proxy policy remain planned.
+installed consumers. [Bounded health and dirty-return handling](pool-health-and-reuse.md)
+are now implemented. Aging, histograms/warnings and cache/proxy policy remain planned.

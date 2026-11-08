@@ -195,10 +195,14 @@ connection& connection::operator=(connection&& other) noexcept {
 bool connection::is_open() const {
     return handle_ != nullptr;
 }
-bool connection::in_transaction() const {
+bool connection::in_transaction() const noexcept {
     return handle_ && (handle_->server_status & SERVER_STATUS_IN_TRANS) != 0;
 }
-void connection::close() {
+bool connection::is_pool_reusable() const noexcept {
+    return handle_ && !in_transaction() && handle_->status == MYSQL_STATUS_READY &&
+           !mysql_more_results(handle_);
+}
+void connection::close() noexcept {
     clear_prepared_statement_cache();
     if (handle_) {
         mysql_close(std::exchange(handle_, nullptr));

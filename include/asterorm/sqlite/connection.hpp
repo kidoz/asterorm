@@ -37,6 +37,7 @@ class connection {
     bool is_open() const;
     void close() noexcept;
     [[nodiscard]] bool is_transaction_idle() const noexcept;
+    [[nodiscard]] bool is_pool_reusable() const noexcept;
 
     // Used by driver
     explicit connection(sqlite3* db);

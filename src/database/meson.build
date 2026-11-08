@@ -1,20 +1,25 @@
 if postgres_enabled
+  pg_platform_dependencies = []
+  if host_machine.system() == 'windows'
+    pg_platform_dependencies += [meson.get_compiler('cpp').find_library('ws2_32')]
+  endif
   asterorm_pg = library(
     'asterorm_pg',
     [
       'postgres/driver.cpp',
       'postgres/connection.cpp',
+      'postgres/pool_health.cpp',
       'postgres/result.cpp',
       'postgres/codecs.cpp',
     ],
     include_directories : inc,
-    dependencies : [asterorm_core_dep, libpq_dep],
+    dependencies : [asterorm_core_dep, libpq_dep] + pg_platform_dependencies,
     install : true,
   )
 
   asterorm_pg_dep = declare_dependency(
     include_directories : inc,
-    dependencies : [asterorm_core_dep, libpq_dep],
+    dependencies : [asterorm_core_dep, libpq_dep] + pg_platform_dependencies,
     link_with : asterorm_pg,
   )
 

@@ -81,7 +81,7 @@ TEST_CASE("PG cursor batches are parameterized bounded and close at EOF", "[pg][
     REQUIRE_FALSE(cursor_take(reader.next()).has_value());
     REQUIRE(test.portals() == 0);
     REQUIRE(test.connection.cursor_ready());
-    REQUIRE(test.connection.is_pool_reusable());
+    REQUIRE_FALSE(test.connection.is_pool_reusable()); // The transaction still owns the connection.
     REQUIRE(test.connection.prepared_statement_count() == cached);
     REQUIRE(test.inspect("SELECT pg_backend_pid()").get_int64(0, 0) == pid);
     auto newer = cursor_take(test.connection.open_cursor("SELECT 8", {}, 1));

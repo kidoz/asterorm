@@ -4,6 +4,7 @@
 #include "asterorm/pool/connection_pool.hpp"
 #include "asterorm/postgres/driver.hpp"
 #include "support/pool_foundation.hpp"
+#include "support/pool_health.hpp"
 
 TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
@@ -39,4 +40,38 @@ TEST_CASE("PG Integration: pool ownership foundation", "[pg][pool-foundation]") 
         asterorm::pg::driver{}, configured ? configured
                                            : "host=127.0.0.1 port=5432 dbname=orm_test "
                                              "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("PG Integration: pool health and dirty returns", "[pg][pool-health]") {
+    const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    const std::string settings = configured ? configured
+                                            : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                              "user=orm_test password=orm_test sslmode=disable";
+    asterorm::test::check_pool_health(asterorm::pg::driver{}, settings);
+    asterorm::pool_config config;
+    config.conninfo = settings;
+    config.pre_ping = true;
+    config.max_size = 1;
+    asterorm::connection_pool<asterorm::pg::driver> pool{asterorm::pg::driver{}, config};
+    auto held = pool.acquire();
+    REQUIRE(held);
+    auto identity = (*held)->execute("SELECT pg_backend_pid()");
+    REQUIRE(identity);
+    auto pid = identity->get_string(0, 0);
+    REQUIRE(pid);
+    held->release_to_pool();
+    auto control = asterorm::pg::driver{}.connect(settings);
+    REQUIRE(control);
+    auto terminated =
+        control->execute_params("SELECT pg_terminate_backend($1::integer,1000)", {*pid});
+    REQUIRE(terminated);
+    REQUIRE(terminated->get_string(0, 0) == "t");
+    auto stale = pool.acquire();
+    REQUIRE_FALSE(stale);
+    REQUIRE(pool.stats().total == 0);
+    auto replacement = pool.acquire();
+    REQUIRE(replacement);
+    auto current = (*replacement)->execute("SELECT pg_backend_pid()");
+    REQUIRE(current);
+    REQUIRE(current->get_string(0, 0) != pid);
 }

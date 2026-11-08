@@ -39,6 +39,7 @@ class connection {
     bool is_open() const;
     void close() noexcept;
     [[nodiscard]] bool is_pool_reusable() const noexcept;
+    asterorm::result<void> pool_ping(std::chrono::steady_clock::time_point deadline);
     [[nodiscard]] bool single_row_ready() const noexcept;
     [[nodiscard]] bool cursor_ready() const noexcept;
 

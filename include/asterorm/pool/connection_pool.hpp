@@ -25,6 +25,8 @@ struct pool_config {
     size_t prepared_statement_cache_size{128};
     std::string conninfo;
     std::optional<std::chrono::milliseconds> statement_timeout;
+    bool pre_ping{false};
+    std::chrono::milliseconds pre_ping_timeout{1000};
 };
 
 struct pool_stats {
@@ -46,6 +48,33 @@ concept has_pool_reuse_check = requires(Connection& connection) {
     { connection.is_pool_reusable() } noexcept -> std::same_as<bool>;
     { connection.close() } noexcept -> std::same_as<void>;
 };
+
+template <typename Connection>
+concept has_pool_ping =
+    has_pool_reuse_check<Connection> &&
+    requires(Connection& connection, std::chrono::steady_clock::time_point deadline) {
+        { connection.pool_ping(deadline) } -> std::same_as<result<void>>;
+    };
+template <typename Connection> bool pool_reusable(Connection& connection) {
+    if (!connection.is_open()) {
+        return false;
+    }
+    if constexpr (has_pool_reuse_check<Connection>) {
+        return connection.is_pool_reusable();
+    }
+    return true;
+}
+template <typename Connection> result<void> validate_pool_ping(const pool_config& config) {
+    if constexpr (!has_pool_ping<Connection>) {
+        if (config.pre_ping) {
+            db_error error;
+            error.kind = db_error_kind::query_failed;
+            error.message = "This backend does not support bounded pool pre-ping";
+            return std::unexpected(std::move(error));
+        }
+    }
+    return {};
+}
 
 template <typename Conn, typename = void> struct has_prepared_cache_limit : std::false_type {};
 
@@ -166,10 +195,7 @@ template <typename Driver, typename Connection> struct pool_state {
     void return_entry(entry_ptr node) noexcept {
         bool reusable{};
         try {
-            reusable = node->connection.is_open();
-            if constexpr (has_pool_reuse_check<Connection>) {
-                reusable = reusable && node->connection.is_pool_reusable();
-            }
+            reusable = pool_reusable(node->connection);
         } catch (...) {
             // Custom readiness checks cannot make lease destruction throw.
             reusable = false;
@@ -236,6 +262,9 @@ inline result<void> validate_pool_config(const pool_config& config) {
         invalid = "min_size must not exceed max_size";
     } else if (config.acquire_timeout.count() < 0) {
         invalid = "acquire_timeout must be nonnegative";
+    } else if (config.pre_ping_timeout.count() < 0 ||
+               (config.pre_ping && config.pre_ping_timeout.count() == 0)) {
+        invalid = "pre_ping_timeout must be positive when enabled and nonnegative otherwise";
     }
     if (invalid) {
         db_error error;
@@ -335,6 +364,9 @@ template <typename Driver> class connection_pool {
         auto& state = *state_;
         try {
             auto valid = detail::validate_pool_config(state.config);
+            if (valid) {
+                valid = detail::validate_pool_ping<connection_type>(state.config);
+            }
             if (valid) {
                 valid = detail::validate_timeout_config<connection_type>(state.config);
             }
@@ -458,8 +490,23 @@ template <typename Driver> class connection_pool {
                 reserved.entry =
                     std::make_unique<typename state_type::entry>(std::move(*connected));
                 detail::configure_connection(reserved.entry->connection, state->config);
-            } else if (!reserved.entry->connection.is_open()) {
+                if (!detail::pool_reusable(reserved.entry->connection)) {
+                    db_error error;
+                    error.kind = db_error_kind::connection_failed;
+                    error.message = "New pooled connection is not reusable";
+                    return std::unexpected(std::move(error));
+                }
+            } else if (!detail::pool_reusable(reserved.entry->connection)) {
                 continue;
+            }
+            if constexpr (detail::has_pool_ping<connection_type>) {
+                if (state->config.pre_ping) {
+                    auto healthy = reserved.entry->connection.pool_ping(
+                        detail::pool_wait_deadline(state->config.pre_ping_timeout));
+                    if (!healthy) {
+                        return std::unexpected(healthy.error());
+                    }
+                }
             }
             auto configured =
                 detail::configure_statement_timeout(reserved.entry->connection, state->config);

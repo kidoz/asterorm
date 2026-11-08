@@ -13,6 +13,8 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 | `prepared_statement_cache_size` | `128` | Per-connection prepared-statement limit |
 | `conninfo` | empty string | Backend-specific connection settings |
 | `statement_timeout` | `nullopt` | PostgreSQL session baseline on creation/checkout; optional milliseconds, 0 disables, maximum 2,147,483,647 |
+| `pre_ping` | `false` | Bounded PG SELECT 1 before handoff; unsupported enabled backends reject before connect |
+| `pre_ping_timeout` | `1000ms` | Ping flush/read/drain deadline; positive when enabled, nonnegative otherwise |
 
 `connection_pool<Driver>::acquire()` returns `result<lease_type>`. A lease is
 move-only and returns its connection without throwing on destruction or
@@ -24,6 +26,10 @@ lets an adapter reject idle reuse. Opted-in discarded connections close outside
 the pool mutex before their capacity slot is freed, including explicit release.
 PostgreSQL uses this to discard connections with unread single-row results or
 owned cursor portals.
+Built-in PG/SQLite/MySQL also reject known non-idle transactions/unread work on
+return without a timeout baseline. PG rejects pipeline mode; SQLite checks busy
+statements; MySQL checks local transaction/protocol state. Readiness checks do no
+network I/O. Legacy adapters without the complete capability retain their fallback.
 `warmup_error()` retains invalid configuration or startup/setup failure. Construction
 rejects zero maximum, minimum above maximum and negative acquire timeout before
 dialing. Zero acquire timeout permits immediate idle/new capacity but never waits;
@@ -49,6 +55,13 @@ errors permit retry. See [pool timeout behavior](../how-to/pooling-and-observabi
 Pool, lease and stats layouts changed; rebuild library/consumers together. Connection
 types must be nothrow move-constructible/destructible. The earlier appended
 `pool_config` timeout field also requires coordinated rebuilds.
+
+`pre_ping` requires the bounded adapter capability and runs before an explicit
+timeout baseline while retaining its slot outside the mutex. It emits no query
+event/cache entry. Timeout/failure discards without an automatic reconnect loop;
+completed native diagnostics are preserved. The deadline does not include connect
+or baseline setup. See the [health guide](../how-to/pool-health-and-reuse.md).
+The appended health configuration fields require a coordinated rebuild too.
 
 ## Session operations
 

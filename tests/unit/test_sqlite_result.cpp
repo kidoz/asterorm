@@ -4,6 +4,25 @@
 #include "asterorm/sqlite/driver.hpp"
 #include "asterorm/sqlite/result.hpp"
 
+TEST_CASE("SQLite pool readiness rejects dirty transactions and busy native statements",
+          "[sqlite][pool-health]") {
+    sqlite3* native{};
+    REQUIRE(sqlite3_open(":memory:", &native) == SQLITE_OK);
+    asterorm::sqlite::connection connection{native};
+    REQUIRE(connection.is_pool_reusable());
+    sqlite3_stmt* raw{};
+    REQUIRE(sqlite3_prepare_v2(native, "SELECT 1", -1, &raw, nullptr) == SQLITE_OK);
+    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> statement{raw, sqlite3_finalize};
+    REQUIRE(sqlite3_step(statement.get()) == SQLITE_ROW);
+    REQUIRE_FALSE(connection.is_pool_reusable());
+    statement.reset();
+    REQUIRE(connection.is_pool_reusable());
+    REQUIRE(connection.execute("BEGIN"));
+    REQUIRE_FALSE(connection.is_pool_reusable());
+    REQUIRE(connection.execute("ROLLBACK"));
+    REQUIRE(connection.is_pool_reusable());
+}
+
 TEST_CASE("SQLite result counts retain 64-bit values without a database", "[sqlite][row-count]") {
     const auto maximum = std::numeric_limits<std::uint64_t>::max();
     asterorm::sqlite::result result{{}, {}, maximum};

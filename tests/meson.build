@@ -5,6 +5,7 @@ core_tests = executable(
     'unit/test_mysql_dialect.cpp',
     'unit/test_pool.cpp',
     'unit/test_pool_foundation.cpp',
+    'unit/test_pool_health.cpp',
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
@@ -96,6 +97,9 @@ if sqlite_enabled
   test('pool ownership guide', python_program,
     args : [files('check_pool_guide.py'), '--build-root', meson.project_build_root()],
   )
+  test('pool health guide', python_program,
+    args : [files('check_pool_health_guide.py'), '--build-root', meson.project_build_root()],
+  )
   test('window function guide', python_program,
     args : [files('check_window_guide.py'), '--build-root', meson.project_build_root()],
   )
@@ -135,6 +139,14 @@ if sqlite_enabled
 endif
 
 if postgres_enabled
+  pool_health_wire = executable('pool_health_wire', 'support/pool_health_wire.cpp',
+    dependencies : [asterorm_pg_dep],
+  )
+  test('PostgreSQL pool health wire', python_program,
+    args : [files('check_pool_health_wire.py'), pool_health_wire.full_path()],
+    depends : pool_health_wire,
+    timeout : 60,
+  )
   postgres_unit_tests = executable(
     'postgres_unit_tests',
     ['unit/test_postgres_connection.cpp', 'unit/test_postgres_single_row.cpp'],

@@ -54,6 +54,9 @@ TEST_CASE("PG single-row reader owns bound rows and reuses only after clean EOF"
     REQUIRE(connection.is_open());
     REQUIRE_FALSE(connection.is_pool_reusable());
     REQUIRE_FALSE(connection.is_transaction_idle());
+    REQUIRE_FALSE(connection.pool_ping(std::chrono::steady_clock::now() + std::chrono::seconds{1}));
+    REQUIRE(
+        connection.is_open()); // A rejected direct ping must not revoke this caller-owned reader.
     REQUIRE_FALSE(connection.open_single_row("SELECT 2").has_value());
     REQUIRE_FALSE(connection.execute("SELECT 2").has_value());
     REQUIRE_FALSE(connection.execute_params("SELECT 2", {}).has_value());

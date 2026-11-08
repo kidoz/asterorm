@@ -14,6 +14,7 @@
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
 #include "support/pool_foundation.hpp"
+#include "support/pool_health.hpp"
 #include "support/recursive_query.hpp"
 #include "support/set_query.hpp"
 #include "support/transactional_session.hpp"
@@ -726,4 +727,9 @@ TEST_CASE("sqlite Integration: combined advanced query", "[sqlite][advanced-quer
 
 TEST_CASE("sqlite Integration: pool ownership foundation", "[sqlite][pool-foundation]") {
     asterorm::test::check_pool_foundation(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("sqlite Integration: pool health and dirty returns", "[sqlite][pool-health]") {
+    asterorm::test::check_pool_health(asterorm::sqlite::driver{},
+                                      "file:pool_health?mode=memory&cache=shared");
 }

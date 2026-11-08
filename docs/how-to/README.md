@@ -24,6 +24,7 @@ Each addresses a specific task.
 - [Apply and roll back schema migrations](migrations.md)
 - [Configure pools and observe queries](pooling-and-observability.md)
 - [Own leases and shut down a pool](pool-ownership-and-shutdown.md)
+- [Check pool health and discard dirty returns](pool-health-and-reuse.md)
 - [Run the test suites](testing.md)
 
 [Documentation home](../README.md)

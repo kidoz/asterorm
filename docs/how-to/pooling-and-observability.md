@@ -59,9 +59,10 @@ that connection. Initialization/reapplication does not emit session observer eve
 
 Setup runs outside the pool mutex. A failed or throwing setup discards its
 connection and frees capacity. Warmup failures persist through `warmup_error()`;
-lazy/reuse failures affect that acquisition and permit a later retry. Returning an
-open or failed transaction to a configured pool causes its next checkout to close
-and discard the connection with an error; it does not commit that work.
+lazy/reuse failures affect that acquisition and permit a later retry. Built-in
+PG/SQLite/MySQL adapters discard known active/failed transactions on return, even
+without a timeout baseline. The next acquisition can create a fresh connection;
+no return-time rollback/reset SQL is issued to reuse the dirty work.
 
 The timeout limits individual server statements, not a whole callback, C++ work,
 client transfer time, or pool waiting. `acquire_timeout` still bounds capacity
@@ -112,10 +113,11 @@ and [pool reference](../reference/connections.md).
 
 Capacity waiters are notified when close begins; this does not interrupt a
 synchronous native connect. `is_open()` is a local state check, not an on-borrow
-health query. Pre-ping, idle/lifetime retirement, acquisition histograms and lease
-warning options remain planned in the production-pool contract.
+health query. Optional [bounded PG pre-ping](pool-health-and-reuse.md) checks before
+handoff; SQLite/MySQL reject enabled pre-ping before connecting. Idle/lifetime
+retirement, acquisition histograms and lease warnings remain planned.
 
-Finish raw transactions before returning explicit leases. Without the timeout
-baseline, the current pool can hand a returned raw transaction to its next
-borrower; it does not run an automatic transaction reset. Managed sessions retain
-their existing transaction-guard cleanup.
+Finish raw transactions before returning explicit leases when their connection
+must remain available. Built-in adapters discard known dirty returns; private
+SQLite memory data disappears with its connection. Custom legacy adapters keep
+their documented local fallback. Managed sessions retain transaction-guard cleanup.

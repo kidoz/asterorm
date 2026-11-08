@@ -229,6 +229,19 @@ bool connection::is_transaction_idle() const noexcept {
     return db_ && sqlite3_get_autocommit(db_) != 0;
 }
 
+bool connection::is_pool_reusable() const noexcept {
+    if (!is_transaction_idle()) {
+        return false;
+    }
+    for (auto* statement = sqlite3_next_stmt(db_, nullptr); statement;
+         statement = sqlite3_next_stmt(db_, statement)) {
+        if (sqlite3_stmt_busy(statement)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void connection::clear_cache_locked() noexcept {
     for (auto& entry : prepared_statements_) {
         sqlite3_finalize(entry.second);

@@ -33,8 +33,9 @@ class connection {
     ~connection();
 
     [[nodiscard]] bool is_open() const;
-    [[nodiscard]] bool in_transaction() const;
-    void close();
+    [[nodiscard]] bool in_transaction() const noexcept;
+    [[nodiscard]] bool is_pool_reusable() const noexcept;
+    void close() noexcept;
     void set_max_prepared_statements(std::size_t maximum);
     [[nodiscard]] std::size_t prepared_statement_count() const;
     void clear_prepared_statement_cache();
@@ -46,7 +47,7 @@ class connection {
                                                      const query_parameters& params);
     asterorm::result<void> begin_transaction(const transaction_options& options);
 
-    // Reapplied after every simple-query execute. Parameter binding assumes
+    // Reapplied before bound execution after a simple query. Binding assumes
     // ANSI_QUOTES and NO_BACKSLASH_ESCAPES, so a caller SET sql_mode cannot
     // leave the scanner and the server on different rules.
     static constexpr std::string_view session_invariant_sql =

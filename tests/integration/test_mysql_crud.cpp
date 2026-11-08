@@ -14,6 +14,7 @@
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
 #include "support/pool_foundation.hpp"
+#include "support/pool_health.hpp"
 #include "support/recursive_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
@@ -519,4 +520,8 @@ TEST_CASE("mysql Integration: combined advanced query", "[mysql][advanced-query]
 
 TEST_CASE("mysql Integration: pool ownership foundation", "[mysql][pool-foundation]") {
     asterorm::test::check_pool_foundation(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("mysql Integration: pool health and dirty returns", "[mysql][pool-health]") {
+    asterorm::test::check_pool_health(asterorm::mysql::driver{}, conninfo());
 }

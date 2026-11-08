@@ -6,6 +6,12 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Optional bounded PostgreSQL pool pre-ping through nonblocking uncached SELECT 1,
+  with terminal drain, mode restoration and timeout/failure discard. Unsupported
+  enabled backends reject before connecting. PG/SQLite/MySQL now discard known
+  dirty transactions/unread work on return. Rebuild consumers for appended pool
+  configuration fields and adapter API changes.
+
 - Shared pool/lease state, allocation-free return bookkeeping, eager size/acquire
   timeout validation and non-draining shutdown. Leases may outlive the facade;
   closed work returns `pool_closed`, capacity wait expiry returns `timeout`.

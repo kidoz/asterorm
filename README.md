@@ -31,6 +31,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 
 - [Shared pool/lease ownership and non-draining shutdown](docs/how-to/pool-ownership-and-shutdown.md),
   eager size/timeout validation and explicit closed/capacity-timeout errors.
+- [Bounded PostgreSQL pool health checks and dirty-return handling](docs/how-to/pool-health-and-reuse.md),
+  with local reuse checks on PostgreSQL, SQLite and MySQL.
 - Plain struct entities with explicit column, generated-value, composite-key,
   version, and relationship mappings.
 - CRUD, patches, bulk inserts, upserts, and optional optimistic locking.
@@ -95,8 +97,8 @@ PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. The complete subset
 [locally accepted within the revised v1 contract](docs/advanced-query-acceptance.md).
 The [production-pool inventory and v1 contract](docs/production-pool-design.md)
 record the delivery boundaries. Shared ownership, configuration validation and
-shutdown are implemented; bounded health and dirty-return handling are next,
-followed by retirement, diagnostics and cache/profile policy.
+shutdown, bounded health and dirty-return handling are implemented. Age retirement
+and diagnostics are next, followed by cache/profile policy.
 
 ## Backends
 
