@@ -22,7 +22,11 @@ Include `<asterorm/postgres/driver.hpp>` and `<asterorm/session.hpp>` and use th
 snippet in a function returning `asterorm::result<...>`. Keep `min_size` no
 greater than `max_size`, and choose a positive `max_size`.
 
-Invalid configuration or a failed constructor warmup is retained: `acquire()` keeps returning that error.
+Invalid explicit statement-timeout configuration or a failed constructor warmup is
+retained: `acquire()` keeps returning that error. Capacity settings are currently
+the caller's responsibility; the pool does not reject `min_size > max_size` or a
+zero maximum during construction. The
+[production-pool contract](../production-pool-design.md) records the planned validation.
 Correct the settings or service availability and construct a replacement pool.
 With `min_size = 0`, the first acquire opens the first connection.
 
@@ -100,3 +104,13 @@ Finish transactions and release explicit leases before calling `pool.close()`.
 Close prevents new acquisitions and waits for outstanding leases up to its
 internal deadline. See the [pool reference](../reference/connections.md) for
 defaults and lifetime rules.
+
+Capacity waiters are notified when close begins; this does not interrupt a
+synchronous native connect. `is_open()` is a local state check, not an on-borrow
+health query. Pre-ping, idle/lifetime retirement, acquisition metrics and lease
+warning options remain planned in the production-pool contract.
+
+Finish raw transactions before returning explicit leases. Without the timeout
+baseline, the current pool can hand a returned raw transaction to its next
+borrower; it does not run an automatic transaction reset. Managed sessions retain
+their existing transaction-guard cleanup.

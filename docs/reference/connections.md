@@ -21,9 +21,16 @@ lets an adapter reject idle reuse. Opted-in discarded connections close outside
 the pool mutex before their capacity slot is freed, including explicit release.
 PostgreSQL uses this to discard connections with unread single-row results or
 owned cursor portals.
-`warmup_error()` reports retained invalid configuration or a startup/setup failure. `stats()` returns pool
+`warmup_error()` reports retained invalid explicit timeout configuration or a startup/setup failure. `stats()` returns pool
 counts and shutdown state. `close()` prevents further acquisition and waits
 for outstanding leases up to an internal deadline.
+
+Size constraints are currently caller-owned: constructor warmup does not reject
+`min_size > max_size` or a zero maximum. `in_use` includes reserved connect/setup
+slots. Close wakes capacity waiters immediately, but does not cancel synchronous
+connects; its closed error currently has kind `connection_failed`. The
+[production-pool inventory and v1 contract](../production-pool-design.md) separate
+these current behaviors from planned ownership, health, aging and metric changes.
 
 Explicit timeout configuration rejects unsupported adapters before connecting,
 including lazy pools. New/idle setup failures discard the connection; lazy/reuse

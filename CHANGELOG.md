@@ -6,6 +6,11 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Production-pool inventory and proposed v1 contract, with configured API/native
+  probes for size validation, shutdown, stale PostgreSQL sockets, raw transaction
+  reuse and disabled statement caching. Implementation remains planned; the next
+  slice is shared ownership, configuration validation and shutdown.
+
 - Source-bound local advanced-query acceptance across ordinary/recursive CTEs,
   sets, windows/typed helpers and backend-specific aggregates. Fresh composition
   cases check binding, NULL/duplicate results, pagination, pre-lease rejection and

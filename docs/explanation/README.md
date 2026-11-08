@@ -48,6 +48,11 @@ add PG/SQLite FILTER and PostgreSQL DISTINCT ON with explicit tie policies.
 The [combined acceptance review](../advanced-query-acceptance.md) records scoped
 local acceptance and fresh cross-feature/consumer evidence.
 
+The [production-pool inventory and v1 contract](../production-pool-design.md)
+distinguish current borrow/cache/close behavior from proposed shared ownership,
+bounded health checks, age retirement, metrics and proxy restrictions. The next
+implementation slice is ownership, configuration validation and shutdown.
+
 For executable lessons, start with [tutorials](../tutorials/README.md).
 
 [Documentation home](../README.md)

@@ -91,6 +91,9 @@ The [advanced-query inventory and contract](docs/advanced-query-design.md) defin
 implemented ordinary/recursive CTEs, set operations and windows with typed helpers.
 PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. The complete subset is
 [locally accepted within the revised v1 contract](docs/advanced-query-acceptance.md).
+The [production-pool inventory and v1 contract](docs/production-pool-design.md)
+record current gaps and the planned ownership, health, retirement and diagnostics
+work. Implementation starts with ownership/configuration/shutdown.
 
 ## Backends
 
