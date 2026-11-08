@@ -1,8 +1,8 @@
 # CTEs, windows and set operations: inventory and implementation contract
 
 Reviewed on 2026-11-08. **Ordinary CTEs, set expressions and the query-root/execution foundation are
-implemented, including constrained recursive CTEs and inline windows/typed helpers;
-extensions and combined review remain planned.** The [capture](evidence/advanced-query-inventory/README.md)
+implemented, including constrained recursive CTEs, inline windows/typed helpers,
+PG/SQLite FILTER and PostgreSQL DISTINCT ON; combined review remains planned.** The [capture](evidence/advanced-query-inventory/README.md)
 compiled the then-current AST probes and executes native SQL on PostgreSQL 16.14, SQLite
 3.54.0 and MySQL 8.4.13. Those observations establish feasibility and constraints,
 not implementation or acceptance of the proposed API below.
@@ -98,8 +98,9 @@ transaction, schema introspection, materialization promise or performance claim.
 ## Planned AST and public surface
 
 The ordinary CTE/root/execution and set-expression subsets below are implemented;
-constrained recursion and windows/typed helpers are implemented; extensions
-remain proposed. See the [current guide](how-to/common-table-expressions.md).
+constrained recursion, windows/typed helpers and extensions are implemented.
+See the [CTE guide](how-to/common-table-expressions.md) and
+[extension guide](how-to/aggregate-extensions.md) for current spellings.
 
 - Keep `select_ast` as the existing leaf. Add a move-only `query_ast` envelope with
   ordered CTE definitions, one `recursive` flag, and a body variant of `select_ast`
@@ -258,12 +259,13 @@ legacy scalar functions retain their existing native resolution behavior.
 | **Implemented: set expressions** | Binary operators/quantifiers, explicit grouping and derived wrappers; arity/labels/profile checks. Duplicate/NULL cases, mixed precedence and branch/final tails; baseline/modern MySQL rejection/admission; native bag/set results |
 | **Implemented: recursive CTE** | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
 | **Implemented: windows and typed helpers** | OVER/FILTER ownership, types and frame validation; ranking/peer/NULL/navigation/running/full-partition cases; static argument diagnostics and identical runtime/typed lowering |
-| **Next: extensions and combined review** | PG DISTINCT ON and PG/SQLite FILTER, including window aggregates; backend rejection and no silent emulation. Public guides, fresh consumers, regression/build/format/lint/standards evidence and explicit layout/version notes |
+| **Implemented: extensions** | PG DISTINCT ON and PG/SQLite FILTER, including window aggregates; explicit tie policy, backend rejection, bounded predicates and no silent emulation; typed/native parity and installed guide consumers |
+| **Next: combined acceptance review** | Cross-feature CTE/set/recursion/window/extension composition, current public guides and fresh consumers; source-bound regression/build/format/lint/standards evidence and explicit layout/version notes across the complete subset |
 
 The first delivery is deliberately ordinary CTEs plus the query-root/execution
 foundation. It does not expose unimplemented operations as successful no-ops:
 windows admit the inline subset and recursive roots admit only the constrained
-form below. Reserved FILTER data rejects until its extension delivery. Set expressions are now available. The pre-implementation inventory capture remains historical; do not rerun its
+form below. FILTER and DISTINCT ON admit the extension subset below. Set expressions are now available. The pre-implementation inventory capture remains historical; do not rerun its
 old gap assertions as current feature tests. The ordinary CTE implementation changes
 `compiler` and `compiled_query` layout: rebuild the library and consumers together.
 
@@ -288,8 +290,8 @@ above are implemented, including legacy SELECT callers.
 The [delivery evidence](evidence/ordinary-cte/README.md) records local checks.
 At foundation delivery the next task was explicit set-expression trees and
 portable derived wrappers, with arity/label checks and MySQL profile admission.
-That follow-up is now implemented; recursive CTEs are next, then windows/typed
-helpers and extensions. This foundation does not mark
+That follow-up and the recursive/window/extension deliveries are now implemented
+below. This foundation does not mark
 the entire advanced-query plan accepted.
 
 
@@ -318,8 +320,8 @@ Older inventory/CTE receipts remain historical.
 
 At set delivery the next task was the constrained recursive form above: a two-arm
 UNION ALL CTE, checked anchor/step references and a real parent/child traversal.
-That follow-up is implemented below. Windows, typed helpers, extensions and
-combined advanced-query acceptance follow.
+That follow-up, windows, typed helpers and extensions are implemented below.
+Combined advanced-query acceptance remains next.
 
 
 ## Recursive CTE implementation follow-up (2026-11-08)
@@ -348,8 +350,8 @@ admission of a potentially nonterminating echo step is tested without executing 
 termination, visited sets and native resource limits are not compiler guarantees.
 
 At recursive delivery the next task was inline windows and typed helpers with
-checked frames/result nullability. That follow-up is implemented below; FILTER/
-DISTINCT ON and combined review follow. The broader advanced-query
+checked frames/result nullability. That follow-up and FILTER/DISTINCT ON are
+implemented below; combined review remains next. The broader advanced-query
 feature remains in progress; earlier captures stay historical.
 
 
@@ -360,8 +362,8 @@ nodes and compiler. Window specs own column/order/frame data, with checked signe
 constants, legal frame categories/offset ordering, function arity and projection
 context. Ranking requires order keys; frame-value functions also require explicit
 frames. DISTINCT/unknown/nested windows and predicate windows reject. Recursive
-steps retain their function ban. Shared-const FILTER ownership is present but
-non-null FILTER data rejects until the next delivery.
+steps retain their function ban. Shared-const FILTER ownership was reserved at
+window delivery and is activated by the extension follow-up below.
 
 The typed selectable concept now accepts const instance lowering; static methods
 still work. Projection construction retains values. Entity/order/frame/argument
@@ -383,6 +385,43 @@ The [guide](how-to/window-functions.md) and
 [evidence](evidence/window-functions/README.md) cover native runtime/typed SQL and
 result equality, peer/default versus ROWS frames, nullable navigation, empty/full
 frames, derived filtering, scopes and compile diagnostics. func_expr, param_expr
-and compiler layouts changed; rebuild library/consumers. The next delivery is
-PG DISTINCT ON and PG/SQLite FILTER, including window aggregates, then combined
-advanced-query acceptance. Earlier evidence stays historical.
+and compiler layouts changed; rebuild library/consumers. At window delivery the
+next task was PG DISTINCT ON and PG/SQLite FILTER, implemented below. Combined
+advanced-query acceptance remains next. Earlier evidence stays historical.
+
+## Aggregate extension implementation follow-up (2026-11-08)
+
+PG/SQLite FILTER now decorates COUNT/SUM/AVG/MIN/MAX, including supported aggregate
+windows. The function owns a shared-const predicate; decoration copies the function.
+Arguments bind before FILTER, then OVER. Projections and HAVING admit filtered
+aggregates; WHERE/JOIN do not. FILTER predicates admit ordinary scalar expressions
+but reject aggregate/window/nested FILTER nodes. Global occurrence/depth budgets
+and active-path cycle validation include the predicate. SQLite filtered statements
+use the existing numeric-cast affinity policy. Scalar DISTINCT aggregate arguments
+are allowed; DISTINCT windows remain rejected. COUNT is zero on empty input; the
+other filtered results are nullable, including typed DTOs. Typed FILTER is applied
+before OVER through `typed_extensions.hpp` and shares runtime lowering.
+
+PostgreSQL DISTINCT ON adds a SELECT-leaf clause with nonempty unique column keys,
+exact positional matching against the leftmost ORDER BY names, and a mandatory
+`distinct_on_ties` policy. `require_tiebreaker` requires an extra ordering column;
+the caller must ensure the full order is unique for deterministic selection.
+`allow_peers` explicitly permits arbitrary remaining peer selection. Qualified
+spellings are not normalized, no timestamp/ID sort is inserted and no schema
+query proves uniqueness. Native NULL/direction/collation rules apply. Locking,
+unsupported backends and malformed policies/order reject before dispatch.
+
+Both features retain one observed execution and existing caller transactions,
+testing scopes, codecs and errors. INSERT SELECT, stream and recursive-step
+boundaries remain narrow. `select_ast` adds a field and containing query layouts
+change; rebuild library and consumers together. The
+[guide](how-to/aggregate-extensions.md) and
+[evidence](evidence/aggregate-extensions/README.md) cover SQL/bind golden tests,
+native runtime/typed equality, empty/NULL/HAVING/filtered-window results, PG winner
+selection and combined DISTINCT ON/window behavior, zero-lease rejection, graph
+limits, compile controls and installed CMake/shared pkg-config consumers.
+
+The next task is a combined acceptance review across CTEs, sets, constrained
+recursion, windows and these extensions, with fresh composition cases and a
+source-bound aggregate evidence record. Individual delivery checks do not close
+that review or establish remote CI/release, performance or older-server coverage.

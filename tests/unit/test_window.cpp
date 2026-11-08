@@ -182,7 +182,7 @@ TEST_CASE("Window: malformed clauses, positions and contexts reject before rende
             sql::frame_bound{.kind = sql::frame_bound_kind::current_row, .offset = 1},
             sql::following(1));
     }
-    SECTION("FILTER reserved") {
+    SECTION("FILTER on ranking") {
         function->filter =
             std::make_shared<const sql::predicate_ast>(sql::is_null(sql::col("value")));
     }

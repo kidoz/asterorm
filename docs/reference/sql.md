@@ -43,7 +43,7 @@ for names, budgets, mapping/alias rules and migration notes.
 PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
 MySQL profile options offer baseline 8.0.19 and modern 8.0.31, with no hidden
 version query. `compound_ast` and the constrained recursive form are implemented.
-Windows and typed helpers are implemented; extensions remain planned. There is no implicit
+Windows, typed helpers and aggregate extensions are implemented. There is no implicit
 conversion to narrow INSERT SELECT/stream leaves.
 
 ## Set expressions
@@ -93,10 +93,30 @@ Only top-level projections admit windows. Native types/order remain native; use 
 CTE to filter a computed result. Window-bearing SELECTs use bounded graph preflight
 and numeric placeholder casts on SQLite/MySQL to preserve parameter affinity.
 Plain legacy SELECT behavior/SQL is retained. `param_expr` carries primitive kind
-hints and `func_expr` owns OVER/position and reserved shared-const FILTER data.
-These AST/compiler layout changes require rebuilding consumers. FILTER remains
-rejected until the extension delivery. See the [window guide](../how-to/window-functions.md)
+hints and `func_expr` owns OVER/position and shared-const FILTER data.
+These AST/compiler layout changes require rebuilding consumers. See the [window guide](../how-to/window-functions.md)
 for exact types, frames, binding, backend policy and a complete installed example.
+
+## FILTER and DISTINCT ON
+
+Runtime `sql::filter(function, predicate)` copies the function and owns its predicate.
+PG/SQLite admit COUNT/SUM/AVG/MIN/MAX in projections and HAVING, including supported
+aggregate windows. FILTER predicates reject aggregates/windows/nested FILTER.
+Arguments bind before FILTER, then OVER; empty COUNT is zero and the other results
+are NULL. `<asterorm/sql/typed_extensions.hpp>` supplies entity-checked
+`typed::filter(aggregate, predicate)` and `typed::over(filtered, spec)`.
+COUNT is `int64_t`; other filtered aggregate result types are optional.
+
+`select_builder::distinct_on(columns, policy)` and typed
+`.distinct_on(policy, typed_columns...)` are PostgreSQL-only. Unique nonempty keys
+must exactly match the leftmost ORDER BY names and order. `distinct_on_ties::require_tiebreaker`
+requires an extra ordering column; the caller must ensure its uniqueness for
+deterministic selection. `allow_peers` explicitly permits arbitrary peer selection.
+No default rule, emulation or hidden schema query is added. Row locking rejects.
+Both extensions validate before leasing and retain narrow stream/INSERT SELECT/
+recursive-step boundaries. `select_ast` and containing query layouts changed;
+rebuild library and consumers. See the [extension guide](../how-to/aggregate-extensions.md)
+for the complete example and [evidence](../evidence/aggregate-extensions/README.md).
 
 ## INSERT-from-SELECT
 

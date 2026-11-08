@@ -18,5 +18,7 @@ class parameter_scope {
     bool& flag_;
     bool previous_;
 };
+[[nodiscard]] bool is_aggregate(std::string name);
+[[nodiscard]] result<void> validate_distinct(const select_ast& ast, dialect target);
 [[nodiscard]] result<void> validate_function(const func_expr& function, dialect target);
 } // namespace asterorm::sql::window_detail

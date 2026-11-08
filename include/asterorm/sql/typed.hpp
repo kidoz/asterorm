@@ -447,6 +447,15 @@ template <typename Entity, typename Result, typename... Items> class typed_selec
         return *this;
     }
 
+    template <auto... Members>
+        requires(sizeof...(Members) > 0)
+    typed_select_builder& distinct_on(distinct_on_ties ties, typed_col<Members>...) {
+        static_assert((std::same_as<Entity, detail::member_entity_t<Members>> && ...),
+                      "asterorm: DISTINCT ON keys must share the query entity");
+        ast_.distinct_on =
+            distinct_on_clause{{std::string{typed_col<Members>::column_name()}...}, ties};
+        return *this;
+    }
     typed_select_builder& limit(std::size_t row_limit) {
         ast_.limit_val = row_limit;
         return *this;

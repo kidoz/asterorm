@@ -1,5 +1,6 @@
 // Intentionally first: the advanced execution header is self-contained.
 #include "asterorm/sql/query.hpp"
+#include "asterorm/sql/typed_extensions.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sql/typed_window.hpp"
 
@@ -754,4 +755,51 @@ TEST_CASE("Window execution: invalid specs reject before lease and typed windows
     REQUIRE_FALSE(typed::query(unsupported, guarded_builder));
     REQUIRE(unsupported.acquisitions == 0);
     REQUIRE(unsupported.events == 0);
+}
+
+TEST_CASE("Extensions execution: backend rejection precedes lease and valid FILTER observes once",
+          "[aggregate-extension][observer]") {
+    sql::select_ast leaf;
+    leaf.table = "source";
+    leaf.items = {
+        {
+            .column_name = {},
+            .fn = sql::filter(sql::count_all(), sql::col("id") > sql::val(0)),
+            .alias = "id",
+        },
+        {
+            .column_name = {},
+            .fn = sql::max_(sql::col("note")),
+            .alias = "note",
+        },
+    };
+    auto query = sql::query(std::move(leaf)).build();
+    unsupported_session<sql::dialect::mysql> mysql;
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(mysql, query));
+    REQUIRE(mysql.acquisitions == 0);
+    REQUIRE(mysql.events == 0);
+    unsupported_session<sql::dialect::sqlite> sqlite;
+    auto distinct = sql::query(sql::select({"id", "note"})
+                                   .from("source")
+                                   .distinct_on({"id"}, sql::distinct_on_ties::allow_peers)
+                                   .order_by("id")
+                                   .build())
+                        .build();
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(sqlite, distinct));
+    REQUIRE(sqlite.acquisitions == 0);
+    REQUIRE(sqlite.events == 0);
+    execution_state state;
+    asterorm::pool_config config;
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<query_driver> pool{query_driver{&state}, config};
+    asterorm::session db{pool};
+    int events{};
+    db.set_observer([&](const auto&) { ++events; });
+    auto rows = sql::query_as<cte_unit_row>(db, query);
+    REQUIRE(rows);
+    REQUIRE(rows->front().id == 7);
+    REQUIRE(events == 1);
+    REQUIRE(state.calls == 1);
+    REQUIRE(state.params == asterorm::query_parameters{"0"});
 }

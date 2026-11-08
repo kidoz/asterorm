@@ -66,6 +66,11 @@ def main() -> int:
         (26, "nonnullable navigation DTO", r"DTO field types do not match"),
         (27, "boolean window SUM", r"requires a numeric non-boolean column"),
         (28, "fractional frame bound", r"no matching function|constraints not satisfied"),
+        (29, "mixed FILTER entities", r"FILTER arguments and predicate must share one entity"),
+        (30, "ranking FILTER", r"FILTER requires a supported aggregate before OVER"),
+        (31, "mixed DISTINCT ON key", r"DISTINCT ON keys must share the query entity"),
+        (32, "nonnull filtered SUM DTO", r"DTO field types do not match"),
+        (33, "boolean filtered SUM", r"filtered SUM/AVG requires a numeric non-boolean"),
     ]
     failures = 0
     for case_number, description, diagnostic_pattern in cases:

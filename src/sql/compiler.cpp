@@ -244,7 +244,8 @@ std::string compiler::op_to_string(op_kind op) {
 }
 
 asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query_parameters& params,
-                                                     bool projection_root) { // NOLINT
+                                                     bool projection_root, bool aggregates_allowed,
+                                                     bool filter_predicate) { // NOLINT
     if (std::holds_alternative<column_expr>(expr)) {
         return quote_qualified_ident(std::get<column_expr>(expr).name);
     }
@@ -311,6 +312,15 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
     if (function.over && !projection_root) {
         return std::unexpected(invalid_sql("Windows are only allowed at projection boundaries"));
     }
+    if (function.filter && !projection_root && !aggregates_allowed) {
+        return std::unexpected(
+            invalid_sql("Filtered aggregates require projection or HAVING context"));
+    }
+    if (filter_predicate &&
+        (function.over || function.filter || window_detail::is_aggregate(function.name))) {
+        return std::unexpected(
+            invalid_sql("FILTER predicates cannot contain aggregates or windows"));
+    }
     std::string out = function.name;
     out += '(';
     if (function.distinct) {
@@ -320,7 +330,8 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
         out += *function.raw_arg;
     } else {
         for (std::size_t i = 0; i < function.args.size(); ++i) {
-            auto argument = compile_expr(function.args[i], params);
+            auto argument = compile_expr(function.args[i], params, false,
+                                         aggregates_allowed || projection_root, filter_predicate);
             if (!argument) {
                 return std::unexpected(argument.error());
             }
@@ -334,6 +345,13 @@ asterorm::result<std::string> compiler::compile_expr(const expr_ast& expr, query
         }
     }
     out += ')';
+    if (function.filter) {
+        auto condition = compile_predicate(*function.filter, params, false, true);
+        if (!condition) {
+            return std::unexpected(condition.error());
+        }
+        out += " FILTER (WHERE " + *condition + ')';
+    }
     if (function.over) {
         auto clause = compile_over(*function.over);
         if (!clause) {
@@ -404,29 +422,32 @@ asterorm::result<std::string> compiler::compile_value(const value_source& src,
 }
 
 asterorm::result<std::string> compiler::compile_predicate(const predicate_ast& pred,
-                                                          query_parameters& params) { // NOLINT
+                                                          query_parameters& params,
+                                                          bool aggregates_allowed,
+                                                          bool filter_predicate) { // NOLINT
     if (std::holds_alternative<comparison_predicate>(pred.val)) {
         const auto& comp = std::get<comparison_predicate>(pred.val);
-        auto left = compile_expr(comp.left, params);
+        auto left = compile_expr(comp.left, params, false, aggregates_allowed, filter_predicate);
         if (!left)
             return std::unexpected(left.error());
-        auto right = compile_expr(comp.right, params);
+        auto right = compile_expr(comp.right, params, false, aggregates_allowed, filter_predicate);
         if (!right)
             return std::unexpected(right.error());
         return *left + " " + op_to_string(comp.op) + " " + *right;
     }
     if (std::holds_alternative<unary_predicate>(pred.val)) {
         const auto& un = std::get<unary_predicate>(pred.val);
-        auto operand = compile_expr(un.operand, params);
+        auto operand =
+            compile_expr(un.operand, params, false, aggregates_allowed, filter_predicate);
         if (!operand)
             return std::unexpected(operand.error());
         return *operand + (un.op == unary_op_kind::is_null ? " IS NULL" : " IS NOT NULL");
     }
     const auto& bin = std::get<binary_predicate>(pred.val);
-    auto left = compile_predicate(*bin.left, params);
+    auto left = compile_predicate(*bin.left, params, aggregates_allowed, filter_predicate);
     if (!left)
         return std::unexpected(left.error());
-    auto right = compile_predicate(*bin.right, params);
+    auto right = compile_predicate(*bin.right, params, aggregates_allowed, filter_predicate);
     if (!right)
         return std::unexpected(right.error());
     return "(" + *left + " " + op_to_string(bin.op) + " " + *right + ")";
@@ -518,6 +539,19 @@ asterorm::result<std::string> compiler::compile_select(const select_ast& ast,
     };
 
     query = "SELECT ";
+    if (ast.distinct_on) {
+        query += "DISTINCT ON (";
+        for (std::size_t index = 0; index < ast.distinct_on->columns.size(); ++index) {
+            if (index != 0) {
+                query += ", ";
+            }
+            auto appended = append_qualified(ast.distinct_on->columns[index]);
+            if (!appended) {
+                return std::unexpected(appended.error());
+            }
+        }
+        query += ") ";
+    }
     if (!ast.items.empty()) {
         for (size_t i = 0; i < ast.items.size(); ++i) {
             const auto& item = ast.items[i];
@@ -636,7 +670,7 @@ asterorm::result<std::string> compiler::compile_select(const select_ast& ast,
     }
 
     if (ast.having_clause) {
-        auto predicate = compile_predicate(*ast.having_clause, params);
+        auto predicate = compile_predicate(*ast.having_clause, params, true);
         if (!predicate) {
             return std::unexpected(predicate.error());
         }
@@ -682,7 +716,7 @@ asterorm::result<compiled_query> compiler::compile(const insert_select_ast& ast)
     const auto& source = ast.source;
     if (ast.columns.empty() || (!source.columns.empty() && !source.items.empty()) ||
         (source.columns.empty() && source.items.empty()) || !source.joins.empty() ||
-        !source.group_bys.empty() || source.having_clause ||
+        !source.group_bys.empty() || source.having_clause || source.distinct_on ||
         source.locking.strength != select_lock_strength::none ||
         source.locking.wait != select_lock_wait::block ||
         (source.offset_val && !source.limit_val)) {

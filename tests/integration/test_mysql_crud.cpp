@@ -9,6 +9,7 @@
 #include "asterorm/mysql/driver.hpp"
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/aggregate_extensions.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
 #include "support/recursive_query.hpp"
@@ -500,4 +501,8 @@ TEST_CASE("MySQL Integration: recursive query execution", "[mysql][recursive-que
 
 TEST_CASE("MySQL Integration: window query execution", "[mysql][window]") {
     asterorm::test::check_window_query(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: aggregate extensions", "[mysql][aggregate-extension]") {
+    asterorm::test::check_aggregate_extensions(asterorm::mysql::driver{}, conninfo());
 }

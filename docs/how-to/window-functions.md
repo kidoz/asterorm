@@ -130,7 +130,8 @@ Parameter payloads remain encoded text; adapters are unchanged.
 This remains one materializing observed SELECT through existing session scopes,
 with codec/native errors and observer exceptions preserved. Recursive steps still
 reject functions, including windows. Rebuild the library and consumers together:
-`func_expr`, `param_expr` and `compiler` layouts changed. FILTER's owned predicate
-field is reserved and any non-null value rejects; FILTER and DISTINCT ON are next,
-followed by combined advanced-query review. See the [design](../advanced-query-design.md)
+`func_expr`, `param_expr` and `compiler` layouts changed. The
+[extension guide](aggregate-extensions.md) covers implemented PG/SQLite FILTER,
+including aggregate windows, and PostgreSQL DISTINCT ON. Combined advanced-query
+review remains next. See the [design](../advanced-query-design.md)
 and [delivery evidence](../evidence/window-functions/README.md).

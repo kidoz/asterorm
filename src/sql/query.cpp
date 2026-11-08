@@ -92,7 +92,7 @@ class query_validator {
 
     result<void> validate_legacy_windows(const select_ast& leaf) {
         legacy_ = true;
-        if (!visit(0)) {
+        if (!visit(0) || !distinct(leaf, 1)) {
             return std::unexpected(*failure_);
         }
         for (const auto& item : leaf.items) {
@@ -108,7 +108,7 @@ class query_validator {
         if (leaf.where_clause && !predicate(*leaf.where_clause, 1)) {
             return std::unexpected(*failure_);
         }
-        if (leaf.having_clause && !predicate(*leaf.having_clause, 1)) {
+        if (leaf.having_clause && !predicate(*leaf.having_clause, 1, true)) {
             return std::unexpected(*failure_);
         }
         return {};
@@ -198,7 +198,7 @@ class query_validator {
         const auto* anchor = std::get_if<select_ast>(&compound.left->body);
         const auto* step = std::get_if<select_ast>(&compound.right->body);
         if (!anchor || !step || has_tail(*anchor) || has_tail(*step) || !step->group_bys.empty() ||
-            step->having_clause) {
+            step->having_clause || step->distinct_on) {
             return std::unexpected(error("Recursive arms require plain SELECTs without local "
                                          "tails; step grouping is unsupported"));
         }
@@ -320,6 +320,26 @@ class query_validator {
         }
         return true;
     }
+    bool distinct(const select_ast& leaf, std::size_t depth) {
+        if (leaf.distinct_on && (leaf.distinct_on->columns.size() > max_query_nodes ||
+                                 leaf.order_bys.size() > max_query_nodes)) {
+            return fail("DISTINCT ON exceeds the node limit");
+        }
+        auto valid = window_detail::validate_distinct(leaf, target_);
+        if (!valid) {
+            failure_ = valid.error();
+            failure_->detail = path_;
+            return false;
+        }
+        if (leaf.distinct_on) {
+            for (const auto& key : leaf.distinct_on->columns) {
+                if (!column(key, depth)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
     bool column(std::string_view name, std::size_t depth) {
         return visit(depth) && ((!name.contains('*') && identifier(name)) ||
                                 fail("Advanced queries require explicit columns"));
@@ -353,7 +373,8 @@ class query_validator {
         }
         return true;
     }
-    bool expression(const expr_ast& operand, std::size_t depth, bool projection = false) {
+    bool expression(const expr_ast& operand, std::size_t depth, bool projection = false,
+                    bool aggregates_allowed = false, bool filter_predicate = false) {
         if (!visit(depth)) {
             return false;
         }
@@ -401,8 +422,22 @@ class query_validator {
              node.distinct)) {
             return fail("Advanced queries only allow the structured COUNT(*) raw argument");
         }
+        if (node.filter && !projection && !aggregates_allowed) {
+            return fail("Filtered aggregates require projection or HAVING context");
+        }
+        if (filter_predicate &&
+            (node.filter || node.over || window_detail::is_aggregate(node.name))) {
+            return fail("FILTER predicates cannot contain aggregates or windows");
+        }
         for (const auto& argument : node.args) {
-            if (!expression(argument, depth + 1)) {
+            if (!expression(argument, depth + 1, false, aggregates_allowed || projection,
+                            filter_predicate)) {
+                return false;
+            }
+        }
+        if (node.filter) {
+            has_windows_ = true;
+            if (!predicate(*node.filter, depth + 1, false, true)) {
                 return false;
             }
         }
@@ -428,7 +463,8 @@ class query_validator {
         active_functions_.erase(function->get());
         return true;
     }
-    bool predicate(const predicate_ast& condition, std::size_t depth) {
+    bool predicate(const predicate_ast& condition, std::size_t depth,
+                   bool aggregates_allowed = false, bool filter_predicate = false) {
         if (!visit(depth)) {
             return false;
         }
@@ -440,8 +476,10 @@ class query_validator {
             case op_kind::gt:
             case op_kind::le:
             case op_kind::ge:
-                return expression(comparison->left, depth + 1) &&
-                       expression(comparison->right, depth + 1);
+                return expression(comparison->left, depth + 1, false, aggregates_allowed,
+                                  filter_predicate) &&
+                       expression(comparison->right, depth + 1, false, aggregates_allowed,
+                                  filter_predicate);
             default:
                 return fail("Invalid comparison operator");
             }
@@ -450,14 +488,16 @@ class query_validator {
             if (unary->op != unary_op_kind::is_null && unary->op != unary_op_kind::is_not_null) {
                 return fail("Invalid unary operator");
             }
-            return expression(unary->operand, depth + 1);
+            return expression(unary->operand, depth + 1, false, aggregates_allowed,
+                              filter_predicate);
         }
         const auto* binary = std::get_if<binary_predicate>(&condition.val);
         if (!binary || !binary->left || !binary->right ||
             (binary->op != op_kind::and_ && binary->op != op_kind::or_)) {
             return fail("Invalid binary predicate");
         }
-        return predicate(*binary->left, depth + 1) && predicate(*binary->right, depth + 1);
+        return predicate(*binary->left, depth + 1, aggregates_allowed, filter_predicate) &&
+               predicate(*binary->right, depth + 1, aggregates_allowed, filter_predicate);
     }
     result<std::vector<std::string>> select(const select_ast& leaf, std::size_t visible,
                                             std::size_t depth) {
@@ -467,6 +507,9 @@ class query_validator {
         if (leaf.locking.strength != select_lock_strength::none ||
             leaf.locking.wait != select_lock_wait::block) {
             return std::unexpected(error("Advanced queries do not support locking"));
+        }
+        if (!distinct(leaf, depth + 1)) {
+            return std::unexpected(*failure_);
         }
         if ((!leaf.columns.empty() && !leaf.items.empty()) ||
             (leaf.columns.empty() && leaf.items.empty())) {
@@ -539,7 +582,7 @@ class query_validator {
                 return std::unexpected(*failure_);
             }
         }
-        if (leaf.having_clause && !predicate(*leaf.having_clause, depth + 1)) {
+        if (leaf.having_clause && !predicate(*leaf.having_clause, depth + 1, true)) {
             return std::unexpected(*failure_);
         }
         for (const auto& order : leaf.order_bys) {
@@ -553,7 +596,7 @@ class query_validator {
 } // namespace
 
 result<void> compiler::validate_select_windows(const select_ast& ast) const {
-    if (!window_detail::contains_window(ast)) {
+    if (!ast.distinct_on && !window_detail::contains_window(ast)) {
         return {};
     }
     return query_validator{*this, dialect_, query_options_}.validate_legacy_windows(ast);

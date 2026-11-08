@@ -76,7 +76,7 @@ struct func_expr {
     std::optional<std::string> alias;   // rendered at the projection boundary
     std::optional<over_clause> over{};
     std::optional<std::int64_t> window_position{}; // checked LAG/LEAD offset or NTH_VALUE position
-    std::shared_ptr<const predicate_ast> filter{}; // reserved for the extension delivery
+    std::shared_ptr<const predicate_ast> filter{}; // owned aggregate predicate
 };
 
 inline column_expr col(std::string name) {
@@ -218,6 +218,11 @@ struct select_lock_clause {
     select_lock_wait wait{select_lock_wait::block};
 };
 
+enum class distinct_on_ties { unspecified, require_tiebreaker, allow_peers };
+struct distinct_on_clause {
+    std::vector<std::string> columns;
+    distinct_on_ties ties{distinct_on_ties::unspecified};
+};
 struct select_ast {
     std::string table;
     std::optional<std::string> table_alias;
@@ -231,6 +236,7 @@ struct select_ast {
     std::optional<size_t> limit_val;
     std::optional<size_t> offset_val;
     select_lock_clause locking{};
+    std::optional<distinct_on_clause> distinct_on{};
 };
 
 // Structured assignment arithmetic is separate from SELECT/predicate expressions.
@@ -315,6 +321,10 @@ class select_builder {
         return *this;
     }
 
+    select_builder& distinct_on(std::vector<std::string> columns, distinct_on_ties ties) {
+        ast_.distinct_on = distinct_on_clause{std::move(columns), ties};
+        return *this;
+    }
     select_builder& from(std::string table) {
         ast_.table = std::move(table);
         return *this;

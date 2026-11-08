@@ -80,9 +80,12 @@ class compiler {
     [[nodiscard]] asterorm::result<std::string> render_column(std::string_view ident) const;
     [[nodiscard]] std::string placeholder(std::size_t index) const;
     [[nodiscard]] asterorm::result<std::string> compile_predicate(const predicate_ast& pred,
-                                                                  query_parameters& params);
+                                                                  query_parameters& params,
+                                                                  bool aggregates_allowed = false,
+                                                                  bool filter_predicate = false);
     [[nodiscard]] asterorm::result<std::string>
-    compile_expr(const expr_ast& expr, query_parameters& params, bool projection_root = false);
+    compile_expr(const expr_ast& expr, query_parameters& params, bool projection_root = false,
+                 bool aggregates_allowed = false, bool filter_predicate = false);
     [[nodiscard]] asterorm::result<std::string> compile_value(const value_source& src,
                                                               query_parameters& params);
     [[nodiscard]] asterorm::result<std::string>

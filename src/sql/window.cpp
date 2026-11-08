@@ -124,14 +124,78 @@ bool window_detail::contains_window(const select_ast& ast) {
     return false;
 }
 
-result<void> window_detail::validate_function(const func_expr& function, dialect target) {
-    if (function.filter) {
-        return std::unexpected(invalid_window("Aggregate FILTER is not enabled yet"));
+bool window_detail::is_aggregate(std::string name) {
+    name = lower_name(std::move(name));
+    return name == "count" || name == "sum" || name == "avg" || name == "min" || name == "max";
+}
+result<void> window_detail::validate_distinct(const select_ast& ast, dialect target) {
+    if (!ast.distinct_on) {
+        return {};
     }
+    const auto& clause = *ast.distinct_on;
+    if (target != dialect::postgres) {
+        return std::unexpected(invalid_window("DISTINCT ON requires PostgreSQL"));
+    }
+    if (clause.columns.empty() || (clause.ties != distinct_on_ties::require_tiebreaker &&
+                                   clause.ties != distinct_on_ties::allow_peers)) {
+        return std::unexpected(
+            invalid_window("DISTINCT ON requires keys and an explicit tie policy"));
+    }
+    if (ast.locking.strength != select_lock_strength::none ||
+        ast.locking.wait != select_lock_wait::block) {
+        return std::unexpected(invalid_window("DISTINCT ON does not support row locking"));
+    }
+    if (ast.order_bys.size() < clause.columns.size()) {
+        return std::unexpected(invalid_window("DISTINCT ON keys must lead ORDER BY"));
+    }
+    for (std::size_t index = 0; index < clause.columns.size(); ++index) {
+        const auto& key = clause.columns[index];
+        if (key.empty() || key.contains('*') || key.contains('\0') ||
+            key != ast.order_bys[index].column ||
+            std::find(clause.columns.begin(),
+                      clause.columns.begin() + static_cast<std::ptrdiff_t>(index),
+                      key) != clause.columns.begin() + static_cast<std::ptrdiff_t>(index)) {
+            return std::unexpected(invalid_window(
+                "DISTINCT ON keys must be unique columns matching the ORDER BY prefix"));
+        }
+    }
+    if (clause.ties == distinct_on_ties::require_tiebreaker &&
+        std::none_of(ast.order_bys.begin() + static_cast<std::ptrdiff_t>(clause.columns.size()),
+                     ast.order_bys.end(), [&](const auto& order) {
+                         return std::find(clause.columns.begin(), clause.columns.end(),
+                                          order.column) == clause.columns.end();
+                     })) {
+        return std::unexpected(
+            invalid_window("DISTINCT ON tie policy requires an additional ORDER BY key"));
+    }
+    return {};
+}
+
+result<void> window_detail::validate_function(const func_expr& function, dialect target) {
     const auto name = lower_name(function.name);
     const bool ranking = name == "row_number" || name == "rank" || name == "dense_rank";
     const bool navigation = name == "lag" || name == "lead";
     const bool frame_value = name == "first_value" || name == "last_value" || name == "nth_value";
+    const bool count = name == "count";
+    const bool aggregate =
+        count || name == "sum" || name == "avg" || name == "min" || name == "max";
+    if (function.filter) {
+        if (target != dialect::postgres && target != dialect::sqlite) {
+            return std::unexpected(
+                invalid_window("Aggregate FILTER requires PostgreSQL or SQLite"));
+        }
+        if (!aggregate) {
+            return std::unexpected(invalid_window("FILTER requires COUNT/SUM/AVG/MIN/MAX"));
+        }
+        if (function.raw_arg &&
+            (!count || *function.raw_arg != "*" || !function.args.empty() || function.distinct)) {
+            return std::unexpected(
+                invalid_window("FILTER only allows structured COUNT(*) raw arguments"));
+        }
+        if (count && function.raw_arg ? !function.args.empty() : function.args.size() != 1) {
+            return std::unexpected(invalid_window("Invalid filtered aggregate arity"));
+        }
+    }
     if (!function.over) {
         if (ranking || navigation || frame_value || function.window_position) {
             return std::unexpected(invalid_window("Window functions require OVER"));
@@ -141,9 +205,6 @@ result<void> window_detail::validate_function(const func_expr& function, dialect
     if (target != dialect::postgres && target != dialect::sqlite && target != dialect::mysql) {
         return std::unexpected(invalid_window("This dialect does not support structured windows"));
     }
-    const bool count = name == "count";
-    const bool aggregate =
-        count || name == "sum" || name == "avg" || name == "min" || name == "max";
     if (!ranking && !navigation && !frame_value && !aggregate) {
         return std::unexpected(invalid_window("Unsupported function with OVER"));
     }

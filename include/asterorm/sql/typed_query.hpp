@@ -118,11 +118,12 @@ template <typename Session, typename Entity, typename Result, typename... Items>
 asterorm::result<std::vector<Result>>
 query(Session& session, typed_select_builder<Entity, Result, Items...>&& builder) {
     auto select_ast_value = builder.build();
-    if (window_detail::contains_window(select_ast_value) && !detail::window_session<Session>()) {
+    if ((select_ast_value.distinct_on || window_detail::contains_window(select_ast_value)) &&
+        !detail::window_session<Session>()) {
         db_error error;
         error.kind = db_error_kind::parse_failed;
-        error.message =
-            "Typed windows require an explicit supported dialect and compatible observed_execute";
+        error.message = "Structured aggregates/DISTINCT ON require an explicit supported dialect "
+                        "and compatible observed_execute";
         return std::unexpected(error);
     }
     if ((select_ast_value.locking.strength != select_lock_strength::none ||

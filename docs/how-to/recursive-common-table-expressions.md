@@ -108,6 +108,7 @@ adds no materialization promise. Library syntax budgets do not bound server work
 The [design](../advanced-query-design.md) and
 [delivery evidence](../evidence/recursive-cte/README.md) record the implemented
 subset and local checks. [Windows and typed helpers](window-functions.md) are now
-implemented; FILTER, DISTINCT ON and combined review follow. INSERT SELECT and streams retain their narrow
+implemented, as are [FILTER and DISTINCT ON](aggregate-extensions.md). Combined
+review remains next. INSERT SELECT and streams retain their narrow
 leaf-only interfaces. This delivery activates the existing recursive flag and
 adds no public data fields; the CTE foundation's rebuild notes remain applicable.

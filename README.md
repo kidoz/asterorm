@@ -45,6 +45,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
   and one terminal query event.
 - [Inline windows and typed helpers](docs/how-to/window-functions.md) for ranking,
   nullable navigation, checked ROWS frames and windowed aggregates.
+- [Filtered aggregates and DISTINCT ON](docs/how-to/aggregate-extensions.md), with
+  explicit backend support and row-selection tie policies.
 - [Constrained recursive CTEs](docs/how-to/recursive-common-table-expressions.md)
   for parent/child traversal with checked anchor and recursive-step shapes.
 - [Set operations](docs/how-to/set-operations.md), including ALL forms where supported,
@@ -87,7 +89,8 @@ records the generic scope, Catch2 adapter and worked fixture migration, now
 [locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
 The [advanced-query inventory and contract](docs/advanced-query-design.md) defines
 implemented ordinary/recursive CTEs, set operations and windows with typed helpers.
-FILTER, DISTINCT ON and combined review remain planned.
+PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. Combined acceptance
+review remains next.
 
 ## Backends
 

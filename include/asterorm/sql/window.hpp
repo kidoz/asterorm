@@ -35,6 +35,15 @@ inline std::shared_ptr<func_expr> over(const std::shared_ptr<func_expr>& functio
     decorated->over = std::move(clause);
     return decorated;
 }
+inline std::shared_ptr<func_expr> filter(const std::shared_ptr<func_expr>& function,
+                                         predicate_ast predicate) {
+    if (!function) {
+        return {};
+    }
+    auto decorated = std::make_shared<func_expr>(*function);
+    decorated->filter = std::make_shared<const predicate_ast>(std::move(predicate));
+    return decorated;
+}
 inline std::shared_ptr<func_expr> row_number() {
     return func("row_number");
 }

@@ -10,6 +10,7 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/aggregate_extensions.hpp"
 #include "support/cte_query.hpp"
 #include "support/recursive_query.hpp"
 #include "support/select_locking.hpp"
@@ -324,6 +325,14 @@ TEST_CASE("PG Integration: recursive query execution", "[pg][recursive-query]") 
 TEST_CASE("PG Integration: window query execution", "[pg][window]") {
     const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
     asterorm::test::check_window_query(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("PG Integration: aggregate extensions", "[pg][aggregate-extension]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_aggregate_extensions(
         asterorm::pg::driver{}, configured ? configured
                                            : "host=127.0.0.1 port=5432 dbname=orm_test "
                                              "user=orm_test password=orm_test sslmode=disable");

@@ -372,7 +372,7 @@ template <typename T> result<void> validate_stream_source(const sql::select_ast&
     constexpr auto width = std::tuple_size_v<decltype(entity_traits<T>::columns)>;
     if (width == 0 || source.table != entity_traits<T>::table || source.table_alias ||
         source.columns.size() != width || !source.items.empty() || !source.joins.empty() ||
-        !source.group_bys.empty() || source.having_clause ||
+        !source.group_bys.empty() || source.having_clause || source.distinct_on ||
         source.locking.strength != sql::select_lock_strength::none ||
         source.locking.wait != sql::select_lock_wait::block) {
         return std::unexpected(

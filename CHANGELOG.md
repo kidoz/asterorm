@@ -6,13 +6,19 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PG/SQLite aggregate FILTER, including aggregate windows, with owned predicates,
+  typed nullable results and shared validation/binding. PostgreSQL DISTINCT ON
+  adds checked ordering and an explicit tie policy; unsupported backends reject
+  before leasing. Rebuild library/consumers: SELECT and containing query layouts
+  changed. Combined advanced-query acceptance remains next.
+
 - Inline OVER windows, checked ROWS frames, ranking/navigation/frame-value helpers
   and typed window aggregates on PostgreSQL/SQLite/MySQL. Typed selectables now
   retain instance values while supporting existing static lowering methods.
 - Window validation and primitive numeric AST hints/casts for SQLite computed
   comparisons and MySQL navigation defaults. Plain SELECT SQL remains unchanged.
   Rebuild library/consumers: function/parameter AST and compiler layouts changed.
-  FILTER ownership is reserved; non-null FILTER values reject until that delivery.
+  The extension delivery activates the shared-const FILTER predicate.
 
 - Constrained recursive CTEs through the existing root `.recursive()` flag: one
   self-referencing definition, explicit outputs and direct anchor/step UNION ALL.
@@ -31,8 +37,8 @@ All notable changes to AsterORM will be documented in this file.
 
 - CTE/window/set-operation inventory and v1 design contract, with configured AST
   probes and native PostgreSQL/SQLite/MySQL semantics. Ordinary CTEs and set
-  operations and constrained recursion are implemented; windows and extensions
-  remain planned.
+  operations, constrained recursion, windows and extensions are implemented;
+  combined acceptance remains planned.
 
 - Source-bound local transactional harness acceptance review, combining generic
   scopes, optional Catch2 integration and worked reference fixtures. Fresh native

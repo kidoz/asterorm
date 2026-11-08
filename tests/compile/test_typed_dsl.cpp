@@ -3,6 +3,7 @@
 #include <tuple>
 
 #include "asterorm/sql/typed.hpp"
+#include "asterorm/sql/typed_extensions.hpp"
 #include "asterorm/sql/typed_window.hpp"
 
 #ifndef ASTERORM_COMPILE_CASE
@@ -58,6 +59,13 @@ namespace typed = asterorm::sql::typed;
         typed::over(typed::last_value(typed::col<&compile_user::score>),
                     window.rows_between(asterorm::sql::unbounded_preceding(),
                                         asterorm::sql::unbounded_following())));
+    (void)typed::select_cols(
+        typed::filter(typed::count_all(), typed::col<&compile_user::active> == typed::val(true)));
+    (void)typed::select<compile_user>()
+        .distinct_on(asterorm::sql::distinct_on_ties::require_tiebreaker,
+                     typed::col<&compile_user::active>)
+        .order_by(typed::col<&compile_user::active>)
+        .order_by(typed::col<&compile_user::age>);
     // These controls use the same traits, operators and projection API as the
     // negative cases. The normal core test build also compiles this branch.
     (void)(typed::col<&compile_user::active> == typed::val(true));
@@ -147,6 +155,23 @@ namespace typed = asterorm::sql::typed;
                       typed::window().order_by(typed::col<&compile_user::age>));
 #elif ASTERORM_COMPILE_CASE == 28
     (void)asterorm::sql::preceding(1.5);
+#elif ASTERORM_COMPILE_CASE == 29
+    (void)typed::filter(typed::sum(typed::col<&compile_user::age>),
+                        typed::col<&compile_other::age> > typed::val(0));
+#elif ASTERORM_COMPILE_CASE == 30
+    (void)typed::filter(
+        typed::over(typed::rank(), typed::window().order_by(typed::col<&compile_user::age>)),
+        typed::col<&compile_user::active> == typed::val(true));
+#elif ASTERORM_COMPILE_CASE == 31
+    (void)typed::select<compile_user>().distinct_on(asterorm::sql::distinct_on_ties::allow_peers,
+                                                    typed::col<&compile_other::age>);
+#elif ASTERORM_COMPILE_CASE == 32
+    (void)typed::select_cols<std::tuple<int>>(
+        typed::filter(typed::sum(typed::col<&compile_user::age>),
+                      typed::col<&compile_user::active> == typed::val(true)));
+#elif ASTERORM_COMPILE_CASE == 33
+    (void)typed::filter(typed::sum(typed::col<&compile_user::active>),
+                        typed::col<&compile_user::active> == typed::val(true));
 #else
 #error Unknown ASTERORM_COMPILE_CASE
 #endif

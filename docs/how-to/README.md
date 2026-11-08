@@ -9,6 +9,7 @@ Each addresses a specific task.
 - [Combine mapped query results with set operations](set-operations.md)
 - [Traverse parent/child rows with a recursive CTE](recursive-common-table-expressions.md)
 - [Rank and aggregate rows with inline windows](window-functions.md)
+- [Filter aggregates and choose DISTINCT ON rows](aggregate-extensions.md)
 - [Stream mapped PostgreSQL entities](stream-entities.md)
 - [Read native PostgreSQL results one row at a time](postgresql-single-row-reader.md)
 - [Update, delete, or copy rows by query](bulk-predicate-mutations.md)

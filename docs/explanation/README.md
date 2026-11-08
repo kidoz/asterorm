@@ -43,8 +43,9 @@ covers the implemented owned root and explicit named execution. The
 portable operand wrappers. The [recursive CTE guide](../how-to/recursive-common-table-expressions.md)
 covers checked anchor/step traversal and native termination limits.
 [Inline windows](../how-to/window-functions.md) now share runtime/typed lowering,
-checked frames and conservative nullable results. Extensions and combined review
-remain planned.
+checked frames and conservative nullable results. [Aggregate extensions](../how-to/aggregate-extensions.md)
+add PG/SQLite FILTER and PostgreSQL DISTINCT ON with explicit tie policies.
+Combined advanced-query review remains planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

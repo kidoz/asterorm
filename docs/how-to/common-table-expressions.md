@@ -91,8 +91,9 @@ facades must declare an explicit `connection_type::sql_dialect` and a compatible
 Ordinary CTEs, [set operations](set-operations.md) and
 [constrained recursive CTEs](recursive-common-table-expressions.md) are implemented.
 Other recursive shapes reject. [Windows and typed helpers](window-functions.md)
-are implemented; FILTER and DISTINCT ON remain planned in the
-[design](../advanced-query-design.md). MySQL defaults to the baseline 8.0.19 profile;
+and [FILTER/DISTINCT ON](aggregate-extensions.md) are implemented. The
+[design](../advanced-query-design.md) records the remaining combined review.
+MySQL defaults to the baseline 8.0.19 profile;
 INTERSECT/EXCEPT requires an explicit set-operation 8.0.31 profile. There is no
 server-version discovery query. INSERT SELECT and
 streams continue to accept their existing restricted `select_ast` shapes.
