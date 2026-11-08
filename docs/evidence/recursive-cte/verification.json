@@ -1,0 +1,197 @@
+{
+  "recorded_at_utc": "2026-11-08T14:20:18.770336+00:00",
+  "review_date": "2026-11-08",
+  "git_base": "d50af5cea1884583afe63ab0d36524b8400d0456",
+  "scope": "Constrained recursive CTEs over the CTE/set foundation; windows, typed helpers and extensions remain planned.",
+  "source_build_test_document_sha256": {
+    "src/sql/query.cpp": "45cfd3a9008be17f919f436472549adc5723d2cbd8fefc36df514088568e0815",
+    "src/sql/compiler.cpp": "2543b7a41cbc3bfc03810143ceb512e27c11dac55f3b169ea488978d97421af9",
+    "src/meson.build": "f5c1dcecc8b7f0e2e80aa14437e6433900ae615b50987d83404128ef5673f15f",
+    "include/asterorm/sql/query_ast.hpp": "6ec6e4db33c62fb3651d1ecfbfa404af2e63a45f4aa3b90af0165d7a0d746d77",
+    "include/asterorm/sql/compiler.hpp": "7834103a382ebdb9898a111014ab746c2e9253a355305f40f39341b05c1df29b",
+    "include/asterorm/sql/query.hpp": "5b4c5313f83e2ea8823046ce2fb609ad941cba2094377ec316c860d40b9c4711",
+    "include/asterorm/sql/ast.hpp": "269e353c629d6db246f266566f558ee400663a9632bf385204f7ab25ca0ec00e",
+    "include/asterorm/core/session.hpp": "b272f89d037dffd432c22a0b736502756754c384a13cfe1631ce8f47d7333cc9",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004",
+    "tests/unit/test_recursive_query.cpp": "e0cd74bc4fdf7a04933b5dcd09b400bdc2d38b3c2dc21f8be9f62935e600e761",
+    "tests/unit/test_query.cpp": "0e59a7a2ae26cc921965da415fd4266e4f0c2b3e09a03e1cb26abda7bfdb195b",
+    "tests/support/recursive_query.hpp": "aed9cd318c5c1715b627f696606f898e951d17df948878c6a3c597f3a7c03346",
+    "tests/integration/test_sql.cpp": "8342409819645ebef0f1656f2a5324e73521cd9217f67d7e21e1eb1c8f5c217e",
+    "tests/integration/test_sqlite_crud.cpp": "e85be039e0ef7b138a400d7e2a17b7ebf7c631cb6bbeb0331a2eb9b66b91f601",
+    "tests/integration/test_mysql_crud.cpp": "462428d449c107a11c9795299639759d50cc632ec0e379cb0f225864ad3658e1",
+    "tests/meson.build": "267c92424ff942c70dbaf0a6845949f74995f49faaf44e85eca706b5df668d65",
+    "tests/check_recursive_guide.py": "95a5786ef389b018702219b4162aaf4a114fbd8a91166a7f9f09807fe94cc7ce",
+    "README.md": "ea0f1c1f92eee9a10df8641ab0dd78cca4b2fc75bb8dc2deab9adc0e8058b1e1",
+    "CHANGELOG.md": "936195e1756fe874011f5dffcaa670db5469813ac64f664bc966d5edcfaed4da",
+    "docs/advanced-query-design.md": "3e0a1f7665b269861f35114911b7c4781b6f0b7e768e5f924ab3ab059f2a92d1",
+    "docs/reference/sql.md": "df04893f50aacd48e7f76f9addb1bc6f4d2bd957ac89b279008d15d31a0facd9",
+    "docs/how-to/README.md": "5ddd31368bab2b842623512bc8c16d88d48c9592e58fcc3a7e26cad7caeb605f",
+    "docs/explanation/README.md": "e08608e971c8cdca2e55699f379bdb324f0ddfc7bf072725bbfea196239efbab",
+    "docs/how-to/common-table-expressions.md": "e0ad1d48b52d5923b3f0ab43125acb5db425b72ed852c2380814d00a2c9aa67b",
+    "docs/how-to/set-operations.md": "1bdf462368d575884c228f0757f7a078ac0ac90ba15358e7619fedcd06bdef6d",
+    "docs/how-to/recursive-common-table-expressions.md": "c9b4b2ef75591f5a93718f990805b4814294190a13a8940d2590c8392d362b6f",
+    "docs/evidence/recursive-cte/README.md": "bbad01ac937b1411532b6a2cc8311fff2be0c1a7abcf0a9a0f62f51d1782004c",
+    "docs/evidence/recursive-cte/check_consumers.py": "945d794950309420e279fdeccd2df7908bcaf9f86bb31684266ed0d3fd7fc5ad",
+    "meson.build": "4482a6d9a63fe890e1878f027b7f3d37e1ed8e18f9cb352d553264813add3e7d",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    ".clang-format": "5487b608c8c20ccbc33b4a912b2e6ad33425adea9dfe9ef7c9e5cc4470d7573d",
+    ".clang-tidy": "e04b2e7820dda9f058d41f3c02682fb7662651c0fc849533aa375ed4c2e8dcbc"
+  },
+  "ignored_canonical_context_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "d595cf0d48a3afb8076674d849eef91c31a4734ef0349f4446c326cac00024ac",
+    ".agents/contexts/specs/feature-expansion/README.md": "594170e7f1af493c668fa5a69fbb621192ac4cd1b57017f34423130bae0e8588",
+    ".agents/contexts/specs/feature-expansion/QUERY_DSL_AND_SQL.md": "2114192fbf1b607717a4f3dc6de2998560e122af65aa273261bc3e0d2e6c7b9c"
+  },
+  "standards_comparison": {
+    "baseline_report": "/tmp/asterorm-set-standards.json",
+    "baseline_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "current_report": "/tmp/asterorm-recursive-standards.json",
+    "current_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "findings_identical": true
+  },
+  "verification": [
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-recursive-build.log",
+      "log_sha256": "acb8d081a230192e7090520a867fb6359cbe42ab7ab7183e54d2d6e1d5ec253d"
+    },
+    {
+      "check": "tests",
+      "command": "meson test -C buildDir --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "passed": 26,
+        "failed": 0
+      },
+      "local_log": "/tmp/asterorm-recursive-tests.log",
+      "log_sha256": "5e5172411cc71fd19492b940dc842aea90946cfab9952235dabb2205a1ad2e06"
+    },
+    {
+      "check": "focused unit",
+      "command": "buildDir/tests/core_tests '[recursive-query]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 7,
+        "assertions": 214
+      },
+      "local_log": "/tmp/asterorm-recursive-unit.log",
+      "log_sha256": "27a43d44520860742cb68a847593cd3c6ebb650ef42bdfb84e0c440dcde6a8af"
+    },
+    {
+      "check": "postgres recursive CTE",
+      "command": "buildDir/tests/pg_integration '[recursive-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 104,
+        "data_cycle_cancelled_under_explicit_timeout": true,
+        "rollback_inside_callback": true
+      },
+      "local_log": "/tmp/asterorm-recursive-postgres.log",
+      "log_sha256": "30038f09b2c8c9a4a1f605694fd4b5ed6b761727e2f22cb42281763897d0fadc"
+    },
+    {
+      "check": "sqlite recursive CTE",
+      "command": "buildDir/tests/sqlite_integration '[recursive-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 90
+      },
+      "local_log": "/tmp/asterorm-recursive-sqlite.log",
+      "log_sha256": "f641e7eb7a0a70587e085d0554608a954ebe086f5761a9baa69bd3651e41148c"
+    },
+    {
+      "check": "mysql recursive CTE",
+      "command": "buildDir/tests/mysql_integration '[recursive-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 72
+      },
+      "local_log": "/tmp/asterorm-recursive-mysql.log",
+      "log_sha256": "66d0b4092e8aa841df2adf7d644edae0b2466bfb67d0b8e73fc519b9ecea6353"
+    },
+    {
+      "check": "fresh SQLite-only sanitizers",
+      "command": "meson setup <temporary-build> . -Dpostgres=disabled -Dsqlite=enabled -Dmysql=disabled -Dclickhouse=disabled -Dexamples=false -Db_sanitize=address,undefined; meson test -C <temporary-build> --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "passed": 12,
+        "failed": 0,
+        "temporary_build": "/var/folders/nk/tq3d50k133502vs3b01nl9yh0000gn/T/asterorm-recursive-sqlite-sanitized-xp6husgn"
+      },
+      "local_log": "/tmp/asterorm-recursive-sanitizers.log",
+      "log_sha256": "1c28025ef550b12abf570d4f68d103b9fd8d2b862d7eea1b8575fe7a6b89e115"
+    },
+    {
+      "check": "installed guide consumers",
+      "command": "python3 docs/evidence/recursive-cte/check_consumers.py",
+      "exit_code": 0,
+      "result": {
+        "packages": [
+          "CMake",
+          "shared pkg-config"
+        ],
+        "backends": [
+          "postgres",
+          "sqlite",
+          "mysql"
+        ],
+        "Catch2_required": false
+      },
+      "local_log": "/tmp/asterorm-recursive-consumers.log",
+      "log_sha256": "f90d55f519ae4d800aee24dd30564f6065e402c4aa1073c6e1c3676a7d561186"
+    },
+    {
+      "check": "format",
+      "command": "python3 tools/run_clang_format.py --source-root . --check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-recursive-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "project lint",
+      "command": "meson compile -C buildDir clang-tidy",
+      "exit_code": 0,
+      "result": {
+        "distinct_translation_units": 69,
+        "project_diagnostics_retained": true
+      },
+      "local_log": "/tmp/asterorm-recursive-lint.log",
+      "log_sha256": "e55f861b7b31900097e23eb34aff0c2ff6629b0aeb091106e67508ced21a1de2"
+    },
+    {
+      "check": "strict production query compiler lint",
+      "command": "clang-tidy -p=buildDir --extra-arg=-isysroot --extra-arg=<xcrun SDK> --warnings-as-errors=* src/sql/query.cpp",
+      "exit_code": 0,
+      "result": {
+        "emitted_user_diagnostics": 0
+      },
+      "local_log": "/tmp/asterorm-recursive-query-lint.log",
+      "log_sha256": "7521fb02f89b40a54bb87c4822b592a1c05ea8ac85e9e69c9bacb6936507ac07"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-08 --json-out /tmp/asterorm-recursive-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0
+      },
+      "local_log": "/tmp/asterorm-recursive-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "limitations": [
+    "Unsigned local evidence; temporary logs may expire. No remote CI or release provenance claim.",
+    "Older-server and ClickHouse execution, performance and full advanced-query acceptance are not established.",
+    "Syntax budgets do not prove data termination, detect data cycles or impose server iteration/time/result limits.",
+    "A native data cycle executes only on PG under explicit server timeout, with rollback inside the callback before cleanup.",
+    "Project lint diagnostics and identical existing standards failures are not waived.",
+    "Earlier inventory/CTE/set receipts remain historical; no old gap assertions refreshed.",
+    "Connection settings, credentials, build outputs and unrelated .gitignore excluded. Ignored canonical contexts are not force-added."
+  ]
+}
