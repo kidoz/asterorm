@@ -6,6 +6,12 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Shared pool/lease state, allocation-free return bookkeeping, eager size/acquire
+  timeout validation and non-draining shutdown. Leases may outlive the facade;
+  closed work returns `pool_closed`, capacity wait expiry returns `timeout`.
+  Stats expose held/setup/retiring/waiter states. Rebuild consumers for pool/lease/
+  stats layout changes; direct lease/raw return construction is removed.
+
 - Production-pool inventory and proposed v1 contract, with configured API/native
   probes for size validation, shutdown, stale PostgreSQL sockets, raw transaction
   reuse and disabled statement caching. Implementation remains planned; the next

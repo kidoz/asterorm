@@ -1,9 +1,9 @@
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <concepts>
 #include <condition_variable>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -24,7 +24,7 @@ struct pool_config {
     std::chrono::milliseconds acquire_timeout{5000};
     size_t prepared_statement_cache_size{128};
     std::string conninfo;
-    std::optional<std::chrono::milliseconds> statement_timeout{};
+    std::optional<std::chrono::milliseconds> statement_timeout;
 };
 
 struct pool_stats {
@@ -33,6 +33,11 @@ struct pool_stats {
     size_t in_use{0};
     size_t leaked_at_close{0};
     bool closed{false};
+    size_t leased{0};
+    size_t connecting{0};
+    size_t checking{0};
+    size_t retiring{0};
+    size_t waiters{0};
 };
 
 namespace detail {
@@ -96,13 +101,173 @@ asterorm::result<void> configure_statement_timeout(Conn& conn, const pool_config
     }
 }
 
-template <typename Conn>
-void close_configured_connection(Conn& conn, const pool_config& config) noexcept {
-    if constexpr (has_statement_timeout<Conn>) {
-        if (config.statement_timeout) {
-            conn.close();
+// Intrusive idle entries make the return path allocation-free. A leased entry
+// and its state survive independently of the pool facade.
+template <typename Connection> struct pool_entry {
+    explicit pool_entry(Connection&& value) noexcept : connection(std::move(value)) {}
+    Connection connection;
+    std::unique_ptr<pool_entry> next;
+};
+
+template <typename Driver, typename Connection> struct pool_state {
+    using entry = pool_entry<Connection>;
+    using entry_ptr = std::unique_ptr<entry>;
+    enum class phase : std::uint8_t { connecting, checking, leased, retiring };
+
+    pool_state(Driver value, pool_config settings)
+        : driver(std::move(value)), config(std::move(settings)) {}
+    ~pool_state() {
+        // Normally close() has already detached every idle entry. Also make
+        // constructor-unwind cleanup iterative, rather than recursively linked.
+        while (idle_head) {
+            auto node = std::move(idle_head);
+            idle_head = std::move(node->next);
+            dispose(std::move(node));
         }
     }
+    static void dispose(entry_ptr node) noexcept {
+        if (node) {
+            if constexpr (requires(Connection& connection) {
+                              { connection.close() } noexcept -> std::same_as<void>;
+                          }) {
+                node->connection.close();
+            }
+            node.reset();
+        }
+    }
+    std::size_t& count(phase current) noexcept {
+        switch (current) {
+        case phase::connecting:
+            return connecting;
+        case phase::checking:
+            return checking;
+        case phase::leased:
+            return leased;
+        case phase::retiring:
+            return retiring;
+        }
+        std::terminate();
+    }
+    void retire(entry_ptr node, phase previous) noexcept {
+        {
+            std::scoped_lock lock(mutex);
+            --count(previous);
+            ++retiring;
+        }
+        dispose(std::move(node));
+        finish_retirement();
+    }
+    void finish_retirement() noexcept {
+        std::scoped_lock lock(mutex);
+        --retiring;
+        --total;
+        condition.notify_all();
+    }
+    void return_entry(entry_ptr node) noexcept {
+        bool reusable{};
+        try {
+            reusable = node->connection.is_open();
+            if constexpr (has_pool_reuse_check<Connection>) {
+                reusable = reusable && node->connection.is_pool_reusable();
+            }
+        } catch (...) {
+            // Custom readiness checks cannot make lease destruction throw.
+            reusable = false;
+        }
+        {
+            std::scoped_lock lock(mutex);
+            if (!closed && reusable) {
+                --leased;
+                ++idle;
+                node->next = std::move(idle_head);
+                idle_head = std::move(node);
+                condition.notify_all();
+                return;
+            }
+        }
+        retire(std::move(node), phase::leased);
+    }
+    void close() noexcept {
+        entry_ptr detached;
+        {
+            std::scoped_lock lock(mutex);
+            if (closed) {
+                return;
+            }
+            closed = true;
+            leaked_at_close = total - idle;
+            retiring += idle;
+            idle = 0;
+            detached = std::move(idle_head);
+            condition.notify_all();
+        }
+        while (detached) {
+            auto node = std::move(detached);
+            detached = std::move(node->next);
+            dispose(std::move(node));
+            finish_retirement();
+        }
+    }
+    // Used only during construction, before the facade can be shared.
+    void fail_warmup(db_error error) {
+        while (idle_head) {
+            auto node = std::move(idle_head);
+            idle_head = std::move(node->next);
+            dispose(std::move(node));
+        }
+        total = idle = 0;
+        warmup_error = std::move(error);
+    }
+    Driver driver;
+    const pool_config config;
+    mutable std::mutex mutex;
+    std::condition_variable condition;
+    entry_ptr idle_head;
+    std::size_t total{}, idle{}, leased{}, connecting{}, checking{}, retiring{}, waiters{};
+    std::size_t leaked_at_close{};
+    bool closed{};
+    std::optional<db_error> warmup_error;
+};
+inline result<void> validate_pool_config(const pool_config& config) {
+    const char* invalid{};
+    if (config.max_size == 0) {
+        invalid = "max_size must be positive";
+    } else if (config.min_size > config.max_size) {
+        invalid = "min_size must not exceed max_size";
+    } else if (config.acquire_timeout.count() < 0) {
+        invalid = "acquire_timeout must be nonnegative";
+    }
+    if (invalid) {
+        db_error error;
+        error.kind = db_error_kind::connection_failed;
+        error.message = invalid;
+        return std::unexpected(std::move(error));
+    }
+    return {};
+}
+inline std::chrono::steady_clock::time_point pool_wait_deadline(std::chrono::milliseconds timeout) {
+    using clock = std::chrono::steady_clock;
+    const auto now = clock::now();
+    // Invalid negative configuration is retained by warmup_error(); acquisition
+    // must still reach that diagnostic without overflowing deadline arithmetic.
+    if (timeout <= std::chrono::milliseconds::zero()) {
+        return now;
+    }
+    // Clamp before conversion to the clock's finer tick unit can overflow.
+    if (timeout >= std::chrono::duration_cast<std::chrono::milliseconds>(clock::duration::max())) {
+        return clock::time_point::max();
+    }
+    const auto ticks = std::chrono::duration_cast<clock::duration>(timeout);
+    if (now > clock::time_point::max() - ticks) {
+        return clock::time_point::max();
+    }
+    return now + ticks;
+}
+inline db_error pool_closed_error() {
+    db_error error;
+    error.kind = db_error_kind::pool_closed;
+    error.message = "Connection pool is closed";
+    return error;
 }
 } // namespace detail
 
@@ -110,294 +275,222 @@ template <typename Driver> class connection_pool;
 
 template <typename Pool> class connection_lease {
   public:
-    using connection_type = typename Pool::connection_type;
-
-    connection_lease(connection_type&& conn, Pool* pool, std::shared_ptr<std::atomic<bool>> alive)
-        : conn_(std::move(conn)), pool_(pool), alive_(std::move(alive)) {}
-
-    ~connection_lease() {
+    using connection_type = Pool::connection_type;
+    ~connection_lease() noexcept {
         release_to_pool();
     }
-
-    connection_lease(connection_lease&& other) noexcept
-        : conn_(std::move(other.conn_)), pool_(other.pool_), alive_(std::move(other.alive_)) {
-        other.pool_ = nullptr;
-    }
-
+    connection_lease(const connection_lease&) = delete;
+    connection_lease& operator=(const connection_lease&) = delete;
+    connection_lease(connection_lease&&) noexcept = default;
     connection_lease& operator=(connection_lease&& other) noexcept {
         if (this != &other) {
             release_to_pool();
-            conn_ = std::move(other.conn_);
-            pool_ = other.pool_;
-            alive_ = std::move(other.alive_);
-            other.pool_ = nullptr;
+            state_ = std::move(other.state_);
+            entry_ = std::move(other.entry_);
         }
         return *this;
     }
-
     connection_type* operator->() {
-        return &conn_;
+        return &entry_->connection;
     }
     connection_type& operator*() {
-        return conn_;
+        return entry_->connection;
     }
-
-    void release_to_pool() {
-        if (!pool_) {
-            return;
+    void release_to_pool() noexcept {
+        if (entry_) {
+            auto state = std::move(state_);
+            state->return_entry(std::move(entry_));
         }
-        if (alive_ && alive_->load(std::memory_order_acquire)) {
-            pool_->release(std::move(conn_));
-        }
-        // If the pool has been torn down, drop the connection here; its
-        // destructor will close the underlying client.
-        pool_ = nullptr;
     }
 
   private:
-    connection_type conn_;
-    Pool* pool_;
-    std::shared_ptr<std::atomic<bool>> alive_;
+    friend Pool;
+    using state_type = Pool::state_type;
+    connection_lease(std::shared_ptr<state_type> state, state_type::entry_ptr entry) noexcept
+        : state_(std::move(state)), entry_(std::move(entry)) {}
+    std::shared_ptr<state_type> state_;
+    state_type::entry_ptr entry_;
 };
 
 template <typename Driver> class connection_pool {
   public:
     using driver_connect_result =
         decltype(std::declval<Driver>().connect(std::declval<const std::string&>()));
-    using connection_type = typename driver_connect_result::value_type;
+    using connection_type = driver_connect_result::value_type;
+
+  private:
+    template <typename> friend class connection_lease;
+    using state_type = detail::pool_state<Driver, connection_type>;
+    using phase = state_type::phase;
+
+  public:
     using lease_type = connection_lease<connection_pool<Driver>>;
+    static_assert(std::is_nothrow_move_constructible_v<connection_type>,
+                  "asterorm: pooled connections must be nothrow move constructible");
+    static_assert(std::is_nothrow_destructible_v<connection_type>,
+                  "asterorm: pooled connections must be nothrow destructible");
 
     connection_pool(Driver driver, pool_config config)
-        : driver_(std::move(driver)), config_(std::move(config)) {
+        : state_(std::make_shared<state_type>(std::move(driver), std::move(config))) {
+        auto& state = *state_;
         try {
-            auto valid = detail::validate_timeout_config<connection_type>(config_);
+            auto valid = detail::validate_pool_config(state.config);
+            if (valid) {
+                valid = detail::validate_timeout_config<connection_type>(state.config);
+            }
             if (!valid) {
-                fail_warmup(valid.error());
+                state.fail_warmup(valid.error());
                 return;
             }
-            for (size_t i = 0; i < config_.min_size; ++i) {
-                auto conn_res = driver_.connect(config_.conninfo);
-                if (!conn_res) {
-                    fail_warmup(conn_res.error());
+            for (std::size_t index = 0; index < state.config.min_size; ++index) {
+                auto connected = state.driver.connect(state.config.conninfo);
+                if (!connected) {
+                    state.fail_warmup(connected.error());
                     return;
                 }
-                detail::configure_connection(*conn_res, config_);
-                auto configured = detail::configure_statement_timeout(*conn_res, config_);
+                auto node = std::make_unique<typename state_type::entry>(std::move(*connected));
+                detail::configure_connection(node->connection, state.config);
+                auto configured =
+                    detail::configure_statement_timeout(node->connection, state.config);
                 if (!configured) {
-                    fail_warmup(configured.error());
+                    state.fail_warmup(configured.error());
                     return;
                 }
-                idle_connections_.push_back(std::move(*conn_res));
-                ++current_size_;
+                node->next = std::move(state.idle_head);
+                state.idle_head = std::move(node);
+                ++state.idle;
+                ++state.total;
             }
         } catch (const std::exception& exception) {
             db_error error;
             error.kind = db_error_kind::connection_failed;
             error.message = exception.what();
-            fail_warmup(std::move(error));
+            state.fail_warmup(std::move(error));
         } catch (...) {
             db_error error;
             error.kind = db_error_kind::connection_failed;
             error.message = "Connection pool warmup failed";
-            fail_warmup(std::move(error));
+            state.fail_warmup(std::move(error));
         }
     }
-
-    ~connection_pool() {
+    connection_pool(const connection_pool&) = delete;
+    connection_pool& operator=(const connection_pool&) = delete;
+    connection_pool(connection_pool&&) = delete;
+    connection_pool& operator=(connection_pool&&) = delete;
+    ~connection_pool() noexcept {
         close();
     }
-
-    void close() {
-        std::unique_lock lock(mutex_);
-        closed_ = true;
-        cv_.notify_all();
-        // Wait up to close_timeout for outstanding leases to return. After the
-        // deadline we mark the pool dead anyway; any leaked lease will drop its
-        // connection from release_to_pool() rather than touch the pool.
-        auto deadline = std::chrono::steady_clock::now() + close_timeout_;
-        bool returned = cv_.wait_until(
-            lock, deadline, [this] { return current_size_ == idle_connections_.size(); });
-        if (!returned) {
-            leaked_at_close_ = current_size_ - idle_connections_.size();
-        }
-        alive_flag_->store(false, std::memory_order_release);
-        idle_connections_.clear();
-        current_size_ = 0;
+    void close() noexcept {
+        state_->close();
     }
-
     [[nodiscard]] pool_stats stats() const {
-        std::lock_guard lock(mutex_);
-        return pool_stats{.total = current_size_,
-                          .idle = idle_connections_.size(),
-                          .in_use = current_size_ - idle_connections_.size(),
-                          .leaked_at_close = leaked_at_close_,
-                          .closed = closed_};
+        const auto state = state_;
+        std::lock_guard lock(state->mutex);
+        return {
+            .total = state->total,
+            .idle = state->idle,
+            .in_use = state->total - state->idle,
+            .leaked_at_close = state->leaked_at_close,
+            .closed = state->closed,
+            .leased = state->leased,
+            .connecting = state->connecting,
+            .checking = state->checking,
+            .retiring = state->retiring,
+            .waiters = state->waiters,
+        };
     }
-
-    // Set on invalid configuration or when warmup connections could not be prepared. `acquire`
-    // keeps returning this error until the pool is replaced.
     [[nodiscard]] std::optional<db_error> warmup_error() const {
-        std::lock_guard lock(mutex_);
-        return warmup_error_;
+        const auto state = state_;
+        std::lock_guard lock(state->mutex);
+        return state->warmup_error;
     }
-
-    asterorm::result<lease_type> acquire() {
-        std::unique_lock lock(mutex_);
-        if (warmup_error_)
-            return std::unexpected(*warmup_error_);
-
-        const auto timeout_time = std::chrono::steady_clock::now() + config_.acquire_timeout;
-
+    result<lease_type> acquire() {
+        const auto state = state_;
+        const auto deadline = detail::pool_wait_deadline(state->config.acquire_timeout);
         for (;;) {
-            if (closed_)
-                return std::unexpected(closed_error());
-
-            if (!idle_connections_.empty()) {
-                auto conn = std::move(idle_connections_.back());
-                idle_connections_.pop_back();
-                if (!conn.is_open()) {
-                    --current_size_;
-                    cv_.notify_all();
-                    continue;
-                }
-                if (config_.statement_timeout) {
-                    // A popped idle connection still owns its existing capacity slot.
-                    slot_reservation reservation{*this, lock};
-                    lock.unlock();
-                    auto configured = detail::configure_statement_timeout(conn, config_);
-                    if (!configured) {
-                        return std::unexpected(configured.error());
+            typename state_type::entry_ptr candidate;
+            phase selected{};
+            {
+                std::unique_lock lock(state->mutex);
+                for (;;) {
+                    if (state->closed) {
+                        return std::unexpected(detail::pool_closed_error());
                     }
-                    lock.lock();
-                    if (closed_) {
-                        lock.unlock();
-                        detail::close_configured_connection(conn, config_);
-                        return std::unexpected(closed_error());
+                    if (state->warmup_error) {
+                        return std::unexpected(*state->warmup_error);
                     }
-                    reservation.disarm();
-                }
-                return lease_type{std::move(conn), this, alive_flag_};
-            }
-
-            if (current_size_ < config_.max_size) {
-                ++current_size_;
-                // Releases the reserved slot if connect throws or returns an error.
-                slot_reservation reservation{*this, lock};
-                lock.unlock();
-
-                auto conn_res = driver_.connect(config_.conninfo);
-                if (!conn_res)
-                    return std::unexpected(conn_res.error());
-
-                detail::configure_connection(*conn_res, config_);
-                auto configured = detail::configure_statement_timeout(*conn_res, config_);
-                if (!configured) {
-                    return std::unexpected(configured.error());
-                }
-                lock.lock();
-                if (closed_) {
-                    lock.unlock();
-                    detail::close_configured_connection(*conn_res, config_);
-                    return std::unexpected(closed_error());
-                }
-                reservation.disarm();
-                return lease_type{std::move(*conn_res), this, alive_flag_};
-            }
-
-            if (cv_.wait_until(lock, timeout_time) == std::cv_status::timeout) {
-                if (idle_connections_.empty() && !closed_) {
-                    db_error err;
-                    err.kind = db_error_kind::connection_failed;
-                    err.message = "Connection pool acquire timeout";
-                    return std::unexpected(err);
+                    if (state->idle_head) {
+                        candidate = std::move(state->idle_head);
+                        state->idle_head = std::move(candidate->next);
+                        --state->idle;
+                        ++state->checking;
+                        selected = phase::checking;
+                        break;
+                    }
+                    if (state->total < state->config.max_size) {
+                        ++state->total;
+                        ++state->connecting;
+                        selected = phase::connecting;
+                        break;
+                    }
+                    if (std::chrono::steady_clock::now() >= deadline) {
+                        db_error error;
+                        error.kind = db_error_kind::timeout;
+                        error.message = "Connection pool acquire timeout";
+                        return std::unexpected(std::move(error));
+                    }
+                    ++state->waiters;
+                    try {
+                        state->condition.wait_until(lock, deadline);
+                    } catch (...) {
+                        --state->waiters;
+                        throw;
+                    }
+                    --state->waiters;
                 }
             }
+            reservation reserved{state, selected, std::move(candidate)};
+            if (selected == phase::connecting) {
+                auto connected = state->driver.connect(state->config.conninfo);
+                if (!connected) {
+                    return std::unexpected(connected.error());
+                }
+                reserved.entry =
+                    std::make_unique<typename state_type::entry>(std::move(*connected));
+                detail::configure_connection(reserved.entry->connection, state->config);
+            } else if (!reserved.entry->connection.is_open()) {
+                continue;
+            }
+            auto configured =
+                detail::configure_statement_timeout(reserved.entry->connection, state->config);
+            if (!configured) {
+                return std::unexpected(configured.error());
+            }
+            {
+                std::lock_guard lock(state->mutex);
+                if (!state->closed) {
+                    --state->count(selected);
+                    ++state->leased;
+                    reserved.active = false;
+                    return lease_type{state, std::move(reserved.entry)};
+                }
+            }
+            return std::unexpected(detail::pool_closed_error());
         }
-    }
-
-    void release(connection_type&& conn) {
-        std::unique_lock lock(mutex_);
-        const bool reusable = !closed_ && [&] {
-            if (!conn.is_open()) {
-                return false;
-            }
-            if constexpr (detail::has_pool_reuse_check<connection_type>) {
-                return conn.is_pool_reusable();
-            }
-            return true;
-        }();
-        if (reusable) {
-            idle_connections_.push_back(std::move(conn));
-        } else {
-            if constexpr (detail::has_pool_reuse_check<connection_type>) {
-                // Explicit release_to_pool() can leave the lease object alive.
-                // Close unread native work before its capacity slot is freed.
-                lock.unlock();
-                conn.close();
-                lock.lock();
-            }
-            // close() may have expired and reset accounting while unlocked.
-            if (current_size_ > 0) {
-                --current_size_;
-            }
-        }
-        cv_.notify_all();
     }
 
   private:
-    Driver driver_;
-    pool_config config_;
-
-    mutable std::mutex mutex_;
-    std::condition_variable cv_;
-    std::vector<connection_type> idle_connections_;
-    size_t current_size_{0};
-    size_t leaked_at_close_{0};
-    bool closed_{false};
-    std::optional<db_error> warmup_error_;
-    std::shared_ptr<std::atomic<bool>> alive_flag_{std::make_shared<std::atomic<bool>>(true)};
-    std::chrono::milliseconds close_timeout_{std::chrono::seconds(10)};
-
-    void fail_warmup(db_error error) {
-        idle_connections_.clear();
-        current_size_ = 0;
-        warmup_error_ = std::move(error);
-    }
-
-    [[nodiscard]] static db_error closed_error() {
-        db_error err;
-        err.kind = db_error_kind::connection_failed;
-        err.message = "Connection pool is closed";
-        return err;
-    }
-
-    // Decrements current_size_ unless disarm() is called after a successful connect.
-    class slot_reservation {
-      public:
-        slot_reservation(connection_pool& pool, std::unique_lock<std::mutex>& lock)
-            : pool_(&pool), lock_(&lock) {}
-        slot_reservation(const slot_reservation&) = delete;
-        slot_reservation& operator=(const slot_reservation&) = delete;
-        ~slot_reservation() {
-            if (!active_)
-                return;
-            if (!lock_->owns_lock())
-                lock_->lock();
-            // close() may already have expired its wait and reset the count.
-            if (pool_->current_size_ > 0) {
-                --pool_->current_size_;
+    struct reservation {
+        std::shared_ptr<state_type> state;
+        phase current;
+        state_type::entry_ptr entry;
+        bool active{true};
+        ~reservation() noexcept {
+            if (active) {
+                state->retire(std::move(entry), current);
             }
-            pool_->cv_.notify_all();
         }
-        void disarm() {
-            active_ = false;
-        }
-
-      private:
-        connection_pool* pool_;
-        std::unique_lock<std::mutex>* lock_;
-        bool active_{true};
     };
+    std::shared_ptr<state_type> state_;
 };
-
 } // namespace asterorm

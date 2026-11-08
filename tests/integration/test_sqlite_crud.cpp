@@ -13,6 +13,7 @@
 #include "support/aggregate_extensions.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
+#include "support/pool_foundation.hpp"
 #include "support/recursive_query.hpp"
 #include "support/set_query.hpp"
 #include "support/transactional_session.hpp"
@@ -721,4 +722,8 @@ TEST_CASE("SQLite Integration: aggregate extensions", "[sqlite][aggregate-extens
 
 TEST_CASE("sqlite Integration: combined advanced query", "[sqlite][advanced-query]") {
     asterorm::test::check_composed_query(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("sqlite Integration: pool ownership foundation", "[sqlite][pool-foundation]") {
+    asterorm::test::check_pool_foundation(asterorm::sqlite::driver{}, ":memory:");
 }

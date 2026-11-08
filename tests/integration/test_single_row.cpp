@@ -247,7 +247,8 @@ TEST_CASE("PG pool discards a reader escaped from an unreserved callback", "[pg]
     auto explicitly_released =
         stream_take(lease->open_single_row("SELECT generate_series(1,1000)"));
     lease.release_to_pool();
-    REQUIRE_FALSE(lease->is_open());
+    // A returned lease no longer grants connection access. The escaped reader
+    // must still observe native owner invalidation before capacity is reused.
     REQUIRE_FALSE(explicitly_released.next().has_value());
     REQUIRE(pool.stats().total == 0);
     REQUIRE(stream_take(db.native_scalar<int>("SELECT 7")) == 7);

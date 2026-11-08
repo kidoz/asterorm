@@ -15,27 +15,40 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 | `statement_timeout` | `nullopt` | PostgreSQL session baseline on creation/checkout; optional milliseconds, 0 disables, maximum 2,147,483,647 |
 
 `connection_pool<Driver>::acquire()` returns `result<lease_type>`. A lease is
-move-only and returns its connection on destruction or `release_to_pool()`.
+move-only and returns its connection without throwing on destruction or
+`release_to_pool()`. Pool bookkeeping allocates no memory on return. A moved or
+released lease no longer grants access. Direct lease construction and raw
+`pool.release(connection)` are removed; use `acquire()`.
 An optional `bool is_pool_reusable() const noexcept` plus `void close() noexcept`
 lets an adapter reject idle reuse. Opted-in discarded connections close outside
 the pool mutex before their capacity slot is freed, including explicit release.
 PostgreSQL uses this to discard connections with unread single-row results or
 owned cursor portals.
-`warmup_error()` reports retained invalid explicit timeout configuration or a startup/setup failure. `stats()` returns pool
-counts and shutdown state. `close()` prevents further acquisition and waits
-for outstanding leases up to an internal deadline.
+`warmup_error()` retains invalid configuration or startup/setup failure. Construction
+rejects zero maximum, minimum above maximum and negative acquire timeout before
+dialing. Zero acquire timeout permits immediate idle/new capacity but never waits;
+huge durations saturate the steady deadline. Connect/setup is not timed by it.
 
-Size constraints are currently caller-owned: constructor warmup does not reject
-`min_size > max_size` or a zero maximum. `in_use` includes reserved connect/setup
-slots. Close wakes capacity waiters immediately, but does not cancel synchronous
-connects; its closed error currently has kind `connection_failed`. The
-[production-pool inventory and v1 contract](../production-pool-design.md) separate
-these current behaviors from planned ownership, health, aging and metric changes.
+`close() noexcept` wakes waiters and prevents new handoff without draining active
+leases or setup. Held leases use shared state and may outlive the facade. Detached
+idle native cleanup occurs outside the state mutex and may still take native-close
+time. A closed acquisition returns `pool_closed`; capacity timeout returns `timeout`.
+Existing enum values retain their numbers. Native setup failure/exception takes
+precedence over concurrent shutdown; successful late setup is discarded.
+
+Stats satisfy `total == idle + in_use` and
+`in_use == leased + connecting + checking + retiring`; `waiters` counts capacity
+waiters. `leaked_at_close` snapshots non-idle slots at the first close transition,
+including setup, and no longer means the old ten-second wait expired. The
+[ownership guide](../how-to/pool-ownership-and-shutdown.md) covers migration;
+[design](../production-pool-design.md) separates the remaining health/age/metric work.
 
 Explicit timeout configuration rejects unsupported adapters before connecting,
 including lazy pools. New/idle setup failures discard the connection; lazy/reuse
 errors permit retry. See [pool timeout behavior](../how-to/pooling-and-observability.md#set-a-postgresql-statement-timeout-baseline).
-The appended `pool_config` field changes its layout; rebuild consumers together.
+Pool, lease and stats layouts changed; rebuild library/consumers together. Connection
+types must be nothrow move-constructible/destructible. The earlier appended
+`pool_config` timeout field also requires coordinated rebuilds.
 
 ## Session operations
 

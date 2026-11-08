@@ -4,6 +4,7 @@ core_tests = executable(
     'unit/test_core.cpp',
     'unit/test_mysql_dialect.cpp',
     'unit/test_pool.cpp',
+    'unit/test_pool_foundation.cpp',
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
@@ -30,6 +31,11 @@ core_tests = executable(
 )
 
 test('core unit tests', core_tests)
+
+pool_allocation_probe = executable('pool_allocation_probe', 'support/pool_allocation.cpp',
+  dependencies : [asterorm_core_dep],
+)
+test('pool allocation-free return', pool_allocation_probe)
 
 test('typed query guide snippets', python_program, args : files('check_typed_query_guide.py'))
 
@@ -86,6 +92,9 @@ if sqlite_enabled
   )
   test('aggregate extension guide', python_program,
     args : [files('check_aggregate_guide.py'), '--build-root', meson.project_build_root()],
+  )
+  test('pool ownership guide', python_program,
+    args : [files('check_pool_guide.py'), '--build-root', meson.project_build_root()],
   )
   test('window function guide', python_program,
     args : [files('check_window_guide.py'), '--build-root', meson.project_build_root()],

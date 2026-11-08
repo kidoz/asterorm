@@ -1,15 +1,16 @@
 # Production connection pool: inventory and v1 contract
 
-Reviewed on 2026-11-08. **Inventory and implementation contract complete;
-production-pool expansion remains planned.** Current code is
+Reviewed on 2026-11-08. **Ownership/configuration/shutdown foundation implemented;
+health, aging, diagnostics and cache/profile policy remain planned.** Current code is
 [connection_pool.hpp](../include/asterorm/pool/connection_pool.hpp), with adapter
 state/cache behavior in `src/database/{postgres,sqlite,mysql}/connection.cpp`.
-[Evidence](evidence/production-pool-inventory/README.md) binds fresh probes,
-regression checks and current source hashes. Proposed names below are not available
-APIs. The [advanced-query review](advanced-query-acceptance.md) remains historical
+[Inventory evidence](evidence/production-pool-inventory/README.md) retains its original
+probes and source hashes. The [current ownership guide](how-to/pool-ownership-and-shutdown.md)
+and [delivery evidence](evidence/pool-ownership/README.md) cover the implemented slice.
+Health/age/diagnostic/profile options below remain proposed. The [advanced-query review](advanced-query-acceptance.md) remains historical
 acceptance of that separate feature.
 
-## Current behavior and gaps
+## Inventory before implementation
 
 | Area | Observed current behavior | Required consequence |
 | --- | --- | --- |
@@ -25,7 +26,8 @@ acceptance of that separate feature.
 | Returns | Idle vector insertion may allocate/throw; a bare lease destructor calls it | Destruction/release must be nonthrowing; allocation failure discards safely and frees capacity |
 | Aging/diagnostics | No birth/return/checkout timestamps, reaper, waiter gauge, acquisition histogram or lease-duration diagnostic | Add explicit entry states, bounded metrics and structured warning delivery |
 
-These are inventory findings, not failing new production acceptance tests. Native
+These historical findings motivated the foundation and remaining work; the guide
+above describes current behavior. They are not failing production acceptance tests. Native
 raw-transaction probes use direct connection APIs, then explicitly roll back;
 normal managed-session transaction ownership remains covered by its existing tests.
 The alive flag supports sequential late lease destruction today; it does not pin
@@ -111,7 +113,7 @@ bound that work. The existing ten-second active-lease wait is removed. Do not
 interrupt a transaction/stream already owned by a borrower or close its handle
 from a maintenance thread.
 
-The facade owns one optional maintenance `jthread`; it uses weak state access,
+In the future aging slice, the facade owns one optional maintenance `jthread`; it uses weak state access,
 stop-aware waiting and no user callbacks. Shutdown requests stop and wakes it;
 destruction joins the worker outside the state mutex. Destruction can still await
 an already-running native idle-close operation. Avoid a state/worker shared-pointer
@@ -124,6 +126,8 @@ serialize their own shared state. No new guarantee of driver-call serialization
 is introduced.
 
 ## Health, dirty returns and age
+
+This section remains the implementation target after the ownership foundation.
 
 Checkout order: reserve/pop a candidate, reject locally unusable/expired state,
 run optional health validation, apply the existing explicit timeout baseline,
@@ -244,8 +248,8 @@ must not be labeled PgBouncer acceptance.
 
 | Delivery | Required checks before completion |
 | --- | --- |
-| **Next: ownership/configuration/shutdown foundation** | Shared state/entries and move-safe noexcept lease return; eager capacity/duration validation; closed/timeout error semantics; close wakes waiters without waiting for borrowers; completion after close discards safely. Deterministic blocked-connect/return/close races, allocation failure, late leases, repeated close and unchanged session/stream/testing ownership; all native adapters and installed consumers |
-| Bounded health and dirty-return handling | Native PG stale-backend replacement/rejection; successful and timed-out ping fully drained/discarded; no mutex-held I/O, retry or observer/cache pollution; PG/SQLite/MySQL dirty returns/readers discarded; unsupported pre-ping rejected before connect |
+| **Implemented: ownership/configuration/shutdown foundation** | Shared state/entries and move-safe noexcept lease return; eager capacity/duration validation; closed/timeout error semantics; close wakes waiters without waiting for borrowers; completion after close discards safely. Deterministic blocked-connect/return/close races, allocation failure, late leases, repeated close and unchanged session/stream/testing ownership; all native adapters and installed consumers |
+| **Next: bounded health and dirty-return handling** | Native PG stale-backend replacement/rejection; successful and timed-out ping fully drained/discarded; no mutex-held I/O, retry or observer/cache pollution; PG/SQLite/MySQL dirty returns/readers discarded; unsupported pre-ping rejected before connect |
 | Aging and diagnostics | Fake-clock checkout/return/reaper boundaries, over-age held lease retention, stop/join/shutdown races; queue gauges and histogram/counter invariants, warning once per generation, bounded warning overflow and no callbacks on destruction |
 | Cache/profile policy | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
 | Combined local acceptance | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
@@ -253,6 +257,28 @@ must not be labeled PgBouncer acceptance.
 Rebuild library and consumers when implementation changes pool/config/stats/lease/
 adapter layouts or error enums. Preserve the umbrella CMake target and pkg-config
 dependency contract; export required thread linkage for public header workers.
-No implementation or ABI changes occur in this inventory step. The next action
-is the **ownership/configuration/shutdown foundation**. Health validation follows
-that lifetime work.
+The inventory introduced no ABI change. The foundation now changes pool, lease and
+stats layouts; rebuild consumers and update error handling as described in the
+ownership guide. Next implement **bounded health and dirty-return handling**.
+
+## Ownership implementation follow-up (2026-11-08)
+
+The foundation replaces raw pool/alive pointers with shared state and owned
+intrusive connection entries. Return bookkeeping allocates no memory and does not
+throw. Retiring entries keep capacity reserved until native cleanup completes
+outside the mutex. Close snapshots non-idle slots, wakes waiters and stops handoff
+without draining borrowers/setup. Explicit leases remain usable after facade
+destruction; facade member calls and sessions keep their caller lifetime contract.
+
+Existing size/acquire-timeout validation now happens before dialing, including
+extreme negative values. Saturating steady deadlines avoid conversion/addition
+overflow, and zero timeout never queues. The appended `pool_closed` enum preserves
+existing values; native work failure/exception wins over concurrent shutdown, while
+successful late setup is discarded. State/waiter gauges are implemented; histogram,
+reaper, warning, health and proxy options are not introduced as no-ops.
+
+The guide and evidence above cover move/late-return/destruction races, blocked
+native cleanup, exception/slot accounting, allocation-denial probes, native held
+leases/transactions and reader invalidation, sanitizer/race checks and installed
+consumers. Direct lease construction/raw pool returns are removed. Earlier capture
+scripts remain historical; do not rerun their gap observations as feature tests.

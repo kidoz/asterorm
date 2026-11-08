@@ -3,6 +3,7 @@
 
 #include "asterorm/pool/connection_pool.hpp"
 #include "asterorm/postgres/driver.hpp"
+#include "support/pool_foundation.hpp"
 
 TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     const char* env_conninfo = std::getenv("ASTERORM_TEST_CONNINFO");
@@ -30,4 +31,12 @@ TEST_CASE("PG Integration: Connection Pool", "[pg][pool]") {
     auto res = lease1.value()->execute("SELECT 1");
     REQUIRE(res.has_value());
     REQUIRE(res.value().rows() == 1);
+}
+
+TEST_CASE("PG Integration: pool ownership foundation", "[pg][pool-foundation]") {
+    const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_pool_foundation(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
 }

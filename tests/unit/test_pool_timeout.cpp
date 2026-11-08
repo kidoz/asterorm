@@ -327,7 +327,7 @@ TEST_CASE("Pool timeout: failed setup frees capacity for a waiting borrower", "[
     REQUIRE(state->closes == 1);
 }
 
-TEST_CASE("Pool timeout: late setup cannot underflow accounting after close expires",
+TEST_CASE("Pool timeout: late setup retains accounting after non-draining close",
           "[pool-timeout]") {
     auto config = timeout_config();
     config.max_size = 1;
@@ -337,11 +337,13 @@ TEST_CASE("Pool timeout: late setup cannot underflow accounting after close expi
     asterorm::connection_pool<timeout_driver> pool{timeout_driver{state}, config};
     auto pending = std::async(std::launch::async, [&] { return pool.acquire(); });
     const bool entered = await_setup(*state);
-    // Let the existing ten-second close deadline expire while setup is outstanding.
     pool.close();
+    const auto closed = pool.stats();
     release_setup(*state);
     auto acquired = pending.get();
     REQUIRE(entered);
+    REQUIRE(closed.total == 1);
+    REQUIRE(closed.checking + closed.connecting == 1);
     REQUIRE_FALSE(acquired.has_value());
     REQUIRE(pool.stats().total == 0);
     REQUIRE(pool.stats().in_use == 0);

@@ -23,6 +23,7 @@ Each addresses a specific task.
 - [Prepare reference data once for transactional tests](worked-reference-fixtures.md)
 - [Apply and roll back schema migrations](migrations.md)
 - [Configure pools and observe queries](pooling-and-observability.md)
+- [Own leases and shut down a pool](pool-ownership-and-shutdown.md)
 - [Run the test suites](testing.md)
 
 [Documentation home](../README.md)

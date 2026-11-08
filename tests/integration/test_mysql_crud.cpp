@@ -13,6 +13,7 @@
 #include "support/aggregate_extensions.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
+#include "support/pool_foundation.hpp"
 #include "support/recursive_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
@@ -514,4 +515,8 @@ TEST_CASE("mysql Integration: combined advanced query", "[mysql][advanced-query]
         asterorm::mysql::driver{},
         configured ? configured
                    : "host=127.0.0.1 port=3307 dbname=orm_test user=orm_test password=orm_test");
+}
+
+TEST_CASE("mysql Integration: pool ownership foundation", "[mysql][pool-foundation]") {
+    asterorm::test::check_pool_foundation(asterorm::mysql::driver{}, conninfo());
 }

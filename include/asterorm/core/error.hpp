@@ -15,7 +15,8 @@ enum class db_error_kind : std::uint8_t {
     deadlock_detected,
     stale_write,
     timeout,
-    unknown
+    unknown,
+    pool_closed
 };
 
 struct db_error {

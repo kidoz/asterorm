@@ -18,8 +18,9 @@ where available; do not assume every field is present.
 | `serialization_failure` | Transaction serialization conflict; retry helper can retry |
 | `deadlock_detected` | Deadlock; retry helper can retry |
 | `stale_write` | Optimistic-lock version mismatch |
-| `timeout` | Backend timeout, such as MySQL lock-wait timeout (error 1205) |
+| `timeout` | Pool capacity wait expiry (empty SQLSTATE), or backend timeout such as MySQL lock-wait timeout (error 1205) |
 | `unknown` | Unclassified failure |
+| `pool_closed` | Terminal pool shutdown; no new lease may be handed out |
 
 `classify_sqlstate()` classifies known SQLSTATE codes, returns `query_failed`
 for unrecognized nonempty codes, and `unknown` for empty input. MySQL native

@@ -22,16 +22,18 @@ Include `<asterorm/postgres/driver.hpp>` and `<asterorm/session.hpp>` and use th
 snippet in a function returning `asterorm::result<...>`. Keep `min_size` no
 greater than `max_size`, and choose a positive `max_size`.
 
-Invalid explicit statement-timeout configuration or a failed constructor warmup is
-retained: `acquire()` keeps returning that error. Capacity settings are currently
-the caller's responsibility; the pool does not reject `min_size > max_size` or a
-zero maximum during construction. The
-[production-pool contract](../production-pool-design.md) records the planned validation.
+Invalid size/timeout configuration or a failed constructor warmup is retained:
+`acquire()` keeps returning that error until close or replacement. Construction
+rejects a zero maximum, `min_size > max_size`, and a negative acquire timeout
+before connecting. A closed pool returns `pool_closed`; exhausted capacity returns
+`timeout`. The [ownership guide](pool-ownership-and-shutdown.md) covers these errors.
 Correct the settings or service availability and construct a replacement pool.
 With `min_size = 0`, the first acquire opens the first connection.
 
-`pool.stats()` reports `total`, `idle`, `in_use`, `leaked_at_close`, and `closed`.
-Use it to distinguish an exhausted pool from a connection failure.
+`pool.stats()` reports `total`, `idle`, `in_use`, `leaked_at_close`, and `closed`,
+plus `leased`, `connecting`, `checking`, `retiring` and `waiters`. Reserved setup/
+cleanup slots remain counted until completion. These gauges distinguish held
+leases, exhausted capacity and work still finishing after close.
 
 For private SQLite `:memory:` databases, set both sizes to one. For persistence,
 set `conninfo` to a file path or supported `file:` URI. Each new SQLite
@@ -96,18 +98,21 @@ Custom session facades without a compatible `observed_execute` helper retain
 direct typed execution and do not gain these events automatically.
 
 Keep callbacks short and non-throwing. They run while the connection lease is
-held; calling `pool.close()` there waits for outstanding leases and can stall.
+held; do not wait for another lease from that pool. Initiate shutdown outside
+callbacks, since detached idle native cleanup can still take time.
 
 ## Shut down
 
-Finish transactions and release explicit leases before calling `pool.close()`.
-Close prevents new acquisitions and waits for outstanding leases up to its
-internal deadline. See the [pool reference](../reference/connections.md) for
-defaults and lifetime rules.
+`pool.close()` prevents new acquisitions and wakes waiters without waiting for
+borrowers or in-flight connect/setup. Held leases and managed transactions remain
+usable until their owners finish; returns after close destroy their connections.
+Explicit leases may outlive the facade; sessions and facade member calls retain
+their normal lifetime requirements. See the [ownership guide](pool-ownership-and-shutdown.md)
+and [pool reference](../reference/connections.md).
 
 Capacity waiters are notified when close begins; this does not interrupt a
 synchronous native connect. `is_open()` is a local state check, not an on-borrow
-health query. Pre-ping, idle/lifetime retirement, acquisition metrics and lease
+health query. Pre-ping, idle/lifetime retirement, acquisition histograms and lease
 warning options remain planned in the production-pool contract.
 
 Finish raw transactions before returning explicit leases. Without the timeout
