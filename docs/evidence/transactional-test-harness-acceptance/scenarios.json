@@ -1,0 +1,278 @@
+{
+  "pg": {
+    "backend": "pg",
+    "scenarios": [
+      {
+        "selection": "[transactional:pg-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 7,
+          "bodies": 7,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:pg-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 7,
+          "bodies": 7,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:pg-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 7,
+          "bodies": 7,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:pg-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[transactional:pg-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[reference-untagged]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "close",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 1,
+          "bodies": 0,
+          "connect_attempts": 2,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "marker",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 2,
+          "bodies": 0,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "baseline",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 2,
+          "bodies": 0,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "terminate",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 7,
+          "identity": 1,
+          "validations": 1,
+          "bodies": 0,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      }
+    ]
+  },
+  "sqlite": {
+    "backend": "sqlite",
+    "scenarios": [
+      {
+        "selection": "[transactional:sqlite-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 4,
+          "bodies": 4,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:sqlite-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 4,
+          "bodies": 4,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:sqlite-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 4,
+          "bodies": 4,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[transactional:sqlite-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[transactional:sqlite-crud]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[reference-untagged]",
+        "damage": null,
+        "exit_code": 0,
+        "counts": {
+          "preparations": 0,
+          "schema": 0,
+          "identity": 0,
+          "validations": 0,
+          "bodies": 0,
+          "connect_attempts": 0,
+          "native_connects": 0
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "close",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 1,
+          "bodies": 0,
+          "connect_attempts": 2,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "marker",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 2,
+          "bodies": 0,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      },
+      {
+        "selection": "[reference-loss]",
+        "damage": "baseline",
+        "exit_code": 1,
+        "counts": {
+          "preparations": 1,
+          "schema": 1,
+          "identity": 1,
+          "validations": 2,
+          "bodies": 0,
+          "connect_attempts": 1,
+          "native_connects": 1
+        }
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <string_view>
+#include <type_traits>
 
 #include "asterorm/testing/catch2.hpp"
 
@@ -25,6 +26,19 @@ template <typename Fixture> void damage_idle_reference() {
             auto removed = connection.execute("DROP TABLE asterorm_reference_identity");
             if (!removed) {
                 return std::unexpected(std::move(removed.error()));
+            }
+        } else if (reference_damage_mode() == "baseline") {
+            const auto statement = [] {
+                using connection_type = std::remove_reference_t<decltype(connection)>;
+                if constexpr (sql::dialect_for<connection_type>() == sql::dialect::postgres) {
+                    return "UPDATE pg_temp.crud_users SET name='Corrupted reference'";
+                } else {
+                    return "UPDATE temp.reference_users SET name='Corrupted reference'";
+                }
+            }();
+            auto changed = connection.execute(statement);
+            if (!changed) {
+                return std::unexpected(std::move(changed.error()));
             }
         } else {
             connection.close();

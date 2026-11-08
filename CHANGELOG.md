@@ -6,6 +6,10 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Source-bound local transactional harness acceptance review, combining generic
+  scopes, optional Catch2 integration and worked reference fixtures. Fresh native
+  checks also reject corrupted reference data on an otherwise healthy connection.
+
 - Checked PostgreSQL/SQLite reference fixtures with TEMP baselines, retained
   reference IDs, one physical connection attempt and validation before tagged
   body access. Native loss never silently reconnects or re-runs preparation.

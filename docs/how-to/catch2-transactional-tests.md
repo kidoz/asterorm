@@ -129,5 +129,6 @@ control and external side effects are outside isolation. This is serial test
 infrastructure, with no promise of cleanup after fatal signals/process termination
 or a whole-scope deadline. The [worked reference fixtures](worked-reference-fixtures.md)
 show a driver that forbids replacement connections, the migrated seven-path
-PostgreSQL CRUD case, and four SQLite generator/section paths. Combined harness
-acceptance remains the next delivery.
+PostgreSQL CRUD case, and four SQLite generator/section paths. The
+[combined local review](../transactional-test-harness-acceptance.md) records
+acceptance within the revised v1 contract and the remaining release boundaries.

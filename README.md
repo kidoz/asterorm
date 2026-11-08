@@ -74,7 +74,8 @@ reader API, both implementations and native feasibility probes.
 Both PostgreSQL streaming strategies are implemented and
 [locally accepted within the revised v1 contract](docs/streaming-acceptance.md).
 The [transactional test harness contract](docs/transactional-test-harness-design.md)
-records the generic scope, Catch2 adapter and worked fixture migration; combined acceptance remains planned.
+records the generic scope, Catch2 adapter and worked fixture migration, now
+[locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
 
 ## Backends
 

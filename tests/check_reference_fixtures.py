@@ -69,7 +69,7 @@ for option in ("--list-tests", "--list-tags"):
 receipt = child(probe, "[reference-untagged]", invalid_settings=True)
 assert all(count == 0 for count in receipt["counts"].values()), receipt
 receipts.append(receipt)
-for damage in (("close", "marker", "terminate") if backend == "pg" else ("close", "marker")):
+for damage in (("close", "marker", "baseline", "terminate") if backend == "pg" else ("close", "marker", "baseline")):
     receipt = child(probe, "[reference-loss]", status=1, damage=damage)
     counts = receipt["counts"]
     assert counts["preparations"] == counts["native_connects"] == counts["identity"] == 1, receipt
@@ -81,6 +81,9 @@ for damage in (("close", "marker", "terminate") if backend == "pg" else ("close"
         assert counts["connect_attempts"] == 1 and counts["validations"] == 2, receipt
         # The failed validation must preserve the native error and block typed access.
         assert "asterorm_reference_identity" in receipt["diagnostic"], receipt
+    elif damage == "baseline":
+        assert counts["connect_attempts"] == 1 and counts["validations"] == 2, receipt
+        assert "baseline changed" in receipt["diagnostic"], receipt
     else:
         assert counts["connect_attempts"] in (1, 2), receipt
         assert counts["validations"] in (1, 2), receipt

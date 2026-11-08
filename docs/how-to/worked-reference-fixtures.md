@@ -70,6 +70,8 @@ not a freshly measured timing baseline. No speedup is claimed.
 
 Commit/transaction, migration, locking/timeout, streaming, native loss and
 multi-session integration cases retain their own sessions and stay untagged.
-The [delivery contract](../transactional-test-harness-design.md) and
+The [delivery contract](../transactional-test-harness-design.md), historical
 [worked fixture verification](../evidence/worked-transactional-fixtures/README.md)
-record the current scope. Combined acceptance and timing evidence remain separate.
+and [combined local review](../transactional-test-harness-acceptance.md) record the
+current scope. Acceptance now also checks corrupted reference rows on a healthy
+connection. Timing/speedup remains unclaimed.

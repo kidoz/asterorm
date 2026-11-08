@@ -1,11 +1,13 @@
 # Transactional test harness: inventory and implementation contract
 
 Reviewed on 2026-11-08. **The generic scope, optional Catch2 adapter/runner and
-worked PostgreSQL/SQLite reference fixtures are implemented; combined acceptance
-remains planned.** The historical [capture](evidence/transactional-test-harness-inventory/README.md)
+worked PostgreSQL/SQLite reference fixtures are implemented and locally accepted
+within the revised v1 contract.** The
+[combined review](transactional-test-harness-acceptance.md) records current evidence
+and release boundaries. The historical [capture](evidence/transactional-test-harness-inventory/README.md)
 was compiled and run against the configured PostgreSQL, SQLite and Catch2 targets.
 Its results establish the inventory baseline; the implementation follow-up below
-records the delivered core API. This is not combined harness acceptance.
+records the delivered API; the original inventory itself was not harness acceptance.
 
 ## Inventory before implementation
 
@@ -196,9 +198,9 @@ locking/timeout, streaming, connection-loss and multi-session tests stay untagge
 | Delivery | Required acceptance |
 | --- | --- |
 | Generic scope and session ownership — **implemented** | [No-server cases](../tests/unit/test_transactional_session.cpp), [shared native fixture](../tests/support/transactional_session.hpp) and [PG cases](../tests/integration/test_transactional_session.cpp): SQL/order, moves, stale handles, pre-lease rejection, completion gates, observer restoration and injected SQL/C++/pool-return allocation failures. Native PG/SQLite cases verify row/schema baselines survive, invocation writes disappear, failed statements recover and dirty connections never return to reuse |
-| Catch2 adapter and runner — **implemented** | [39 subprocess scenarios](../tests/check_catch2_harness.py) prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, body exceptions, filters/listing and early abort; unknown/multiple tags and setup/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
+| Catch2 adapter and runner — **implemented** | [43 subprocess scenarios](../tests/check_catch2_harness.py) prove one prepare and one scope per partial invocation across SECTION/GENERATE, fatal REQUIRE, SKIP, body exceptions, filters/listing and early abort; unknown/multiple tags and setup/validation/cleanup errors produce nonzero process status without assertion macros in listeners. Untagged cases do no fixture work |
 | Worked fixtures and migration — **implemented** | [Main PostgreSQL CRUD case](../tests/integration/test_crud.cpp) uses its provider across seven paths; the [SQLite example](../tests/integration/test_sqlite_reference_fixture.cpp) uses four generator/section paths. [Process checks](../tests/check_reference_fixtures.py) verify baselines, concurrent processes, lazy startup and native/identity loss without replacement connections or reseeding |
-| **Next: public contract and combined review** | Compile/install helper examples, keep Catch2 opt-in, run no-server plus PG/SQLite/MySQL regressions, build/format/lint/standards checks, document compatibility/layout changes. Count setup/DDL reduction before claiming it; measure timing before claiming speedup |
+| Public contract and combined review — **locally accepted** | [Combined review](transactional-test-harness-acceptance.md) maps each revised v1 requirement to current code, native/no-server/subprocess checks, installed consumers and compatibility limits. Current setup dispatch counts are recorded; old DDL is a source comparison and no timing/speedup claim is made. Existing standards failures are not waived |
 
 ## Validation of this inventory
 
@@ -338,4 +340,21 @@ schema CREATE statements plus one identity CREATE for seven paths, compared with
 the prior source's repeated DROP/CREATE/cleanup calls. That source comparison is
 not a fresh old-run timing measurement; no speedup is claimed. Normal library
 reconnection policy, dependencies and session/connection layout are unchanged.
-The combined harness acceptance review remains the next delivery.
+Combined acceptance remained open at worked-fixture delivery.
+
+## Combined acceptance (2026-11-08)
+
+The [combined review](transactional-test-harness-acceptance.md) locally accepts the
+revised functional v1 contract. Fresh checks cover generic scope ownership and
+failure handling, optional Catch2 lifecycle/reporting, native fixture reuse and
+installed generic/adapter examples. One additional reference-process scenario per
+backend corrupts a baseline row while keeping the connection healthy; pinned
+validation blocks access without reconnecting or repeating preparation. The current
+matrix has 10 PG and 9 SQLite reference scenarios plus 43 adapter scenarios.
+
+The 23-target configured suite and a fresh nine-target SQLite-only build pass.
+Build/format/lint, focused generic/native sanitizers and CMake/shared pkg-config
+consumers pass. Standards remains at its same-date baseline of 53 errors and
+12 warnings. Source hashes and command receipts are recorded separately from all
+historical captures. No timing/speedup, remote CI or release readiness is claimed.
+Next follow the roadmap with a CTE/window/set-operation inventory and v1 contract.
