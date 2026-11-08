@@ -66,3 +66,11 @@ mysql-up:
 test-mysql: setup mysql-up
     meson configure {{build_dir}} -Dmysql=enabled
     meson test -C {{build_dir}} "core unit tests" "mysql unit tests" "mysql integration" --print-errorlogs
+
+# Opt-in, digest-pinned PgBouncer transaction-mode integration. Leaves services running.
+pgbouncer-up:
+    docker compose -f compose.yaml -f compose.pgbouncer.yaml --profile pgbouncer up -d --wait pgbouncer
+
+test-pgbouncer: setup pgbouncer-up
+    meson compile -C {{build_dir}} pg_integration
+    python3 tests/check_pgbouncer_profile.py --integration {{build_dir}}/tests/pg_integration

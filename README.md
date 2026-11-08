@@ -31,6 +31,7 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 
 - [Shared pool/lease ownership and non-draining shutdown](docs/how-to/pool-ownership-and-shutdown.md),
   eager size/timeout validation and explicit closed/capacity-timeout errors.
+- [Explicit statement cache policy and a restricted PostgreSQL transaction-pool profile](docs/how-to/pool-cache-and-profiles.md).
 - [Connection aging, metrics and structured lease diagnostics](docs/how-to/pool-aging-and-diagnostics.md).
 - [Bounded PostgreSQL pool health checks and dirty-return handling](docs/how-to/pool-health-and-reuse.md),
   with local reuse checks on PostgreSQL, SQLite and MySQL.
@@ -99,7 +100,8 @@ PG/SQLite FILTER and PostgreSQL DISTINCT ON are implemented. The complete subset
 The [production-pool inventory and v1 contract](docs/production-pool-design.md)
 record the delivery boundaries. Shared ownership, configuration validation and
 shutdown, bounded health, dirty-return handling, aging and diagnostics are implemented.
-Cache/profile policy is next.
+Cache/profile policy is implemented, with scoped local PgBouncer 1.24.1
+transaction-mode checks. Combined production-pool acceptance is next.
 
 ## Backends
 

@@ -131,3 +131,12 @@ explains idle-only background work, held-lease protection, acquisition outcome
 counters/histogram and `take_diagnostics()` pull delivery. Native cleanup and OS
 scheduling are not hard deadlines. Private SQLite memory contents vanish when
 the physical connection is retired.
+
+## Choose statement caching and a deployment profile
+
+Use `statement_cache_policy::off` to disable retained caching on PG/SQLite/MySQL;
+`per_connection` remains the default and capacity zero still disables it. The
+[cache/profile guide](pool-cache-and-profiles.md) explains the optional PG
+transaction-pool profile, early cache/timeout conflicts, prohibited session
+advisory/migration work and the separately checked pinned PgBouncer fixture.
+Per-session caching remains deferred.

@@ -6,6 +6,11 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Explicit off/per-connection statement cache policy and a PostgreSQL transaction-
+  pool profile with pre-connect cache/timeout validation and pre-SQL advisory/
+  migration admission. Added a digest-pinned opt-in PgBouncer transaction-mode
+  fixture and scoped integration checks. Rebuild pool/config/PG consumers.
+
 - Optional idle/lifetime retirement with a stop-aware worker, non-revoking held
   leases and checkout/return age validation. Added saturating acquisition counters,
   fixed duration buckets and bounded structured long-held-lease warning polling.

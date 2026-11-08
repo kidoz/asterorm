@@ -17,6 +17,8 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 | `idle_timeout` | `0ms` | Disabled at zero; otherwise expire idle entries since latest return |
 | `max_lifetime` | `0ms` | Disabled at zero; otherwise retire entries by age since connect success, preserving held leases |
 | `leak_threshold` | `0ms` | Disabled at zero; otherwise queue one long-held warning per checkout |
+| `statement_caching` | `per_connection` | `statement_cache_policy::off` disables retained caches; zero capacity remains an escape hatch |
+| `profile` | `direct` | PG-only `pool_profile::transaction_pool` requires effective cache off and absent session timeout |
 | `maintenance_interval` | `1000ms` | Strictly positive; worker starts only when aging/warnings are enabled |
 | `pre_ping_timeout` | `1000ms` | Ping flush/read/drain deadline; positive when enabled, nonnegative otherwise |
 
@@ -51,7 +53,7 @@ Stats satisfy `total == idle + in_use` and
 waiters. `leaked_at_close` snapshots non-idle slots at the first close transition,
 including setup, and no longer means the old ten-second wait expired. The
 [ownership guide](../how-to/pool-ownership-and-shutdown.md) covers migration;
-[design](../production-pool-design.md) separates the remaining cache/profile work.
+[design](../production-pool-design.md) records the implemented slices and remaining combined acceptance.
 
 Explicit timeout configuration rejects unsupported adapters before connecting,
 including lazy pools. New/idle setup failures discard the connection; lazy/reuse
@@ -74,6 +76,14 @@ noncumulative acquisition-duration buckets and `overdue_leases`.
 (slot/generation/held duration/warning severity); allocation failure preserves the
 queue. No logging callback runs on return or maintenance. Rebuild consumers for
 configuration/stat/entry layouts; installed package targets carry thread linkage.
+
+[Cache/profile policy](../how-to/pool-cache-and-profiles.md) adds pre-dial validation
+and optional pool admission metadata via `allows_session_advisory_locks()`. The PG
+transaction profile rejects session advisory APIs and serialized migrations before
+SQL, while managed transaction-local timeouts and WITHOUT HOLD cursors remain
+supported. Off bypasses retained cache entries on PG/SQLite/MySQL; PG bound calls
+use unnamed execution. Per-session caching remains deferred. Rebuild config/pool/
+PostgreSQL consumers; raw session-dependent SQL remains the caller's responsibility.
 
 ## Session operations
 

@@ -21,6 +21,9 @@
 
 namespace asterorm {
 
+enum class statement_cache_policy : std::uint8_t { per_connection, off };
+enum class pool_profile : std::uint8_t { direct, transaction_pool };
+
 struct pool_config {
     size_t min_size{1};
     size_t max_size{10};
@@ -34,6 +37,8 @@ struct pool_config {
     std::chrono::milliseconds max_lifetime{0};
     std::chrono::milliseconds leak_threshold{0};
     std::chrono::milliseconds maintenance_interval{1000};
+    statement_cache_policy statement_caching{statement_cache_policy::per_connection};
+    pool_profile profile{pool_profile::direct};
 };
 
 enum class pool_diagnostic_severity : std::uint8_t { warning };
@@ -118,12 +123,57 @@ template <typename Conn, typename = void> struct has_prepared_cache_limit : std:
 template <typename Conn>
 struct has_prepared_cache_limit<
     Conn, std::void_t<decltype(std::declval<Conn&>().set_max_prepared_statements(std::size_t{}))>>
-    : std::true_type {};
+    : std::is_same<decltype(std::declval<Conn&>().set_max_prepared_statements(std::size_t{})),
+                   void> {};
 
 template <typename Conn> void configure_connection(Conn& conn, const pool_config& config) {
     if constexpr (has_prepared_cache_limit<Conn>::value) {
-        conn.set_max_prepared_statements(config.prepared_statement_cache_size);
+        conn.set_max_prepared_statements(config.statement_caching == statement_cache_policy::off
+                                             ? 0
+                                             : config.prepared_statement_cache_size);
     }
+    if constexpr (requires {
+                      { conn.set_transaction_pool_profile(true) } noexcept -> std::same_as<void>;
+                  }) {
+        conn.set_transaction_pool_profile(config.profile == pool_profile::transaction_pool);
+    }
+}
+template <typename Conn> result<void> validate_pool_policy(const pool_config& config) {
+    const char* invalid{};
+    bool unsupported{};
+    if (config.statement_caching != statement_cache_policy::off &&
+        config.statement_caching != statement_cache_policy::per_connection) {
+        invalid = "Unknown statement_caching policy";
+    } else if (config.profile != pool_profile::direct &&
+               config.profile != pool_profile::transaction_pool) {
+        invalid = "Unknown pool profile";
+    } else if (config.statement_caching == statement_cache_policy::off &&
+               !has_prepared_cache_limit<Conn>::value) {
+        invalid = "This backend does not support explicit statement cache policy";
+        unsupported = true;
+    } else if (config.profile == pool_profile::transaction_pool) {
+        if constexpr (!requires(Conn& conn) {
+                          requires Conn::supports_transaction_pool_profile;
+                          {
+                              conn.set_transaction_pool_profile(true)
+                          } noexcept -> std::same_as<void>;
+                      }) {
+            invalid = "This backend does not support the transaction_pool profile";
+            unsupported = true;
+        } else if (config.statement_caching != statement_cache_policy::off &&
+                   config.prepared_statement_cache_size != 0) {
+            invalid = "transaction_pool requires effective statement caching off";
+        } else if (config.statement_timeout) {
+            invalid = "transaction_pool requires an absent session statement_timeout baseline";
+        }
+    }
+    if (invalid) {
+        db_error error;
+        error.kind = unsupported ? db_error_kind::query_failed : db_error_kind::connection_failed;
+        error.message = invalid;
+        return std::unexpected(std::move(error));
+    }
+    return {};
 }
 template <typename Conn> asterorm::result<void> validate_timeout_config(const pool_config& config) {
     if (!config.statement_timeout) {
@@ -532,6 +582,9 @@ template <typename Driver> class connection_pool {
         try {
             auto valid = detail::validate_pool_config(state.config);
             if (valid) {
+                valid = detail::validate_pool_policy<connection_type>(state.config);
+            }
+            if (valid) {
                 valid = detail::validate_pool_ping<connection_type>(state.config);
             }
             if (valid) {
@@ -612,6 +665,9 @@ template <typename Driver> class connection_pool {
     void close() noexcept {
         worker_.request_stop();
         state_->close();
+    }
+    [[nodiscard]] bool allows_session_advisory_locks() const noexcept {
+        return state_->config.profile != pool_profile::transaction_pool;
     }
     [[nodiscard]] pool_stats stats() const {
         const auto state = state_;

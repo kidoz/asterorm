@@ -80,3 +80,24 @@ TEST_CASE("PostgreSQL checked results own native handles and preserve move state
     REQUIRE_FALSE(asterorm::pg::result::from_native(PQmakeEmptyPGresult(nullptr, PGRES_FATAL_ERROR))
                       .has_value());
 }
+
+TEST_CASE("PostgreSQL transaction profile survives moves without a server", "[pool-policy]") {
+    asterorm::pg::connection original{nullptr};
+    original.set_transaction_pool_profile(true);
+    auto moved = std::move(original);
+    asterorm::pg::connection assigned{nullptr};
+    assigned = std::move(moved);
+    for (auto outcome : {
+             assigned.advisory_lock(1),
+             assigned.advisory_unlock(1),
+             assigned.set_statement_timeout(std::chrono::milliseconds{0}),
+         }) {
+        REQUIRE_FALSE(outcome);
+        REQUIRE(outcome.error().kind == asterorm::db_error_kind::query_failed);
+        REQUIRE(outcome.error().message.contains("transaction_pool"));
+    }
+    assigned.set_transaction_pool_profile(false);
+    auto ordinary = assigned.execute_params("SELECT 1", {});
+    REQUIRE_FALSE(ordinary);
+    REQUIRE(assigned.advisory_lock(1).error().message == ordinary.error().message);
+}

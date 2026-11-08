@@ -1,7 +1,7 @@
 # Production connection pool: inventory and v1 contract
 
 Reviewed on 2026-11-08. **Ownership/configuration/shutdown, bounded health and dirty
-returns, aging and diagnostics implemented; cache/profile policy remains planned.** Current code is
+returns, aging/diagnostics and cache/profile policy implemented; combined acceptance remains planned.** Current code is
 [connection_pool.hpp](../include/asterorm/pool/connection_pool.hpp), with adapter
 state/cache behavior in `src/database/{postgres,sqlite,mysql}/connection.cpp`.
 [Inventory evidence](evidence/production-pool-inventory/README.md) retains its original
@@ -11,7 +11,8 @@ The [health guide](how-to/pool-health-and-reuse.md) and
 [health evidence](evidence/pool-health/README.md) cover the next implemented slice.
 The [aging guide](how-to/pool-aging-and-diagnostics.md) and
 [aging evidence](evidence/pool-aging/README.md) cover retirement/metrics/warnings.
-Profile/cache options below remain proposed. The [advanced-query review](advanced-query-acceptance.md) remains historical
+The [cache/profile guide](how-to/pool-cache-and-profiles.md) and
+[evidence](evidence/pool-policy/README.md) cover the next implemented slice. The [advanced-query review](advanced-query-acceptance.md) remains historical
 acceptance of that separate feature.
 
 ## Inventory before implementation
@@ -53,8 +54,8 @@ existing fields:
 | `max_lifetime` (implemented) | `0ms` disables; otherwise age since successful native connection creation |
 | `leak_threshold` (implemented) | `0ms` disables; otherwise warn once per checkout generation after this held duration |
 | `maintenance_interval` (implemented) | `1000ms`, strictly positive; worker starts only when aging/leak detection is enabled |
-| `statement_caching` | `per_connection` or `off`; default per-connection, bounded by existing cache size; size zero still disables caching |
-| `profile` | `direct` by default; optional PG-only `transaction_pool` with explicit restrictions below |
+| `statement_caching` (implemented) | `per_connection` or `off`; default per-connection, bounded by existing cache size; size zero still disables caching |
+| `profile` (implemented) | `direct` by default; optional PG-only `transaction_pool` with explicit restrictions below |
 
 Reject `max_size==0`, `min_size>max_size`, negative durations, unsupported enabled
 capabilities and conflicting proxy settings before **any** connection attempt.
@@ -246,8 +247,13 @@ transaction mode, with named-plan support disabled, and repeated explicit
 transactions on multiple backing connections. Check bound CRUD, no retained
 named preparations, supported SET LOCAL/cursor use and prohibited high-level
 session features. Current direct-server probes establish none of that integration.
-No proxy is present in the current compose configuration; adding the profile alone
-must not be labeled PgBouncer acceptance.
+The opt-in `compose.pgbouncer.yaml` overlay now provides a digest-pinned
+PgBouncer 1.24.1 fixture in transaction mode, with two backing connections and
+max_prepared_statements=0. Its runner verifies version/configuration before the
+hidden integration case. Six rounds on two distinct backend PIDs check bound
+CRUD/typed queries, no named plans, SET LOCAL/cursor use and early prohibited
+advisory/migration calls. This is scoped local acceptance of that fixture only;
+other versions/configurations and arbitrary session SQL remain unaccepted.
 
 ## Delivery and acceptance order
 
@@ -256,15 +262,15 @@ must not be labeled PgBouncer acceptance.
 | **Implemented: ownership/configuration/shutdown foundation** | Shared state/entries and move-safe noexcept lease return; eager capacity/duration validation; closed/timeout error semantics; close wakes waiters without waiting for borrowers; completion after close discards safely. Deterministic blocked-connect/return/close races, allocation failure, late leases, repeated close and unchanged session/stream/testing ownership; all native adapters and installed consumers |
 | **Implemented: bounded health and dirty-return handling** | Native PG stale-backend replacement/rejection; successful and timed-out ping fully drained/discarded; no mutex-held I/O, retry or observer/cache pollution; PG/SQLite/MySQL dirty returns/readers discarded; unsupported pre-ping rejected before connect |
 | **Implemented: aging and diagnostics** | Fake-clock checkout/return/reaper boundaries, over-age held lease retention, stop/join/shutdown races; queue gauges and histogram/counter invariants, warning once per generation, bounded warning overflow and no callbacks on destruction |
-| **Next: cache/profile policy** | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
-| Combined local acceptance | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
+| **Implemented: cache/profile policy** | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
+| **Next: combined local acceptance** | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
 
 Rebuild library and consumers when implementation changes pool/config/stats/lease/
 adapter layouts or error enums. Preserve the umbrella CMake target and pkg-config
 dependency contract; export required thread linkage for public header workers.
 The inventory introduced no ABI change. The foundation now changes pool, lease and
 stats layouts; rebuild consumers and update error handling as described in the
-ownership and aging guides. Next implement **cache/profile policy**.
+ownership and aging guides. Next complete **combined local acceptance**.
 
 ## Ownership implementation follow-up (2026-11-08)
 
@@ -330,3 +336,21 @@ queue overflow, lease moves, blocked cleanup, worker shutdown, allocation denial
 and installed consumers are covered by the linked evidence. Rebuild consumers for
 config/stat/entry/pool layouts and propagate thread linkage. Cache/profile policy
 and combined acceptance remain open; no proxy compatibility is established.
+
+## Cache and profile implementation follow-up (2026-11-08)
+
+Appended explicit per-connection/off cache policy and direct/transaction-pool
+profile fields. The existing cache-limit hook supplies effective zero capacity
+for off on PG/SQLite/MySQL. Unknown enums, unsupported explicit capabilities and
+profile cache/baseline conflicts reject before dialing. Pool admission metadata
+blocks advisory scopes and serialized migrations before acquiring a lease or
+observing SQL. PG retains its profile through moves and rejects native session
+advisory/timeouts; local transaction scopes and uncached cursor protocols stay
+supported. Rebuild configuration/pool/PG consumers.
+
+The guide/evidence above bind native results/cache counts and observed/typed/CRUD
+paths, no-server validation/admission/moves, real-libpq unnamed packets with a
+named-Parse negative control, and a version/configuration-checked proxy fixture.
+Installed consumers, regression and sanitizer/race checks cover this slice.
+Per-session caching remains deferred. Combined production-pool acceptance is next;
+no general proxy, raw-SQL, remote-CI or release guarantee follows.

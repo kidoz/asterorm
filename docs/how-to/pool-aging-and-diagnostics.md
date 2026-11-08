@@ -111,4 +111,5 @@ layouts. Meson dependencies, installed CMake `Threads::Threads` and pkg-config
 metadata carry thread linkage. The [design](../production-pool-design.md) and
 [evidence](../evidence/pool-aging/README.md) record deterministic clock tests,
 worker shutdown controls, native transactions and verification limits.
-Cache/profile policy and combined pool acceptance remain planned.
+[Cache/profile policy](pool-cache-and-profiles.md) is implemented with scoped
+PgBouncer checks. Combined pool acceptance is next.

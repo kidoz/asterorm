@@ -56,7 +56,9 @@ shared lease state, validation, nonthrowing returns and non-draining close.
 [Bounded health and dirty-return handling](../how-to/pool-health-and-reuse.md) now
 add optional PG pre-ping and native reuse checks. [Aging and diagnostics](../how-to/pool-aging-and-diagnostics.md)
 add idle retirement, acquisition metrics and structured long-held-lease warnings.
-Cache/profile policy is next.
+[Cache/profile policy](../how-to/pool-cache-and-profiles.md) now adds explicit
+off/per-connection caching and restricted PG transaction-pool admission, with a
+pinned PgBouncer fixture. Combined pool acceptance is next.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

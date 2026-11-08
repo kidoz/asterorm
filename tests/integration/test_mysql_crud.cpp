@@ -1,4 +1,5 @@
 #include "../support/pool_aging.hpp"
+#include "../support/pool_policy.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <future>
@@ -529,4 +530,8 @@ TEST_CASE("mysql Integration: pool health and dirty returns", "[mysql][pool-heal
 
 TEST_CASE("mysql pool aging preserves held transactions and retires on return", "[pool-aging]") {
     asterorm::test::check_pool_aging(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("mysql statement cache policy", "[pool-policy]") {
+    asterorm::test::check_pool_policy(asterorm::mysql::driver{}, conninfo());
 }

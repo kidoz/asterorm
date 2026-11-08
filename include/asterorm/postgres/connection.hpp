@@ -26,6 +26,7 @@ class connection {
     static constexpr bool supports_transactional_test_scope = true;
     static constexpr bool supports_single_row_stream = true;
     static constexpr bool supports_cursor_stream = true;
+    static constexpr bool supports_transaction_pool_profile = true;
     static constexpr sql::dialect sql_dialect = sql::dialect::postgres;
 
     connection(const connection&) = delete;
@@ -42,6 +43,7 @@ class connection {
     asterorm::result<void> pool_ping(std::chrono::steady_clock::time_point deadline);
     [[nodiscard]] bool single_row_ready() const noexcept;
     [[nodiscard]] bool cursor_ready() const noexcept;
+    void set_transaction_pool_profile(bool enabled) noexcept;
 
     [[nodiscard]] bool is_transaction_idle() const noexcept;
     asterorm::result<std::chrono::milliseconds> statement_timeout();
@@ -86,6 +88,7 @@ class connection {
     std::deque<std::string> prepared_statement_order_;
     size_t next_stmt_id_{0};
     size_t max_prepared_statements_{128};
+    bool transaction_pool_profile_{};
 };
 
 } // namespace asterorm::pg

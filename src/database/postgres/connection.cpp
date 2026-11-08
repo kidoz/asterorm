@@ -38,7 +38,8 @@ connection::connection(connection&& other) noexcept
       prepared_statements_(std::move(other.prepared_statements_)),
       prepared_statement_order_(std::move(other.prepared_statement_order_)),
       next_stmt_id_(std::exchange(other.next_stmt_id_, 0)),
-      max_prepared_statements_(std::exchange(other.max_prepared_statements_, 128)) {
+      max_prepared_statements_(std::exchange(other.max_prepared_statements_, 128)),
+      transaction_pool_profile_(std::exchange(other.transaction_pool_profile_, false)) {
     if (active_reader_) {
         active_reader_->owner = this;
     }
@@ -56,12 +57,16 @@ connection& connection::operator=(connection&& other) noexcept {
         prepared_statement_order_ = std::move(other.prepared_statement_order_);
         next_stmt_id_ = std::exchange(other.next_stmt_id_, 0);
         max_prepared_statements_ = std::exchange(other.max_prepared_statements_, 128);
+        transaction_pool_profile_ = std::exchange(other.transaction_pool_profile_, false);
     }
     return *this;
 }
 
 connection::~connection() {
     close();
+}
+void connection::set_transaction_pool_profile(bool enabled) noexcept {
+    transaction_pool_profile_ = enabled;
 }
 
 bool connection::is_open() const {
@@ -126,6 +131,10 @@ asterorm::result<std::chrono::milliseconds> connection::statement_timeout() {
 }
 
 asterorm::result<void> connection::set_statement_timeout(std::chrono::milliseconds duration) {
+    if (transaction_pool_profile_) {
+        return std::unexpected(
+            reader_error("transaction_pool profile prohibits session statement timeout"));
+    }
     auto valid = detail::validate_statement_timeout(duration);
     if (!valid) {
         return valid;
@@ -165,6 +174,10 @@ asterorm::result<void> connection::set_local_statement_timeout(std::chrono::mill
 }
 
 asterorm::result<void> connection::advisory_lock(std::int64_t key) {
+    if (transaction_pool_profile_) {
+        return std::unexpected(
+            reader_error("transaction_pool profile prohibits session advisory locks"));
+    }
     auto locked = execute_params("SELECT pg_catalog.pg_advisory_lock($1::bigint)",
                                  {asterorm::encode_parameter(key)});
     if (!locked) {
@@ -174,6 +187,10 @@ asterorm::result<void> connection::advisory_lock(std::int64_t key) {
 }
 
 asterorm::result<void> connection::advisory_unlock(std::int64_t key) {
+    if (transaction_pool_profile_) {
+        return std::unexpected(
+            reader_error("transaction_pool profile prohibits session advisory locks"));
+    }
     auto unlocked = execute_params("SELECT pg_catalog.pg_advisory_unlock($1::bigint)",
                                    {asterorm::encode_parameter(key)});
     if (!unlocked) {
@@ -285,7 +302,7 @@ asterorm::result<pg::result> connection::execute_prepared(std::string_view sql,
     if (active_reader_) {
         return std::unexpected(reader_error("Connection is busy with a native reader"));
     }
-    if (max_prepared_statements_ == 0) {
+    if (max_prepared_statements_ == 0 || transaction_pool_profile_) {
         return execute_params(sql, params);
     }
 

@@ -26,6 +26,7 @@ Each addresses a specific task.
 - [Own leases and shut down a pool](pool-ownership-and-shutdown.md)
 - [Check pool health and discard dirty returns](pool-health-and-reuse.md)
 - [Retire aged connections and poll diagnostics](pool-aging-and-diagnostics.md)
+- [Choose cache policy and a transaction-pool profile](pool-cache-and-profiles.md)
 - [Run the test suites](testing.md)
 
 [Documentation home](../README.md)

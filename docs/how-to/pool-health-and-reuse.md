@@ -102,5 +102,5 @@ API changes. The [design](../production-pool-design.md) and
 [evidence](../evidence/pool-health/README.md) record native rollback/stale-backend
 checks, controlled real-libpq wire scenarios and regression/consumer checks.
 [Aging and diagnostics](pool-aging-and-diagnostics.md) now add idle retirement,
-metrics and structured warnings. Cache/profile policy and combined pool acceptance
-remain planned.
+metrics and structured warnings. [Cache/profile policy](pool-cache-and-profiles.md) is implemented with scoped
+PgBouncer checks. Combined pool acceptance is next.

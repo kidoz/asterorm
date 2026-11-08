@@ -7,6 +7,7 @@ core_tests = executable(
     'unit/test_pool_foundation.cpp',
     'unit/test_pool_health.cpp',
     'unit/test_pool_aging.cpp',
+    'unit/test_pool_policy.cpp',
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
@@ -104,6 +105,9 @@ if sqlite_enabled
   test('pool aging guide', python_program,
     args : [files('check_pool_aging_guide.py'), '--build-root', meson.project_build_root()],
   )
+  test('pool policy guide', python_program,
+    args : [files('check_pool_policy_guide.py'), '--build-root', meson.project_build_root()],
+  )
   test('window function guide', python_program,
     args : [files('check_window_guide.py'), '--build-root', meson.project_build_root()],
   )
@@ -143,6 +147,14 @@ if sqlite_enabled
 endif
 
 if postgres_enabled
+  pool_policy_wire = executable('pool_policy_wire', 'support/pool_policy_wire.cpp',
+    dependencies : [asterorm_pg_dep],
+  )
+  test('PostgreSQL pool policy wire', python_program,
+    args : [files('check_pool_policy_wire.py'), pool_policy_wire.full_path()],
+    depends : pool_policy_wire,
+    timeout : 60,
+  )
   pool_health_wire = executable('pool_health_wire', 'support/pool_health_wire.cpp',
     dependencies : [asterorm_pg_dep],
   )
@@ -174,6 +186,7 @@ if postgres_enabled
       'integration/test_transactional_session.cpp',
       'integration/test_advisory_lock.cpp',
       'integration/test_pool.cpp',
+      'integration/test_pool_policy.cpp',
       'integration/test_statement_timeout.cpp',
       'integration/test_single_row.cpp',
       'integration/test_cursor.cpp',

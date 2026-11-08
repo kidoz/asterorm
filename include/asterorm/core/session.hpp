@@ -321,6 +321,17 @@ template <typename Pool> class session {
             return return_type{std::unexpected(std::move(error))};
         } else {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
+            if constexpr (requires {
+                              { pool_->allows_session_advisory_locks() } -> std::same_as<bool>;
+                          }) {
+                if (!pool_->allows_session_advisory_locks()) {
+                    db_error error;
+                    error.kind = db_error_kind::query_failed;
+                    error.message = "transaction_pool profile prohibits session advisory scopes "
+                                    "and serialized migrations";
+                    return return_type{std::unexpected(std::move(error))};
+                }
+            }
             if (auto blocked = scope_access_error()) {
                 return return_type{std::unexpected(*blocked)};
             }
