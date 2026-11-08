@@ -6,6 +6,12 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PostgreSQL type coverage inventory and proposed v1 contract, with current-API
+  compile controls and rollback-scoped native probes for ranges, interval styles,
+  network/MAC, hstore/composites, JSONB/path semantics and index families. Recorded
+  existing codec gaps and explicit multidimensional-array limits. Type/query
+  implementation remains planned; no production API or ABI change is introduced.
+
 - Combined production-pool local acceptance review and composed health/age/profile/
   shutdown, native transaction/stream and forced proxy-backend-switch checks.
   Fresh installed consumers execute all four pool guides; existing delivery

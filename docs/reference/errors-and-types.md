@@ -30,8 +30,7 @@ PostgreSQL query cancellation (`57014`) maps to `query_failed`, with SQLSTATE an
 server diagnostics preserved. Cancellation can result from a statement timeout
 or an explicit cancellation request; the code alone does not identify the cause
 or indicate that the connection was lost. Roll back an aborted transaction before
-reusing its connection. Pool acquisition expiry continues to return
-`connection_failed`.
+reusing its connection. Pool capacity expiry returns `timeout`; closed acquisition returns `pool_closed`.
 
 ## Shared codecs
 
@@ -65,3 +64,12 @@ an empty optional to reject an unknown label.
 Encoded parameters distinguish an encoding error from a valid SQL NULL. Result
 objects own their returned rows; views obtained from a backend result must not
 outlive that result.
+
+## Planned PostgreSQL type expansion
+
+The [inventory and v1 contract](../postgresql-type-design.md) record missing range,
+interval, network/cidr, MAC, hstore and explicit composite codecs, checked JSONB
+expressions and current array/temporal/numeric boundaries. These APIs remain
+planned. The existing codec<T> hook and the table above describe current support.
+First implement value/text-codec foundations; multidimensional arrays are
+explicitly outside the proposed v1 surface.

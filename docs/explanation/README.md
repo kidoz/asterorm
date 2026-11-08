@@ -59,7 +59,9 @@ add idle retirement, acquisition metrics and structured long-held-lease warnings
 [Cache/profile policy](../how-to/pool-cache-and-profiles.md) now adds explicit
 off/per-connection caching and restricted PG transaction-pool admission, with a
 pinned PgBouncer fixture. The [combined review](../production-pool-acceptance.md)
-now closes scoped local v1 acceptance; PostgreSQL type coverage inventory is next.
+now closes scoped local v1 acceptance; the [PostgreSQL type inventory/contract](../postgresql-type-design.md) now records
+codec/query gaps and the planned implementation order. Value/text-codec foundations
+are next.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

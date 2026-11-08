@@ -103,7 +103,9 @@ shutdown, bounded health, dirty-return handling, aging and diagnostics are imple
 Cache/profile policy is implemented, with scoped local PgBouncer 1.24.1
 transaction-mode checks. The complete production-pool v1 subset is
 [locally accepted within the revised contract](docs/production-pool-acceptance.md).
-Next is the PostgreSQL type coverage inventory and v1 contract.
+The [PostgreSQL type inventory and v1 contract](docs/postgresql-type-design.md)
+are complete; implementation remains planned, starting with value/text-codec
+foundations.
 
 ## Backends
 
