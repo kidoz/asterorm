@@ -1,0 +1,192 @@
+{
+  "recorded_at_utc": "2026-11-08T12:13:11.036354+00:00",
+  "review_date": "2026-11-08",
+  "git_base": "ccf434ca93650e55ea3fdfdc1e941ca501f4e5a5",
+  "scope": "Set expressions and tails over the CTE/query foundation; recursion, windows and extensions remain planned.",
+  "source_build_test_document_sha256": {
+    "include/asterorm/sql/query_ast.hpp": "6ec6e4db33c62fb3651d1ecfbfa404af2e63a45f4aa3b90af0165d7a0d746d77",
+    "include/asterorm/sql/query.hpp": "5b4c5313f83e2ea8823046ce2fb609ad941cba2094377ec316c860d40b9c4711",
+    "include/asterorm/sql/compiler.hpp": "7834103a382ebdb9898a111014ab746c2e9253a355305f40f39341b05c1df29b",
+    "src/sql/query.cpp": "306f882257007c6c8a6542d46ed468951e4b9f6c1a0781a13fceb0dde5f6df5b",
+    "src/sql/compiler.cpp": "2543b7a41cbc3bfc03810143ceb512e27c11dac55f3b169ea488978d97421af9",
+    "src/meson.build": "f5c1dcecc8b7f0e2e80aa14437e6433900ae615b50987d83404128ef5673f15f",
+    "tests/unit/test_query.cpp": "77c26469476143b4b7f40a8d46eb7d72116affd5827409c1b01446442def9976",
+    "tests/unit/test_set_query.cpp": "1691308cfe1fcd2d174fbbe78d62ab390ba39da0c5be53eca600b7e8bd2136bb",
+    "tests/support/set_query.hpp": "8d191173955a9266e87b420a92d286c83b227d38b27313c2f862e9842f288b03",
+    "tests/integration/test_sql.cpp": "6b67291deaae8f4652fe5cf366b7de47a2bbec62efd52b937b9e56b7d4c4a240",
+    "tests/integration/test_sqlite_crud.cpp": "bada20e37eb741a9a2a18a55e4ccbb60f2dcbc6c8ceaa671ba3176576c449d3a",
+    "tests/integration/test_mysql_crud.cpp": "788b454070ad2440f75c9e6349e3044e0adc60e55176e12d53775931d4533853",
+    "tests/meson.build": "583029c65fe5a733652b42529cf6a7b07c65bd099494abe455340bcdf4d45626",
+    "tests/check_set_guide.py": "1c468189ff184a253ac9593fdbe0ad14b763da2751df710a23612e581d662b2a",
+    "README.md": "e57a3665b402d8b2d4895232cdcacbd6c540761efd56f8980b7cf86686e44bfd",
+    "CHANGELOG.md": "355cbbea48a505a1bc26f8be4609ab6f30797a580b34a839872e5fad4fa90e71",
+    "docs/reference/sql.md": "863e8a7d0f6c50611e5960226256810464350828386f2632945387e26a8d1587",
+    "docs/how-to/README.md": "0ea0fc92b07529a5e839838183ce077f96f1d193499541c8e169a46596e7512f",
+    "docs/explanation/README.md": "e35f1582ef1e4cd92dff5f5c07881da62f7af08612a2fca7fdd6a2c21da24ff6",
+    "docs/advanced-query-design.md": "9d88d0a96231bb3308a6d7d4baa9fc6ce7db3482d674b282e295da751c735178",
+    "docs/how-to/common-table-expressions.md": "106149eb6d6f070d001cba67cb86fd74b810c5fa021cf8b74cf568b489f29506",
+    "docs/how-to/set-operations.md": "1e5b9fab4e832c81c1e0a385818a256a7e07a0cdb371a0c2a9790c93019cb208",
+    "docs/evidence/set-operations/README.md": "bc38f13efdc28dc6fbcc67372fd9e002b9b496650162235f0cc90a62904ffaf1",
+    "docs/evidence/set-operations/check_consumers.py": "dcf38add13db10ecd8885db9fb9b3300c80edf127ae0f507d94c70cd7d62a3f1",
+    "meson.build": "4482a6d9a63fe890e1878f027b7f3d37e1ed8e18f9cb352d553264813add3e7d",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    ".clang-format": "5487b608c8c20ccbc33b4a912b2e6ad33425adea9dfe9ef7c9e5cc4470d7573d",
+    ".clang-tidy": "e04b2e7820dda9f058d41f3c02682fb7662651c0fc849533aa375ed4c2e8dcbc",
+    "include/asterorm/sql/ast.hpp": "269e353c629d6db246f266566f558ee400663a9632bf385204f7ab25ca0ec00e",
+    "include/asterorm/core/session.hpp": "b272f89d037dffd432c22a0b736502756754c384a13cfe1631ce8f47d7333cc9",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004"
+  },
+  "ignored_canonical_context_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "af283288e651bc81f630eeb0c6820717171fa8a7704e2673bedd93caca43b3ba",
+    ".agents/contexts/specs/feature-expansion/README.md": "396bc2be95b95ceea6f4e8e9f7e66cfb62eaea66a8e88ada22082243aff77395",
+    ".agents/contexts/specs/feature-expansion/QUERY_DSL_AND_SQL.md": "17842b0be856b8a9cf9772da5ff30efb18875c794a1209321a422f5081e25fff"
+  },
+  "standards_comparison": {
+    "baseline_report": "/tmp/asterorm-cte-standards.json",
+    "baseline_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "current_report": "/tmp/asterorm-set-standards.json",
+    "current_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "findings_identical": true
+  },
+  "verification": [
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-set-build.log",
+      "log_sha256": "acb8d081a230192e7090520a867fb6359cbe42ab7ab7183e54d2d6e1d5ec253d"
+    },
+    {
+      "check": "tests",
+      "command": "meson test -C buildDir --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "passed": 25,
+        "failed": 0
+      },
+      "local_log": "/tmp/asterorm-set-tests.log",
+      "log_sha256": "bdc323a4589431da7294ca9d085de647be5e009861946077c25a2c1c65bbe865"
+    },
+    {
+      "check": "focused unit",
+      "command": "buildDir/tests/core_tests '[set-query]'",
+      "exit_code": 0,
+      "result": {
+        "cases": 9,
+        "assertions": 225
+      },
+      "local_log": "/tmp/asterorm-set-unit.log",
+      "log_sha256": "8ebb12efd93e60aca5e99fc155cda92a6b0a5b060a2e5c09fc389023093e984b"
+    },
+    {
+      "check": "postgres set",
+      "command": "buildDir/tests/pg_integration '[set-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 71
+      },
+      "local_log": "/tmp/asterorm-set-postgres.log",
+      "log_sha256": "d2cf1e794599c9691ff6526a52a77a401114b886a4d2612828585c4f5b4a9692"
+    },
+    {
+      "check": "sqlite set",
+      "command": "buildDir/tests/sqlite_integration '[set-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 69
+      },
+      "local_log": "/tmp/asterorm-set-sqlite.log",
+      "log_sha256": "dac10b8db7f1f450c372a7a83615523a14dc21c831f2faf943dc44b04cfaab72"
+    },
+    {
+      "check": "mysql set",
+      "command": "buildDir/tests/mysql_integration '[set-query]'",
+      "exit_code": 0,
+      "result": {
+        "assertions": 55
+      },
+      "local_log": "/tmp/asterorm-set-mysql.log",
+      "log_sha256": "8e81b6c6b7193026285b2bb5162c0569782d40294e5b07e9a5714631ebaedda0"
+    },
+    {
+      "check": "fresh SQLite-only sanitizers",
+      "command": "meson setup <temporary-build> . -Dpostgres=disabled -Dsqlite=enabled -Dmysql=disabled -Dclickhouse=disabled -Dexamples=false -Db_sanitize=address,undefined; meson test -C <temporary-build> --print-errorlogs",
+      "exit_code": 0,
+      "result": {
+        "passed": 11,
+        "failed": 0,
+        "temporary_build": "/var/folders/nk/tq3d50k133502vs3b01nl9yh0000gn/T/asterorm-set-sqlite-sanitized-v0bm48e4"
+      },
+      "local_log": "/tmp/asterorm-set-sanitizers.log",
+      "log_sha256": "6b8828ba98367c106862a876c8718d6b2d52bf73ff15b103bd7b6166935a1f85"
+    },
+    {
+      "check": "installed guide consumers",
+      "command": "python3 docs/evidence/set-operations/check_consumers.py",
+      "exit_code": 0,
+      "result": {
+        "packages": [
+          "CMake",
+          "shared pkg-config"
+        ],
+        "backends": [
+          "postgres",
+          "sqlite",
+          "mysql"
+        ],
+        "Catch2_required": false
+      },
+      "local_log": "/tmp/asterorm-set-consumers.log",
+      "log_sha256": "f8e3de2fa3224ddb8bd656bb0229164d92f845ec11e017cf34eb4b41a4237e1d"
+    },
+    {
+      "check": "format",
+      "command": "python3 tools/run_clang_format.py --source-root . --check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-set-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "project lint",
+      "command": "meson compile -C buildDir clang-tidy",
+      "exit_code": 0,
+      "result": {
+        "distinct_translation_units": 68,
+        "project_diagnostics_retained": true
+      },
+      "local_log": "/tmp/asterorm-set-lint.log",
+      "log_sha256": "a7bc1bd081c2f0a4397837f730e0fbde6151f41344e7c9ba1fd30075caff26fa"
+    },
+    {
+      "check": "strict production query compiler lint",
+      "command": "clang-tidy -p=buildDir --extra-arg=-isysroot --extra-arg=<xcrun SDK> --warnings-as-errors=* src/sql/query.cpp",
+      "exit_code": 0,
+      "result": {
+        "emitted_user_diagnostics": 0
+      },
+      "local_log": "/tmp/asterorm-set-query-lint.log",
+      "log_sha256": "7521fb02f89b40a54bb87c4822b592a1c05ea8ac85e9e69c9bacb6936507ac07"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-08 --json-out /tmp/asterorm-set-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0
+      },
+      "local_log": "/tmp/asterorm-set-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "limitations": [
+    "Unsigned local evidence; temporary logs may expire. No remote CI or release provenance claim.",
+    "Older-server and ClickHouse execution, performance and full advanced-query acceptance are not established.",
+    "Project lint diagnostics and identical existing standards failures are not waived.",
+    "Older inventory and ordinary-CTE receipts remain historical.",
+    "Connection settings, credentials, build outputs and unrelated .gitignore excluded. Ignored canonical contexts are not force-added."
+  ]
+}
