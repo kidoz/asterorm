@@ -1,3 +1,4 @@
+#include "../support/pool_acceptance.hpp"
 #include "../support/pool_aging.hpp"
 #include "../support/pool_policy.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -534,4 +535,8 @@ TEST_CASE("mysql pool aging preserves held transactions and retires on return", 
 
 TEST_CASE("mysql statement cache policy", "[pool-policy]") {
     asterorm::test::check_pool_policy(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("mysql combined pool acceptance", "[pool-acceptance]") {
+    asterorm::test::check_pool_acceptance(asterorm::mysql::driver{}, conninfo());
 }

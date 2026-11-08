@@ -101,7 +101,9 @@ The [production-pool inventory and v1 contract](docs/production-pool-design.md)
 record the delivery boundaries. Shared ownership, configuration validation and
 shutdown, bounded health, dirty-return handling, aging and diagnostics are implemented.
 Cache/profile policy is implemented, with scoped local PgBouncer 1.24.1
-transaction-mode checks. Combined production-pool acceptance is next.
+transaction-mode checks. The complete production-pool v1 subset is
+[locally accepted within the revised contract](docs/production-pool-acceptance.md).
+Next is the PostgreSQL type coverage inventory and v1 contract.
 
 ## Backends
 

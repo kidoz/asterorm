@@ -1,7 +1,7 @@
 # Production connection pool: inventory and v1 contract
 
-Reviewed on 2026-11-08. **Ownership/configuration/shutdown, bounded health and dirty
-returns, aging/diagnostics and cache/profile policy implemented; combined acceptance remains planned.** Current code is
+Reviewed on 2026-11-09. **Ownership/configuration/shutdown, bounded health and dirty
+returns, aging/diagnostics and cache/profile policy implemented and locally accepted within the revised v1 contract.** Current code is
 [connection_pool.hpp](../include/asterorm/pool/connection_pool.hpp), with adapter
 state/cache behavior in `src/database/{postgres,sqlite,mysql}/connection.cpp`.
 [Inventory evidence](evidence/production-pool-inventory/README.md) retains its original
@@ -12,7 +12,8 @@ The [health guide](how-to/pool-health-and-reuse.md) and
 The [aging guide](how-to/pool-aging-and-diagnostics.md) and
 [aging evidence](evidence/pool-aging/README.md) cover retirement/metrics/warnings.
 The [cache/profile guide](how-to/pool-cache-and-profiles.md) and
-[evidence](evidence/pool-policy/README.md) cover the next implemented slice. The [advanced-query review](advanced-query-acceptance.md) remains historical
+[evidence](evidence/pool-policy/README.md) cover the next implemented slice. The [combined pool review](production-pool-acceptance.md) records current scoped
+local acceptance and verification limits. The [advanced-query review](advanced-query-acceptance.md) remains historical
 acceptance of that separate feature.
 
 ## Inventory before implementation
@@ -263,14 +264,15 @@ other versions/configurations and arbitrary session SQL remain unaccepted.
 | **Implemented: bounded health and dirty-return handling** | Native PG stale-backend replacement/rejection; successful and timed-out ping fully drained/discarded; no mutex-held I/O, retry or observer/cache pollution; PG/SQLite/MySQL dirty returns/readers discarded; unsupported pre-ping rejected before connect |
 | **Implemented: aging and diagnostics** | Fake-clock checkout/return/reaper boundaries, over-age held lease retention, stop/join/shutdown races; queue gauges and histogram/counter invariants, warning once per generation, bounded warning overflow and no callbacks on destruction |
 | **Implemented: cache/profile policy** | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
-| **Next: combined local acceptance** | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
+| **Implemented: combined local acceptance** | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
 
 Rebuild library and consumers when implementation changes pool/config/stats/lease/
 adapter layouts or error enums. Preserve the umbrella CMake target and pkg-config
 dependency contract; export required thread linkage for public header workers.
 The inventory introduced no ABI change. The foundation now changes pool, lease and
 stats layouts; rebuild consumers and update error handling as described in the
-ownership and aging guides. Next complete **combined local acceptance**.
+ownership and aging guides. The [combined review](production-pool-acceptance.md) closes scoped local v1
+acceptance. Next prepare the **PostgreSQL type coverage inventory and v1 contract**.
 
 ## Ownership implementation follow-up (2026-11-08)
 
@@ -354,3 +356,19 @@ named-Parse negative control, and a version/configuration-checked proxy fixture.
 Installed consumers, regression and sanitizer/race checks cover this slice.
 Per-session caching remains deferred. Combined production-pool acceptance is next;
 no general proxy, raw-SQL, remote-CI or release guarantee follows.
+
+## Combined local acceptance (2026-11-09)
+
+The [combined review](production-pool-acceptance.md) maps the revised requirements
+to current implementation and fresh source-bound verification. New checks combine
+health, age, warning, profile and close precedence; native overdue transactions
+and both repository stream modes retain ownership across close. A pinned proxy
+case forces the same client onto a different backend without reconnecting. Fresh
+installed consumers execute all four public guides on PG/SQLite/MySQL. No production
+code change was needed. Individual delivery captures stay historical.
+
+Acceptance is local to the recorded build, servers and pinned proxy fixture.
+Per-session caching, arbitrary raw session SQL, other proxy/platform variants,
+performance and release readiness remain outside it. Existing standards findings
+are retained without waiver. Next prepare the PostgreSQL type coverage inventory
+and contract before implementing that expansion.

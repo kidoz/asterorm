@@ -6,6 +6,11 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Combined production-pool local acceptance review and composed health/age/profile/
+  shutdown, native transaction/stream and forced proxy-backend-switch checks.
+  Fresh installed consumers execute all four pool guides; existing delivery
+  captures remain historical. No production code change is introduced here.
+
 - Explicit off/per-connection statement cache policy and a PostgreSQL transaction-
   pool profile with pre-connect cache/timeout validation and pre-SQL advisory/
   migration admission. Added a digest-pinned opt-in PgBouncer transaction-mode

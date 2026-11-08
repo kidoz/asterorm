@@ -53,7 +53,8 @@ Stats satisfy `total == idle + in_use` and
 waiters. `leaked_at_close` snapshots non-idle slots at the first close transition,
 including setup, and no longer means the old ten-second wait expired. The
 [ownership guide](../how-to/pool-ownership-and-shutdown.md) covers migration;
-[design](../production-pool-design.md) records the implemented slices and remaining combined acceptance.
+[design](../production-pool-design.md) and [combined review](../production-pool-acceptance.md) record current scoped local
+acceptance and its limits.
 
 Explicit timeout configuration rejects unsupported adapters before connecting,
 including lazy pools. New/idle setup failures discard the connection; lazy/reuse

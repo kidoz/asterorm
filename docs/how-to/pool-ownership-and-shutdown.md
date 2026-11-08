@@ -100,3 +100,6 @@ are now implemented. Aging, histograms/warnings and cache/proxy policy remain pl
 [Aging and diagnostics](pool-aging-and-diagnostics.md) add optional idle-only
 maintenance, non-revoking lifetime retirement, acquisition metrics and structured
 warning polling. Rebuild for appended config/stat fields and entry metadata.
+
+The [combined pool review](../production-pool-acceptance.md) records scoped local
+v1 acceptance, migration and remaining limits.

@@ -1,3 +1,4 @@
+#include "../support/pool_acceptance.hpp"
 #include "../support/pool_aging.hpp"
 #include "../support/pool_policy.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -742,4 +743,8 @@ TEST_CASE("sqlite pool aging preserves held transactions and retires on return",
 
 TEST_CASE("sqlite statement cache policy", "[pool-policy]") {
     asterorm::test::check_pool_policy(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("sqlite combined pool acceptance", "[pool-acceptance]") {
+    asterorm::test::check_pool_acceptance(asterorm::sqlite::driver{}, ":memory:");
 }

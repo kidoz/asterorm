@@ -112,4 +112,5 @@ metadata carry thread linkage. The [design](../production-pool-design.md) and
 [evidence](../evidence/pool-aging/README.md) record deterministic clock tests,
 worker shutdown controls, native transactions and verification limits.
 [Cache/profile policy](pool-cache-and-profiles.md) is implemented with scoped
-PgBouncer checks. Combined pool acceptance is next.
+PgBouncer checks. The [combined review](../production-pool-acceptance.md) now records scoped local
+v1 acceptance.

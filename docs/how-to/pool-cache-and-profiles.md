@@ -99,5 +99,5 @@ The [evidence](../evidence/pool-policy/README.md) records this scoped direct/pro
 verification, controlled real-libpq packet checks and installed consumers. It does
 not establish other proxy versions/configurations, arbitrary session SQL, remote
 CI or release readiness. Rebuild library and consumers for appended configuration
-fields and PostgreSQL connection layout/API changes. Combined production-pool
-acceptance is next.
+fields and PostgreSQL connection layout/API changes. The [combined review](../production-pool-acceptance.md) now records scoped local
+v1 acceptance.

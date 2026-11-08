@@ -103,4 +103,5 @@ API changes. The [design](../production-pool-design.md) and
 checks, controlled real-libpq wire scenarios and regression/consumer checks.
 [Aging and diagnostics](pool-aging-and-diagnostics.md) now add idle retirement,
 metrics and structured warnings. [Cache/profile policy](pool-cache-and-profiles.md) is implemented with scoped
-PgBouncer checks. Combined pool acceptance is next.
+PgBouncer checks. The [combined review](../production-pool-acceptance.md) now records scoped local
+v1 acceptance.
