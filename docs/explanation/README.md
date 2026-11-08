@@ -35,6 +35,10 @@ v1 contract to fresh checks and its release boundaries. See the
 The [worked fixture guide](../how-to/worked-reference-fixtures.md) explains pinned
 validation, immutable reference IDs and failure without replacement connections.
 
+The [advanced-query inventory and contract](../advanced-query-design.md) records
+current AST/compiler gaps, native CTE/window/set semantics, parameter/context
+rules and the proposed delivery/acceptance plan. It does not deliver those APIs.
+
 For executable lessons, start with [tutorials](../tutorials/README.md).
 
 [Documentation home](../README.md)

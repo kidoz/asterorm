@@ -1,0 +1,114 @@
+{
+  "captured_at_utc": "2026-11-08T09:30:51.828224+00:00",
+  "git_base": "ae4683f4d8c4a72117e7d5f8b9cf1e0c0ad357eb",
+  "purpose": "Current AST inventory/native feasibility; no structured advanced-query implementation",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "configured_flags": {
+    "ast": {
+      "arguments": [
+        "c++",
+        "-Itests/core_tests.p",
+        "-Itests",
+        "-I../tests",
+        "-I../include",
+        "-Isubprojects/Catch2-3.16.1/src",
+        "-I../subprojects/Catch2-3.16.1/src",
+        "-fdiagnostics-color=always",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-Wall",
+        "-Winvalid-pch",
+        "-Wextra",
+        "-Wpedantic",
+        "-std=c++23",
+        "-O0",
+        "-g",
+        "-Werror"
+      ],
+      "directory": "/Users/apavlov/Projects/AsterORM/buildDir"
+    },
+    "postgres": {
+      "arguments": [
+        "c++",
+        "-Itests/pg_integration.p",
+        "-Itests",
+        "-I../tests",
+        "-I../include",
+        "-Isubprojects/Catch2-3.16.1/src",
+        "-I../subprojects/Catch2-3.16.1/src",
+        "-I/opt/homebrew/opt/libpq/include",
+        "-fdiagnostics-color=always",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-Wall",
+        "-Winvalid-pch",
+        "-Wextra",
+        "-Wpedantic",
+        "-std=c++23",
+        "-O0",
+        "-g",
+        "-Werror"
+      ],
+      "directory": "/Users/apavlov/Projects/AsterORM/buildDir"
+    },
+    "sqlite": {
+      "arguments": [
+        "c++",
+        "-Itests/sqlite_integration.p",
+        "-Itests",
+        "-I../tests",
+        "-I../include",
+        "-Isubprojects/Catch2-3.16.1/src",
+        "-I../subprojects/Catch2-3.16.1/src",
+        "-fdiagnostics-color=always",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-Wall",
+        "-Winvalid-pch",
+        "-Wextra",
+        "-Wpedantic",
+        "-std=c++23",
+        "-O0",
+        "-g",
+        "-Werror"
+      ],
+      "directory": "/Users/apavlov/Projects/AsterORM/buildDir"
+    },
+    "mysql": {
+      "arguments": [
+        "c++",
+        "-Itests/mysql_integration.p",
+        "-Itests",
+        "-I../tests",
+        "-I../include",
+        "-Isubprojects/Catch2-3.16.1/src",
+        "-I../subprojects/Catch2-3.16.1/src",
+        "-I/opt/homebrew/opt/mysql-client/include/mysql",
+        "-fdiagnostics-color=always",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-Wall",
+        "-Winvalid-pch",
+        "-Wextra",
+        "-Wpedantic",
+        "-std=c++23",
+        "-O0",
+        "-g",
+        "-Werror"
+      ],
+      "directory": "/Users/apavlov/Projects/AsterORM/buildDir"
+    }
+  },
+  "strict_probe_lint": true,
+  "probe_sha256": {
+    "ast_probe.cpp": "bfb9e4cf705ecbea84a154bf8821a92534eec0e4c52af1d2f9ee3b5e63e0fc1e",
+    "native_probe.cpp": "32d58cb2ddcfcddbee87183b77249b3e7ea8991f0a9f2b6e08843937119736cc",
+    "capture.py": "66333cf2dbefea6afef092d8bc78a5b462b8ad5af669bff28465890aa3a09978"
+  },
+  "results_sha256": "51e114aecf36002e0051e381712da38c487cc0e4ae2d8f51e537cf30a9c1a957",
+  "limits": [
+    "TEMP tables only; connection settings/credentials omitted",
+    "Configured PG/SQLite/MySQL observations; no ClickHouse or older-server execution",
+    "Native syntax success does not establish AST support or a performance claim",
+    "Dangerous cyclic/null legacy function graphs are inspected in source, not executed"
+  ]
+}

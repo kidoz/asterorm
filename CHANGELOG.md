@@ -6,6 +6,10 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- CTE/window/set-operation inventory and v1 design contract, with configured AST
+  probes and native PostgreSQL/SQLite/MySQL semantics. Structured APIs remain
+  planned; the first implementation slice is the ordinary CTE/query foundation.
+
 - Source-bound local transactional harness acceptance review, combining generic
   scopes, optional Catch2 integration and worked reference fixtures. Fresh native
   checks also reject corrupted reference data on an otherwise healthy connection.

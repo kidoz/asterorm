@@ -76,6 +76,8 @@ Both PostgreSQL streaming strategies are implemented and
 The [transactional test harness contract](docs/transactional-test-harness-design.md)
 records the generic scope, Catch2 adapter and worked fixture migration, now
 [locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
+The [advanced-query inventory and contract](docs/advanced-query-design.md) defines
+planned CTEs, windows and set operations; these structured APIs are not implemented.
 
 ## Backends
 

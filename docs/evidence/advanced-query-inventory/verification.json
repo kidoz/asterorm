@@ -1,0 +1,134 @@
+{
+  "recorded_at_utc": "2026-11-08T09:44:41.239394+00:00",
+  "review_date": "2026-11-08",
+  "git_base": "ae4683f4d8c4a72117e7d5f8b9cf1e0c0ad357eb",
+  "scope": "Advanced query inventory and v1 design only; structured API implementation remains planned.",
+  "inspected_source_build_test_sha256": {
+    "include/asterorm/sql/ast.hpp": "269e353c629d6db246f266566f558ee400663a9632bf385204f7ab25ca0ec00e",
+    "include/asterorm/sql/compiler.hpp": "be99e806f17c9d470279d3f3276c113aa965f05668171fa6c0d1f7cd547b7336",
+    "src/sql/ast.cpp": "d4fd7aae8dc6ed5fef8ce4742c6e8480906c8b32e104639c680820aedb302022",
+    "src/sql/compiler.cpp": "8208d391c462f0c8f593c2324a9eca2fcef51bacb97c91ab9feb58416ee5ce37",
+    "include/asterorm/sql/typed.hpp": "cc4cbd696bd7540755bbf69185612dc81fb9a122185c51554e847047ec15f28b",
+    "include/asterorm/sql/typed_query.hpp": "a4848164dd9e11ad4cc8351aa4031729ab241e8d2edc1c46c21263e323b6c47d",
+    "include/asterorm/core/session.hpp": "b272f89d037dffd432c22a0b736502756754c384a13cfe1631ce8f47d7333cc9",
+    "include/asterorm/core/repository.hpp": "5e81865933642b749741f60d99b7e653fb6eb069d81fd85f44df9e811c09f5db",
+    "include/asterorm/core/hydration.hpp": "3c571621be62bcc657c6fee6ddf2a1e785f842d426fcd49e26e3ad1882543a35",
+    "include/asterorm/core/parameter.hpp": "c105511394a148dc6aab998b17a1ee501f8b607ad5a5db88d90e85dab9484f8d",
+    "include/asterorm/core/codecs.hpp": "1c3d189b0298b9736a8e5b4fc8bb1ae55f5e3d209d4043f69e6c27b6538dd004",
+    "include/asterorm/postgres/connection.hpp": "140e0f5f6916ba6749ffa938af49314a000b10912c091a91f2481b25d7a5f4bb",
+    "include/asterorm/sqlite/connection.hpp": "57f80abc2417640c2837d41ee85b5d446fdf6038ee81c556ab007778f19f9ca3",
+    "include/asterorm/mysql/connection.hpp": "cc45541bb90fbab623b06dbcec7971cf50d163cef5a3ad3174d90bf6b79a6781",
+    "src/database/postgres/connection.cpp": "777edb0bff7af0b5b7166ecaa885713c012adb53dfb0ef9eef7d718e55bf5877",
+    "src/database/sqlite/connection.cpp": "fbc8054f7d20a79ec22ebdc90f211e3df1f40197ac2c1d343d33556372d7b036",
+    "src/database/mysql/connection.cpp": "61f9d8ee1979f0a86264d0388b4b44079231acfcdd15a4599264d117ecdd99ba",
+    "include/asterorm/mysql/detail/params.hpp": "89fc17a87f108569ee4dcb2a4a39a3fc43bc30dd12b76788a79f73bd764ad10e",
+    "tests/unit/test_ast.cpp": "f9fd7ecc7af6a936bdfe196c8769e2b783a7aa86fce9a3ad4799364e443b88b8",
+    "tests/unit/test_typed_dsl.cpp": "1aaf9ab497cc10cd2cab7bf20904923f3c41ef532f3ac3ef22c99b6621316430",
+    "tests/unit/test_typed_query.cpp": "7f912123aaf939783032226132a545090865dfff257ec38baf0f88db66959aed",
+    "tests/unit/test_mysql_dialect.cpp": "1177cc09e415efa8f0e631f44ec5aff77ccbdee5c895a0e4cc3bf3592e07721e",
+    "tests/unit/test_bulk_predicate.cpp": "01ce74cc2bdf89147fd0454138e44c195464adaf45d77cabd7f1fe009baa474d",
+    "tests/unit/test_repository_stream.cpp": "0ea9b533cc60cf5ff0c0a752d288ea774f60bc2d55402c518d3c0ddfa43d4eec",
+    "tests/integration/test_sql.cpp": "d0332cbc954603def63e124b6b314da857f15476a8d890e2defae9de94ee9a52",
+    "tests/integration/test_sqlite_crud.cpp": "98e82a139b8e95189a14a52d475fbbc0d1544a04e783e00902aa9a4bde606a24",
+    "tests/integration/test_mysql_crud.cpp": "ea4221caad18affca6bc41135e93fa5650054b4312c0a9f5fc2a7daafb2d7ac5",
+    "tests/compile/check_typed_dsl.py": "34d0fb019e2b52a40f908a1ed955e255ea8cbf2befed98b5b39ab9f02d76dbb1",
+    "tests/compile/test_typed_dsl.cpp": "ac95c4f07a727a426ec1fa841a05ceda34d1c2ea98821d82888dd76ad7d37fe8",
+    "tests/meson.build": "d5d0a506505d495ee45325b273e7e2839dae9961fab08780f6baa70e235020a9",
+    "meson.build": "4482a6d9a63fe890e1878f027b7f3d37e1ed8e18f9cb352d553264813add3e7d",
+    "meson.options": "4f916c3e6317efe6a9005d2b99a6b5aecf13e4c28f277f25e8877af9e41791f5",
+    ".clang-format": "5487b608c8c20ccbc33b4a912b2e6ad33425adea9dfe9ef7c9e5cc4470d7573d",
+    ".clang-tidy": "e04b2e7820dda9f058d41f3c02682fb7662651c0fc849533aa375ed4c2e8dcbc",
+    "subprojects/catch2.wrap": "6e7dfd0705e5367c1a9c22a27bdef6f7a7e40a2a68d76e35d6aa055006181a2f"
+  },
+  "reviewed_document_sha256": {
+    "README.md": "8ce429218ed0b0081ed96474ce3b3643e08b1552d10294980a1032e0153b0bfa",
+    "CHANGELOG.md": "1ac04bcce3482f6d9181ab472146b0bee4c4f241a39f378a31050573c87cd8c3",
+    "docs/explanation/README.md": "e572e06961120d36a548c30813602e46650b27bba9b720007df721a3027f639c",
+    "docs/advanced-query-design.md": "d93f89ba740af1f884485a7b81b38975f7a7b29d68fb9ab50b6fb7ef10ee3b75",
+    "docs/evidence/advanced-query-inventory/README.md": "9babcc3b75ef3e15bcfedd6a5eb5a1ff0e86d445f6f035dd8b67545c08374c04"
+  },
+  "ignored_canonical_context_sha256": {
+    ".agents/contexts/ARCHITECTURE.md": "de10b353108c76a7c7ac5f0d3039e5a25aee559e1f43884afaf84c533d32b10a",
+    ".agents/contexts/specs/feature-expansion/README.md": "afd6f863d043f5b9bb5d9579ba175a07965675a5a7d4bdc59a0570774e893b53",
+    ".agents/contexts/specs/feature-expansion/QUERY_DSL_AND_SQL.md": "990ff6949593f21b2c36d0edaccc1fbfb42831d2440ce22aebd289fc6704d26f"
+  },
+  "capture_and_results_sha256": {
+    "capture.json": "906035220766736aac59d271a96cc80a3a95738b2e409e4a8e75b2d0efcbe55f",
+    "results.json": "51e114aecf36002e0051e381712da38c487cc0e4ae2d8f51e537cf30a9c1a957",
+    "capture.py": "66333cf2dbefea6afef092d8bc78a5b462b8ad5af669bff28465890aa3a09978",
+    "ast_probe.cpp": "bfb9e4cf705ecbea84a154bf8821a92534eec0e4c52af1d2f9ee3b5e63e0fc1e",
+    "native_probe.cpp": "32d58cb2ddcfcddbee87183b77249b3e7ea8991f0a9f2b6e08843937119736cc"
+  },
+  "standards_comparison": {
+    "baseline_local_report": "/tmp/asterorm-advanced-query-standards-baseline.json",
+    "baseline_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "current_local_report": "/tmp/asterorm-advanced-query-standards.json",
+    "current_sha256": "284addb789874a42fa4ce0090a2310b85ed55ae4b59ae17df49c000aff4fcec2",
+    "errors_warnings_infos_identical": true
+  },
+  "verification": [
+    {
+      "check": "capture",
+      "command": "python3 docs/evidence/advanced-query-inventory/capture.py --lint",
+      "exit_code": 0,
+      "result": {
+        "compile_execute_configurations": [
+          "ast",
+          "postgres",
+          "sqlite",
+          "mysql"
+        ],
+        "strict_probe_lint": true
+      },
+      "local_log": "/tmp/asterorm-advanced-query-capture.log",
+      "log_sha256": "3ca5c80d8beb3207aa13e6bd9f63c9c7b31afd7652f8084fbd563d1455a47a40"
+    },
+    {
+      "check": "tests",
+      "command": "just test",
+      "exit_code": 0,
+      "result": {
+        "targets_passed": 23,
+        "targets_failed": 0
+      },
+      "local_log": "/tmp/asterorm-advanced-query-tests.log",
+      "log_sha256": "41be52af13744efdecf11381b7e4d758ef24834db334b8cdbee07024eed0e981"
+    },
+    {
+      "check": "build",
+      "command": "meson compile -C buildDir",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-advanced-query-build.log",
+      "log_sha256": "acb8d081a230192e7090520a867fb6359cbe42ab7ab7183e54d2d6e1d5ec253d"
+    },
+    {
+      "check": "format",
+      "command": "python3 tools/run_clang_format.py --source-root . --check",
+      "exit_code": 0,
+      "result": {},
+      "local_log": "/tmp/asterorm-advanced-query-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "standards",
+      "command": "uv run --no-project --with pyyaml --with jsonschema python .agents/tools/validate_standards_package.py --root . --mode strict-governance --workspace --today 2026-11-08 --json-out /tmp/asterorm-advanced-query-standards.json",
+      "exit_code": 1,
+      "result": {
+        "errors": 53,
+        "warnings": 12,
+        "infos": 0,
+        "findings_unchanged": true
+      },
+      "local_log": "/tmp/asterorm-advanced-query-standards.log",
+      "log_sha256": "690cf088469b9267c3f2a17f3f3ccc472357cd5d6929c8b3a6d2b4a4913efd32"
+    }
+  ],
+  "limitations": [
+    "Unsigned local evidence, not independent execution attestation or release provenance.",
+    "Native SQL success is not structured AST/query execution acceptance; no production API changes.",
+    "Older-server and ClickHouse execution, timing/speedup and remote CI are not established.",
+    "Existing standards findings are not waived. Earlier captures remain historical.",
+    "Connection settings/credentials/build outputs/unrelated .gitignore excluded; local logs can expire."
+  ]
+}
