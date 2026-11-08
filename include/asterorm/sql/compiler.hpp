@@ -5,6 +5,7 @@
 
 #include "asterorm/core/result.hpp"
 #include "asterorm/sql/ast.hpp"
+#include "asterorm/sql/query_ast.hpp"
 
 namespace asterorm::sql {
 
@@ -41,11 +42,14 @@ template <typename Session> constexpr dialect dialect_for_session() {
 struct compiled_query {
     std::string sql;
     query_parameters params;
+    // Validated output labels for query_ast; empty for legacy/DML compilation.
+    std::vector<std::string> result_columns{};
 };
 
 class compiler {
   public:
-    explicit compiler(dialect target = dialect::postgres) : dialect_(target) {}
+    explicit compiler(dialect target = dialect::postgres, query_compile_options options = {})
+        : dialect_(target), query_options_(options) {}
 
     // Identifiers are quoted for `dialect`. Empty names and embedded NUL bytes
     // are rejected so a C-string client API cannot truncate the statement.
@@ -53,6 +57,7 @@ class compiler {
     [[nodiscard]] asterorm::result<std::string> quote_qualified_ident(std::string_view ident) const;
 
     [[nodiscard]] asterorm::result<compiled_query> compile(const select_ast& ast);
+    [[nodiscard]] asterorm::result<compiled_query> compile(const query_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const insert_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const insert_select_ast& ast);
     [[nodiscard]] asterorm::result<compiled_query> compile(const update_ast& ast);
@@ -64,12 +69,15 @@ class compiler {
 
   private:
     dialect dialect_;
+    query_compile_options query_options_;
+    [[nodiscard]] asterorm::result<std::string> compile_select(const select_ast& ast,
+                                                               query_parameters& params);
     [[nodiscard]] asterorm::result<std::string> render_column(std::string_view ident) const;
     [[nodiscard]] std::string placeholder(std::size_t index) const;
     [[nodiscard]] asterorm::result<std::string> compile_predicate(const predicate_ast& pred,
                                                                   query_parameters& params);
-    [[nodiscard]] asterorm::result<std::string> compile_expr(const expr_ast& expr,
-                                                             query_parameters& params);
+    [[nodiscard]] asterorm::result<std::string>
+    compile_expr(const expr_ast& expr, query_parameters& params, bool projection_root = false);
     [[nodiscard]] asterorm::result<std::string> compile_value(const value_source& src,
                                                               query_parameters& params);
     [[nodiscard]] asterorm::result<std::string>

@@ -22,6 +22,30 @@ session's dialect automatically. Identifiers are quoted; values are kept in
 parameters. Empty or NUL-containing identifiers are rejected. `func()` names
 must be bare identifiers. `raw_expr()` inserts caller-owned SQL text.
 
+## Ordinary CTE query roots
+
+`<asterorm/sql/query_ast.hpp>` adds move-only `query_ast`, `cte_ast`, and the
+single-use `query(select_ast).with_cte(name, query_ast, columns={}).build()` builder.
+`compiler::compile(query_ast)` validates the whole graph and emits ordered
+nonrecursive WITH definitions and the main SELECT with shared bindings.
+`compiled_query::result_columns` contains validated output labels for these roots;
+it is empty for legacy SELECT/DML. Compiler and result layout changes require a
+library/consumer rebuild; two-element structured bindings of `compiled_query`
+must be updated.
+
+`<asterorm/sql/query.hpp>` adds `query_as<Row>(session, ast, options={})`, a named,
+materializing execution path using `entity_traits<Row>::columns` and the existing
+codecs/observer. It requires explicit connection dialect metadata and a compatible
+`observed_execute` helper. It validates mapping before leasing and native metadata
+even when no rows are returned. See the [CTE guide](../how-to/common-table-expressions.md)
+for names, budgets, mapping/alias rules and migration notes.
+
+PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
+MySQL profile options reserve baseline 8.0.19 and modern 8.0.31, with no hidden
+version query. Reserved `compound_ast` and recursive roots reject until later
+work. Sets, recursion, windows and extensions remain planned. There is no implicit
+conversion to narrow INSERT SELECT/stream leaves.
+
 ## INSERT-from-SELECT
 
 `insert_select_ast` contains `table`, explicit destination `columns`, and a

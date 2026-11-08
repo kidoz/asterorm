@@ -43,6 +43,9 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - [Mapped entity streams](docs/how-to/stream-entities.md) on PostgreSQL with
   single-row or declared-cursor batches, owned hydration, structured late errors
   and one terminal query event.
+- [Ordinary common table expressions](docs/how-to/common-table-expressions.md) with
+  owned query roots, shared bindings and explicitly named result mapping on PostgreSQL,
+  SQLite and MySQL.
 - [Scoped advisory locks](docs/how-to/advisory-locking.md) on PostgreSQL, with
   connection pinning, nested scopes, and cleanup on errors and exceptions.
 - [SELECT row locking](docs/how-to/select-locking.md) on PostgreSQL and MySQL,
@@ -77,7 +80,8 @@ The [transactional test harness contract](docs/transactional-test-harness-design
 records the generic scope, Catch2 adapter and worked fixture migration, now
 [locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
 The [advanced-query inventory and contract](docs/advanced-query-design.md) defines
-planned CTEs, windows and set operations; these structured APIs are not implemented.
+the implemented ordinary CTE foundation and planned set operations, recursive CTEs
+and windows.
 
 ## Backends
 

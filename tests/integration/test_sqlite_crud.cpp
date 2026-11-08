@@ -10,6 +10,7 @@
 #include "asterorm/sql/typed_query.hpp"
 #include "asterorm/sqlite/driver.hpp"
 #include "support/bulk_predicate.hpp"
+#include "support/cte_query.hpp"
 #include "support/transactional_session.hpp"
 #include "support/typed_query_observer.hpp"
 
@@ -691,4 +692,8 @@ TEST_CASE("SQLite test scope detects native automatic rollback before another st
     REQUIRE(pool.stats().total == 0);
     REQUIRE_FALSE(db.has_active_transaction());
     REQUIRE_FALSE(scope_type::create(db).has_value());
+}
+
+TEST_CASE("SQLite Integration: ordinary CTE execution", "[sqlite][cte]") {
+    asterorm::test::check_cte_query(asterorm::sqlite::driver{}, ":memory:");
 }

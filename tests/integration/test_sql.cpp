@@ -10,6 +10,7 @@
 #include "asterorm/postgres/driver.hpp"
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
+#include "support/cte_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/typed_query_observer.hpp"
 
@@ -291,4 +292,12 @@ TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
     auto cleanup_lease = pool.acquire();
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS native_users;");
     (void)(*cleanup_lease)->execute("DROP TABLE IF EXISTS diagnostic_users;");
+}
+
+TEST_CASE("PG Integration: ordinary CTE execution", "[pg][cte]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_cte_query(asterorm::pg::driver{},
+                                    configured ? configured
+                                               : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                                 "user=orm_test password=orm_test sslmode=disable");
 }

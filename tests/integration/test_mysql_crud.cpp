@@ -10,6 +10,7 @@
 #include "asterorm/repository.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "support/bulk_predicate.hpp"
+#include "support/cte_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/typed_query_observer.hpp"
 
@@ -480,4 +481,8 @@ TEST_CASE("MySQL Integration: timeout scopes reject before leasing", "[mysql][ti
 
 TEST_CASE("mysql Integration: bulk predicate mutations", "[mysql][bulk-dml]") {
     asterorm::test::check_bulk_predicate(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: ordinary CTE execution", "[mysql][cte]") {
+    asterorm::test::check_cte_query(asterorm::mysql::driver{}, conninfo());
 }

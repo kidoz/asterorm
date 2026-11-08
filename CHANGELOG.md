@@ -6,9 +6,14 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Ordinary CTE query roots, ordered owned definitions, shared parameter bindings
+  and query-wide graph validation on PostgreSQL, SQLite and MySQL. The separate
+  `sql::query_as<Row>` API maps named trait columns through observed execution.
+  Compiler/result layouts changed; rebuild library and consumers together.
+
 - CTE/window/set-operation inventory and v1 design contract, with configured AST
-  probes and native PostgreSQL/SQLite/MySQL semantics. Structured APIs remain
-  planned; the first implementation slice is the ordinary CTE/query foundation.
+  probes and native PostgreSQL/SQLite/MySQL semantics. The ordinary CTE/query foundation is implemented; sets, recursion, windows
+  and extensions remain planned.
 
 - Source-bound local transactional harness acceptance review, combining generic
   scopes, optional Catch2 integration and worked reference fixtures. Fresh native
@@ -137,6 +142,10 @@ All notable changes to AsterORM will be documented in this file.
 - Made repository writes and schema migrations aware of backend capabilities.
 
 ### Fixed
+
+- SELECT function projection aliases now accept either alias location, emit equal
+  aliases once and reject conflicts/nested aliases. Encoded SELECT parameter errors
+  and text NULs reject at compilation. SQLite offset-only SELECT emits `LIMIT -1`.
 
 - Transaction-guard abandonment on connections with nonthrowing close now catches
   rollback/pool-return exceptions, defers release of borrowed connections and

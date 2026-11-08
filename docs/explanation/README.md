@@ -36,8 +36,10 @@ The [worked fixture guide](../how-to/worked-reference-fixtures.md) explains pinn
 validation, immutable reference IDs and failure without replacement connections.
 
 The [advanced-query inventory and contract](../advanced-query-design.md) records
-current AST/compiler gaps, native CTE/window/set semantics, parameter/context
-rules and the proposed delivery/acceptance plan. It does not deliver those APIs.
+the initial AST/compiler gaps, native CTE/window/set semantics, parameter/context
+rules and the delivery plan. The [ordinary CTE guide](../how-to/common-table-expressions.md)
+covers the implemented owned root and explicit named execution. Sets, recursion,
+windows and extensions remain planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

@@ -7,6 +7,7 @@ core_tests = executable(
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
+    'unit/test_query.cpp',
     'unit/test_bulk_predicate.cpp',
     'unit/test_codecs.cpp',
     'unit/test_transactions.cpp',
@@ -78,6 +79,9 @@ if sqlite_enabled
   test('sqlite unit tests', sqlite_unit_tests)
   test('transactional scope guide', python_program,
     args : [files('check_transactional_guide.py'), '--build-root', meson.project_build_root()],
+  )
+  test('ordinary CTE guide', python_program,
+    args : [files('check_cte_guide.py'), '--build-root', meson.project_build_root()],
   )
   test('bulk mutation guide', python_program,
     args : [files('check_bulk_predicate_guide.py'), '--build-root', meson.project_build_root()],
