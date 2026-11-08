@@ -98,7 +98,37 @@ int allocation_checks() {
     facade.reset();
     retained->release_to_pool();
     deny_allocation = false;
-    return allocations == late_before && closes == 3 ? 0 : 5;
+    if (allocations != late_before || closes != 3) {
+        return 5;
+    }
+    config.leak_threshold = std::chrono::milliseconds{1};
+    config.maintenance_interval = std::chrono::hours{1};
+    pool_type diagnosed{driver{&closes}, config};
+    auto overdue = diagnosed.acquire();
+    if (!overdue) {
+        return 6;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    const auto diagnostic_before = allocations;
+    deny_allocation = true;
+    overdue->release_to_pool(); // Enqueue the warning without allocating.
+    diagnosed.close();
+    deny_allocation = false;
+    if (allocations != diagnostic_before || closes != 4) {
+        return 7;
+    }
+    deny_allocation = true;
+    bool polling_failed{};
+    try {
+        auto records = diagnosed.take_diagnostics();
+    } catch (const std::bad_alloc&) {
+        polling_failed = true;
+    }
+    deny_allocation = false;
+    if (!polling_failed || diagnosed.take_diagnostics().size() != 1) {
+        return 8;
+    }
+    return diagnosed.take_diagnostics().empty() ? 0 : 9;
 }
 } // namespace
 int main() {

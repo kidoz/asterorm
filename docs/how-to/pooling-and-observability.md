@@ -121,3 +121,13 @@ Finish raw transactions before returning explicit leases when their connection
 must remain available. Built-in adapters discard known dirty returns; private
 SQLite memory data disappears with its connection. Custom legacy adapters keep
 their documented local fallback. Managed sessions retain transaction-guard cleanup.
+
+## Retire connections and consume lease warnings
+
+Set `idle_timeout`/`max_lifetime` to enable age retirement and `leak_threshold`
+to enable long-held checkout warnings. Zero disables each option;
+`maintenance_interval` must stay positive. The [aging guide](pool-aging-and-diagnostics.md)
+explains idle-only background work, held-lease protection, acquisition outcome
+counters/histogram and `take_diagnostics()` pull delivery. Native cleanup and OS
+scheduling are not hard deadlines. Private SQLite memory contents vanish when
+the physical connection is retired.

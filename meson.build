@@ -128,7 +128,7 @@ pkgconfig.generate(
   filebase : 'asterorm',
   description : 'PostgreSQL-first ORM for C++23',
   version : meson.project_version(),
-  libraries : asterorm_libraries,
+  libraries : asterorm_libraries + [pool_threads],
   requires_private : asterorm_pkg_requires_private,
   subdirs : ['.'],
 )

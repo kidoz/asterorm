@@ -1,3 +1,4 @@
+#include "../support/pool_aging.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
 #include <string>
@@ -732,4 +733,8 @@ TEST_CASE("sqlite Integration: pool ownership foundation", "[sqlite][pool-founda
 TEST_CASE("sqlite Integration: pool health and dirty returns", "[sqlite][pool-health]") {
     asterorm::test::check_pool_health(asterorm::sqlite::driver{},
                                       "file:pool_health?mode=memory&cache=shared");
+}
+
+TEST_CASE("sqlite pool aging preserves held transactions and retires on return", "[pool-aging]") {
+    asterorm::test::check_pool_aging(asterorm::sqlite::driver{}, ":memory:");
 }

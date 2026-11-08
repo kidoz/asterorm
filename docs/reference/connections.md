@@ -14,6 +14,10 @@ Declarations: [pool](../../include/asterorm/pool/connection_pool.hpp) and
 | `conninfo` | empty string | Backend-specific connection settings |
 | `statement_timeout` | `nullopt` | PostgreSQL session baseline on creation/checkout; optional milliseconds, 0 disables, maximum 2,147,483,647 |
 | `pre_ping` | `false` | Bounded PG SELECT 1 before handoff; unsupported enabled backends reject before connect |
+| `idle_timeout` | `0ms` | Disabled at zero; otherwise expire idle entries since latest return |
+| `max_lifetime` | `0ms` | Disabled at zero; otherwise retire entries by age since connect success, preserving held leases |
+| `leak_threshold` | `0ms` | Disabled at zero; otherwise queue one long-held warning per checkout |
+| `maintenance_interval` | `1000ms` | Strictly positive; worker starts only when aging/warnings are enabled |
 | `pre_ping_timeout` | `1000ms` | Ping flush/read/drain deadline; positive when enabled, nonnegative otherwise |
 
 `connection_pool<Driver>::acquire()` returns `result<lease_type>`. A lease is
@@ -47,7 +51,7 @@ Stats satisfy `total == idle + in_use` and
 waiters. `leaked_at_close` snapshots non-idle slots at the first close transition,
 including setup, and no longer means the old ten-second wait expired. The
 [ownership guide](../how-to/pool-ownership-and-shutdown.md) covers migration;
-[design](../production-pool-design.md) separates the remaining health/age/metric work.
+[design](../production-pool-design.md) separates the remaining cache/profile work.
 
 Explicit timeout configuration rejects unsupported adapters before connecting,
 including lazy pools. New/idle setup failures discard the connection; lazy/reuse
@@ -62,6 +66,14 @@ event/cache entry. Timeout/failure discards without an automatic reconnect loop;
 completed native diagnostics are preserved. The deadline does not include connect
 or baseline setup. See the [health guide](../how-to/pool-health-and-reuse.md).
 The appended health configuration fields require a coordinated rebuild too.
+
+[Aging and diagnostics](../how-to/pool-aging-and-diagnostics.md) add idle-only
+maintenance, return/checkout age validation, saturating outcome counters, eight
+noncumulative acquisition-duration buckets and `overdue_leases`.
+`take_diagnostics()` returns/clears a bounded FIFO vector of `pool_diagnostic`
+(slot/generation/held duration/warning severity); allocation failure preserves the
+queue. No logging callback runs on return or maintenance. Rebuild consumers for
+configuration/stat/entry layouts; installed package targets carry thread linkage.
 
 ## Session operations
 

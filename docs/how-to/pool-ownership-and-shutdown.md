@@ -96,3 +96,7 @@ configuration and shutdown foundation. [Evidence](../evidence/pool-ownership/REA
 covers concurrency, allocation failure, native/session/stream regression and
 installed consumers. [Bounded health and dirty-return handling](pool-health-and-reuse.md)
 are now implemented. Aging, histograms/warnings and cache/proxy policy remain planned.
+
+[Aging and diagnostics](pool-aging-and-diagnostics.md) add optional idle-only
+maintenance, non-revoking lifetime retirement, acquisition metrics and structured
+warning polling. Rebuild for appended config/stat fields and entry metadata.

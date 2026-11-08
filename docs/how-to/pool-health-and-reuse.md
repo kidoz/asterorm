@@ -101,5 +101,6 @@ Rebuild library and consumers for the appended `pool_config` fields and adapter
 API changes. The [design](../production-pool-design.md) and
 [evidence](../evidence/pool-health/README.md) record native rollback/stale-backend
 checks, controlled real-libpq wire scenarios and regression/consumer checks.
-Aging and diagnostics are next; cache/profile policy and combined pool acceptance
+[Aging and diagnostics](pool-aging-and-diagnostics.md) now add idle retirement,
+metrics and structured warnings. Cache/profile policy and combined pool acceptance
 remain planned.

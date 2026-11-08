@@ -1,4 +1,5 @@
 include(CMakeFindDependencyMacro)
+find_dependency(Threads)
 
 get_filename_component(_asterorm_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 
@@ -7,6 +8,7 @@ if(NOT TARGET AsterORM::core)
   set_target_properties(AsterORM::core PROPERTIES
     IMPORTED_LOCATION "${_asterorm_prefix}/lib/libasterorm_core${CMAKE_SHARED_LIBRARY_SUFFIX}"
     INTERFACE_INCLUDE_DIRECTORIES "${_asterorm_prefix}/include"
+    INTERFACE_LINK_LIBRARIES "Threads::Threads"
   )
 endif()
 

@@ -1,3 +1,4 @@
+#include "../support/pool_aging.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include <future>
@@ -524,4 +525,8 @@ TEST_CASE("mysql Integration: pool ownership foundation", "[mysql][pool-foundati
 
 TEST_CASE("mysql Integration: pool health and dirty returns", "[mysql][pool-health]") {
     asterorm::test::check_pool_health(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("mysql pool aging preserves held transactions and retires on return", "[pool-aging]") {
+    asterorm::test::check_pool_aging(asterorm::mysql::driver{}, conninfo());
 }

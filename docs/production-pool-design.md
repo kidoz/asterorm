@@ -1,7 +1,7 @@
 # Production connection pool: inventory and v1 contract
 
 Reviewed on 2026-11-08. **Ownership/configuration/shutdown, bounded health and dirty
-returns implemented; aging, diagnostics and cache/profile policy remain planned.** Current code is
+returns, aging and diagnostics implemented; cache/profile policy remains planned.** Current code is
 [connection_pool.hpp](../include/asterorm/pool/connection_pool.hpp), with adapter
 state/cache behavior in `src/database/{postgres,sqlite,mysql}/connection.cpp`.
 [Inventory evidence](evidence/production-pool-inventory/README.md) retains its original
@@ -9,7 +9,9 @@ probes and source hashes. The [current ownership guide](how-to/pool-ownership-an
 and [delivery evidence](evidence/pool-ownership/README.md) cover the implemented slice.
 The [health guide](how-to/pool-health-and-reuse.md) and
 [health evidence](evidence/pool-health/README.md) cover the next implemented slice.
-Age/diagnostic/profile options below remain proposed. The [advanced-query review](advanced-query-acceptance.md) remains historical
+The [aging guide](how-to/pool-aging-and-diagnostics.md) and
+[aging evidence](evidence/pool-aging/README.md) cover retirement/metrics/warnings.
+Profile/cache options below remain proposed. The [advanced-query review](advanced-query-acceptance.md) remains historical
 acceptance of that separate feature.
 
 ## Inventory before implementation
@@ -47,10 +49,10 @@ existing fields:
 | --- | --- |
 | `pre_ping` (implemented) | `false`; true requires a supported bounded adapter operation |
 | `pre_ping_timeout` (implemented) | `1000ms`; strictly positive when enabled, nonnegative otherwise |
-| `idle_timeout` | `0ms` disables; otherwise expire idle entries since their latest return |
-| `max_lifetime` | `0ms` disables; otherwise age since successful native connection creation |
-| `leak_threshold` | `0ms` disables; otherwise warn once per checkout generation after this held duration |
-| `maintenance_interval` | `1000ms`, strictly positive; worker starts only when aging/leak detection is enabled |
+| `idle_timeout` (implemented) | `0ms` disables; otherwise expire idle entries since their latest return |
+| `max_lifetime` (implemented) | `0ms` disables; otherwise age since successful native connection creation |
+| `leak_threshold` (implemented) | `0ms` disables; otherwise warn once per checkout generation after this held duration |
+| `maintenance_interval` (implemented) | `1000ms`, strictly positive; worker starts only when aging/leak detection is enabled |
 | `statement_caching` | `per_connection` or `off`; default per-connection, bounded by existing cache size; size zero still disables caching |
 | `profile` | `direct` by default; optional PG-only `transaction_pool` with explicit restrictions below |
 
@@ -115,7 +117,7 @@ bound that work. The existing ten-second active-lease wait is removed. Do not
 interrupt a transaction/stream already owned by a borrower or close its handle
 from a maintenance thread.
 
-In the future aging slice, the facade owns one optional maintenance `jthread`; it uses weak state access,
+The facade now owns one optional maintenance `jthread`; it uses weak state access,
 stop-aware waiting and no user callbacks. Shutdown requests stop and wakes it;
 destruction joins the worker outside the state mutex. Destruction can still await
 an already-running native idle-close operation. Avoid a state/worker shared-pointer
@@ -129,8 +131,8 @@ is introduced.
 
 ## Health, dirty returns and age
 
-Health and dirty returns are implemented. The age/reaper paragraphs remain the
-implementation target for the next slice.
+Health, dirty returns, age retirement and pull diagnostics are implemented.
+The following sections describe their current contracts.
 
 Checkout order: reserve/pop a candidate, reject locally unusable/expired state,
 run optional health validation, apply the existing explicit timeout baseline,
@@ -185,7 +187,7 @@ disposable fixtures for aging tests. No schema/data copy is performed on replace
 Extend the snapshot with the state gauges above, monotonic saturating counters
 for acquisition success/wait timeout/connection failure/health failure/retirement,
 and a fixed histogram of acquisition-call duration. Include successful and failed
-calls, with outcome counters separate. Proposed bucket upper bounds are 1, 5, 10,
+calls, with outcome counters separate. Bucket upper bounds are 1, 5, 10,
 50, 100, 500 and 1000 milliseconds plus an overflow bucket. This measures the
 library call, including connect/setup when present; it is not query latency or a
 promised deadline. `waiters` counts threads actually in capacity waits and returns
@@ -253,8 +255,8 @@ must not be labeled PgBouncer acceptance.
 | --- | --- |
 | **Implemented: ownership/configuration/shutdown foundation** | Shared state/entries and move-safe noexcept lease return; eager capacity/duration validation; closed/timeout error semantics; close wakes waiters without waiting for borrowers; completion after close discards safely. Deterministic blocked-connect/return/close races, allocation failure, late leases, repeated close and unchanged session/stream/testing ownership; all native adapters and installed consumers |
 | **Implemented: bounded health and dirty-return handling** | Native PG stale-backend replacement/rejection; successful and timed-out ping fully drained/discarded; no mutex-held I/O, retry or observer/cache pollution; PG/SQLite/MySQL dirty returns/readers discarded; unsupported pre-ping rejected before connect |
-| **Next: aging and diagnostics** | Fake-clock checkout/return/reaper boundaries, over-age held lease retention, stop/join/shutdown races; queue gauges and histogram/counter invariants, warning once per generation, bounded warning overflow and no callbacks on destruction |
-| Cache/profile policy | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
+| **Implemented: aging and diagnostics** | Fake-clock checkout/return/reaper boundaries, over-age held lease retention, stop/join/shutdown races; queue gauges and histogram/counter invariants, warning once per generation, bounded warning overflow and no callbacks on destruction |
+| **Next: cache/profile policy** | Off/per-connection native results/cache counts on all three; PG parameterized off path, proxy admission and migration/advisory rejection; actual isolated PgBouncer transaction-mode acceptance before compatibility claims |
 | Combined local acceptance | Fresh full regression, sanitizer/race coverage where supported, build/format/lint/standards comparison, source-bound evidence, installed CMake/pkg-config consumers, public guide/migration notes and explicit remaining limitations |
 
 Rebuild library and consumers when implementation changes pool/config/stats/lease/
@@ -262,7 +264,7 @@ adapter layouts or error enums. Preserve the umbrella CMake target and pkg-confi
 dependency contract; export required thread linkage for public header workers.
 The inventory introduced no ABI change. The foundation now changes pool, lease and
 stats layouts; rebuild consumers and update error handling as described in the
-ownership guide. Next implement **aging and diagnostics**.
+ownership and aging guides. Next implement **cache/profile policy**.
 
 ## Ownership implementation follow-up (2026-11-08)
 
@@ -308,3 +310,23 @@ wire scenarios (including missing terminal messages and fatal diagnostics),
 sanitizers, installed consumers and the full regression. `pool_config` layout and
 adapter APIs change; rebuild consumers. Private SQLite memory lifetime remains
 connection-scoped. No reaper, histogram, warning or proxy feature is claimed here.
+
+## Aging and diagnostic implementation follow-up (2026-11-08)
+
+Entries now retain steady birth/return/checkout timestamps and generation/slot
+metadata. An optional facade-owned stop-aware worker inspects only metadata of
+held leases and retires idle entries outside the state mutex. Checkout sweeps
+expired idle candidates; post-setup lifetime expiry returns once, and over-age
+held entries retire on return. No background refill/reconnect or borrower handle
+revocation is added. A private clock/maintenance seam supports deterministic
+boundary tests. Close requests stop without joining; destruction joins outside
+the state mutex, including already-running native idle cleanup.
+
+Acquisition outcomes/exceptions feed saturating counters and eight fixed duration
+buckets. Structured warning storage is allocated up front when enabled, capped
+at max_size. Once-per-generation warnings use no return-path allocation; polling
+allocation failure leaves records intact. Native PG/SQLite/MySQL held transactions,
+queue overflow, lease moves, blocked cleanup, worker shutdown, allocation denial
+and installed consumers are covered by the linked evidence. Rebuild consumers for
+config/stat/entry/pool layouts and propagate thread linkage. Cache/profile policy
+and combined acceptance remain open; no proxy compatibility is established.

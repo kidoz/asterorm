@@ -1,4 +1,5 @@
 inc = include_directories('../include')
+pool_threads = dependency('threads')
 
 asterorm_core = library(
   'asterorm_core',
@@ -14,11 +15,13 @@ asterorm_core = library(
     'crud/repository.cpp',
   ],
   include_directories : inc,
+  dependencies : pool_threads,
   install : true,
 )
 
 asterorm_core_dep = declare_dependency(
   include_directories : inc,
+  dependencies : pool_threads,
   link_with : asterorm_core,
 )
 

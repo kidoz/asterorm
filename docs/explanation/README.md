@@ -54,7 +54,9 @@ bounded health checks, age retirement, metrics and proxy restrictions. The
 [ownership foundation](../how-to/pool-ownership-and-shutdown.md) now implements
 shared lease state, validation, nonthrowing returns and non-draining close.
 [Bounded health and dirty-return handling](../how-to/pool-health-and-reuse.md) now
-add optional PG pre-ping and native reuse checks. Aging and diagnostics are next.
+add optional PG pre-ping and native reuse checks. [Aging and diagnostics](../how-to/pool-aging-and-diagnostics.md)
+add idle retirement, acquisition metrics and structured long-held-lease warnings.
+Cache/profile policy is next.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

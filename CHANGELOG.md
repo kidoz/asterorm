@@ -6,6 +6,12 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Optional idle/lifetime retirement with a stop-aware worker, non-revoking held
+  leases and checkout/return age validation. Added saturating acquisition counters,
+  fixed duration buckets and bounded structured long-held-lease warning polling.
+  Package exports carry thread linkage; rebuild consumers for pool/config/stats
+  and internal entry layouts. Cache/profile policy remains planned.
+
 - Optional bounded PostgreSQL pool pre-ping through nonblocking uncached SELECT 1,
   with terminal drain, mode restoration and timeout/failure discard. Unsupported
   enabled backends reject before connecting. PG/SQLite/MySQL now discard known

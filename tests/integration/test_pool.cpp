@@ -1,3 +1,4 @@
+#include "../support/pool_aging.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 
@@ -74,4 +75,12 @@ TEST_CASE("PG Integration: pool health and dirty returns", "[pg][pool-health]") 
     auto current = (*replacement)->execute("SELECT pg_backend_pid()");
     REQUIRE(current);
     REQUIRE(current->get_string(0, 0) != pid);
+}
+
+TEST_CASE("pg pool aging preserves held transactions and retires on return", "[pool-aging]") {
+    const char* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_pool_aging(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
 }

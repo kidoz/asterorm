@@ -6,6 +6,7 @@ core_tests = executable(
     'unit/test_pool.cpp',
     'unit/test_pool_foundation.cpp',
     'unit/test_pool_health.cpp',
+    'unit/test_pool_aging.cpp',
     'unit/test_pool_timeout.cpp',
     'unit/test_entity_traits.cpp',
     'unit/test_ast.cpp',
@@ -99,6 +100,9 @@ if sqlite_enabled
   )
   test('pool health guide', python_program,
     args : [files('check_pool_health_guide.py'), '--build-root', meson.project_build_root()],
+  )
+  test('pool aging guide', python_program,
+    args : [files('check_pool_aging_guide.py'), '--build-root', meson.project_build_root()],
   )
   test('window function guide', python_program,
     args : [files('check_window_guide.py'), '--build-root', meson.project_build_root()],

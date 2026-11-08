@@ -1,14 +1,17 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <concepts>
 #include <condition_variable>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -27,6 +30,18 @@ struct pool_config {
     std::optional<std::chrono::milliseconds> statement_timeout;
     bool pre_ping{false};
     std::chrono::milliseconds pre_ping_timeout{1000};
+    std::chrono::milliseconds idle_timeout{0};
+    std::chrono::milliseconds max_lifetime{0};
+    std::chrono::milliseconds leak_threshold{0};
+    std::chrono::milliseconds maintenance_interval{1000};
+};
+
+enum class pool_diagnostic_severity : std::uint8_t { warning };
+struct pool_diagnostic {
+    std::uint64_t slot{};
+    std::uint64_t generation{};
+    std::chrono::milliseconds held_for{};
+    pool_diagnostic_severity severity{pool_diagnostic_severity::warning};
 };
 
 struct pool_stats {
@@ -40,9 +55,31 @@ struct pool_stats {
     size_t checking{0};
     size_t retiring{0};
     size_t waiters{0};
+    size_t overdue_leases{0};
+    std::uint64_t acquires_succeeded{}, acquires_failed{}, acquire_timeouts{};
+    std::uint64_t connection_failures{}, health_failures{}, retirements{}, diagnostics_dropped{};
+    // Noncumulative buckets: <=1,5,10,50,100,500,1000ms, then overflow.
+    std::array<std::uint64_t, 8> acquisition_duration{};
 };
 
 namespace detail {
+using pool_clock = std::chrono::steady_clock;
+using pool_clock_reader = pool_clock::time_point (*)() noexcept;
+struct pool_test_access;
+inline void pool_increment(std::uint64_t& counter) noexcept {
+    if (counter != std::numeric_limits<std::uint64_t>::max()) {
+        ++counter;
+    }
+}
+inline bool pool_elapsed(pool_clock::time_point started, pool_clock::time_point now,
+                         std::chrono::milliseconds limit) noexcept {
+    if (limit.count() <= 0 || limit > std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          pool_clock::duration::max())) {
+        return false;
+    }
+    const auto ticks = std::chrono::duration_cast<pool_clock::duration>(limit);
+    return started <= pool_clock::time_point::max() - ticks && now >= started + ticks;
+}
 template <typename Connection>
 concept has_pool_reuse_check = requires(Connection& connection) {
     { connection.is_pool_reusable() } noexcept -> std::same_as<bool>;
@@ -133,9 +170,16 @@ asterorm::result<void> configure_statement_timeout(Conn& conn, const pool_config
 // Intrusive idle entries make the return path allocation-free. A leased entry
 // and its state survive independently of the pool facade.
 template <typename Connection> struct pool_entry {
-    explicit pool_entry(Connection&& value) noexcept : connection(std::move(value)) {}
+    explicit pool_entry(Connection&& value,
+                        pool_clock::time_point created = pool_clock::now()) noexcept
+        : connection(std::move(value)), born_at(created), returned_at(created) {}
     Connection connection;
     std::unique_ptr<pool_entry> next;
+    pool_entry* leased_previous{};
+    pool_entry* leased_next{};
+    pool_clock::time_point born_at, returned_at, checked_out_at;
+    std::uint64_t slot{}, generation{};
+    bool warned{}, retire_on_return{};
 };
 
 template <typename Driver, typename Connection> struct pool_state {
@@ -143,8 +187,8 @@ template <typename Driver, typename Connection> struct pool_state {
     using entry_ptr = std::unique_ptr<entry>;
     enum class phase : std::uint8_t { connecting, checking, leased, retiring };
 
-    pool_state(Driver value, pool_config settings)
-        : driver(std::move(value)), config(std::move(settings)) {}
+    pool_state(Driver value, pool_config settings, pool_clock_reader clock = pool_clock::now)
+        : driver(std::move(value)), config(std::move(settings)), now(clock) {}
     ~pool_state() {
         // Normally close() has already detached every idle entry. Also make
         // constructor-unwind cleanup iterative, rather than recursively linked.
@@ -177,11 +221,99 @@ template <typename Driver, typename Connection> struct pool_state {
         }
         std::terminate();
     }
+    bool lifetime_expired(const entry& node, pool_clock::time_point sampled) const noexcept {
+        return pool_elapsed(node.born_at, sampled, config.max_lifetime);
+    }
+    bool idle_expired(const entry& node, pool_clock::time_point sampled) const noexcept {
+        return lifetime_expired(node, sampled) ||
+               pool_elapsed(node.returned_at, sampled, config.idle_timeout);
+    }
+    void checkout(entry& node) noexcept {
+        node.checked_out_at = now();
+        if (!node.slot) {
+            pool_increment(next_slot);
+            node.slot = next_slot;
+        }
+        pool_increment(next_generation);
+        node.generation = next_generation;
+        node.warned = false;
+        node.leased_next = leased_head;
+        if (leased_head) {
+            leased_head->leased_previous = &node;
+        }
+        leased_head = &node;
+    }
+    void warn_overdue(entry& node, pool_clock::time_point sampled) noexcept {
+        if (node.warned || !pool_elapsed(node.checked_out_at, sampled, config.leak_threshold)) {
+            return;
+        }
+        node.warned = true;
+        if (diagnostic_count == diagnostic_queue.size()) {
+            pool_increment(diagnostics_dropped);
+            return;
+        }
+        const auto tail = (diagnostic_head + diagnostic_count) % diagnostic_queue.size();
+        diagnostic_queue[tail] = {
+            .slot = node.slot,
+            .generation = node.generation,
+            .held_for = std::chrono::duration_cast<std::chrono::milliseconds>(sampled -
+                                                                              node.checked_out_at),
+        };
+        ++diagnostic_count;
+    }
+    void unlease(entry& node) noexcept {
+        if (node.leased_previous) {
+            node.leased_previous->leased_next = node.leased_next;
+        } else {
+            leased_head = node.leased_next;
+        }
+        if (node.leased_next) {
+            node.leased_next->leased_previous = node.leased_previous;
+        }
+        node.leased_previous = node.leased_next = nullptr;
+    }
+    void maintain() noexcept {
+        entry_ptr detached;
+        {
+            std::scoped_lock lock(mutex);
+            if (closed) {
+                return;
+            }
+            const auto sampled = now();
+            for (auto* node = leased_head; node; node = node->leased_next) {
+                node->retire_on_return |= lifetime_expired(*node, sampled);
+                warn_overdue(*node, sampled);
+            }
+            auto* link = &idle_head;
+            while (*link) {
+                if (!idle_expired(**link, sampled)) {
+                    link = &(*link)->next;
+                    continue;
+                }
+                auto node = std::move(*link);
+                *link = std::move(node->next);
+                node->next = std::move(detached);
+                detached = std::move(node);
+                --idle;
+                ++retiring;
+                pool_increment(retirements);
+            }
+        }
+        while (detached) {
+            auto node = std::move(detached);
+            detached = std::move(node->next);
+            dispose(std::move(node));
+            finish_retirement();
+        }
+    }
     void retire(entry_ptr node, phase previous) noexcept {
         {
             std::scoped_lock lock(mutex);
             --count(previous);
             ++retiring;
+            if (node) {
+                pool_increment(retirements);
+            }
         }
         dispose(std::move(node));
         finish_retirement();
@@ -202,9 +334,16 @@ template <typename Driver, typename Connection> struct pool_state {
         }
         {
             std::scoped_lock lock(mutex);
+            const auto sampled = now();
+            if (!closed) {
+                warn_overdue(*node, sampled);
+            }
+            unlease(*node);
+            reusable = reusable && !node->retire_on_return && !lifetime_expired(*node, sampled);
             if (!closed && reusable) {
                 --leased;
                 ++idle;
+                node->returned_at = sampled;
                 node->next = std::move(idle_head);
                 idle_head = std::move(node);
                 condition.notify_all();
@@ -223,9 +362,13 @@ template <typename Driver, typename Connection> struct pool_state {
             closed = true;
             leaked_at_close = total - idle;
             retiring += idle;
+            for (std::size_t index = 0; index < idle; ++index) {
+                pool_increment(retirements);
+            }
             idle = 0;
             detached = std::move(idle_head);
             condition.notify_all();
+            maintenance_condition.notify_all();
         }
         while (detached) {
             auto node = std::move(detached);
@@ -246,9 +389,18 @@ template <typename Driver, typename Connection> struct pool_state {
     }
     Driver driver;
     const pool_config config;
+    const pool_clock_reader now;
     mutable std::mutex mutex;
     std::condition_variable condition;
+    std::condition_variable_any maintenance_condition;
     entry_ptr idle_head;
+    entry* leased_head{};
+    std::uint64_t next_slot{}, next_generation{};
+    std::vector<pool_diagnostic> diagnostic_queue;
+    std::size_t diagnostic_head{}, diagnostic_count{};
+    std::uint64_t acquires_succeeded{}, acquires_failed{}, acquire_timeouts{};
+    std::uint64_t connection_failures{}, health_failures{}, retirements{}, diagnostics_dropped{};
+    std::array<std::uint64_t, 8> acquisition_duration{};
     std::size_t total{}, idle{}, leased{}, connecting{}, checking{}, retiring{}, waiters{};
     std::size_t leaked_at_close{};
     bool closed{};
@@ -265,6 +417,14 @@ inline result<void> validate_pool_config(const pool_config& config) {
     } else if (config.pre_ping_timeout.count() < 0 ||
                (config.pre_ping && config.pre_ping_timeout.count() == 0)) {
         invalid = "pre_ping_timeout must be positive when enabled and nonnegative otherwise";
+    } else if (config.idle_timeout.count() < 0) {
+        invalid = "idle_timeout must be nonnegative";
+    } else if (config.max_lifetime.count() < 0) {
+        invalid = "max_lifetime must be nonnegative";
+    } else if (config.leak_threshold.count() < 0) {
+        invalid = "leak_threshold must be nonnegative";
+    } else if (config.maintenance_interval.count() <= 0) {
+        invalid = "maintenance_interval must be positive";
     }
     if (invalid) {
         db_error error;
@@ -349,6 +509,7 @@ template <typename Driver> class connection_pool {
 
   private:
     template <typename> friend class connection_lease;
+    friend struct detail::pool_test_access;
     using state_type = detail::pool_state<Driver, connection_type>;
     using phase = state_type::phase;
 
@@ -360,7 +521,13 @@ template <typename Driver> class connection_pool {
                   "asterorm: pooled connections must be nothrow destructible");
 
     connection_pool(Driver driver, pool_config config)
-        : state_(std::make_shared<state_type>(std::move(driver), std::move(config))) {
+        : connection_pool(std::move(driver), std::move(config), detail::pool_clock::now, true) {}
+
+  private:
+    // Internal clock/worker seam for deterministic boundary tests.
+    connection_pool(Driver driver, pool_config config, detail::pool_clock_reader clock,
+                    bool start_worker)
+        : state_(std::make_shared<state_type>(std::move(driver), std::move(config), clock)) {
         auto& state = *state_;
         try {
             auto valid = detail::validate_pool_config(state.config);
@@ -374,13 +541,18 @@ template <typename Driver> class connection_pool {
                 state.fail_warmup(valid.error());
                 return;
             }
+            if (state.config.leak_threshold.count() > 0) {
+                state.diagnostic_queue.resize(state.config.max_size);
+            }
             for (std::size_t index = 0; index < state.config.min_size; ++index) {
                 auto connected = state.driver.connect(state.config.conninfo);
+                const auto created = state.now();
                 if (!connected) {
                     state.fail_warmup(connected.error());
                     return;
                 }
-                auto node = std::make_unique<typename state_type::entry>(std::move(*connected));
+                auto node =
+                    std::make_unique<typename state_type::entry>(std::move(*connected), created);
                 detail::configure_connection(node->connection, state.config);
                 auto configured =
                     detail::configure_statement_timeout(node->connection, state.config);
@@ -392,6 +564,29 @@ template <typename Driver> class connection_pool {
                 state.idle_head = std::move(node);
                 ++state.idle;
                 ++state.total;
+            }
+            if (start_worker &&
+                (state.config.idle_timeout.count() > 0 || state.config.max_lifetime.count() > 0 ||
+                 state.config.leak_threshold.count() > 0)) {
+                worker_ =
+                    std::jthread([weak = std::weak_ptr<state_type>{state_}](std::stop_token stop) {
+                        while (!stop.stop_requested()) {
+                            auto retained = weak.lock();
+                            if (!retained) {
+                                return;
+                            }
+                            std::unique_lock lock(retained->mutex);
+                            retained->maintenance_condition.wait_until(
+                                lock, stop,
+                                detail::pool_wait_deadline(retained->config.maintenance_interval),
+                                [&] { return retained->closed; });
+                            if (retained->closed || stop.stop_requested()) {
+                                return;
+                            }
+                            lock.unlock();
+                            retained->maintain();
+                        }
+                    });
             }
         } catch (const std::exception& exception) {
             db_error error;
@@ -405,6 +600,8 @@ template <typename Driver> class connection_pool {
             state.fail_warmup(std::move(error));
         }
     }
+
+  public:
     connection_pool(const connection_pool&) = delete;
     connection_pool& operator=(const connection_pool&) = delete;
     connection_pool(connection_pool&&) = delete;
@@ -413,6 +610,7 @@ template <typename Driver> class connection_pool {
         close();
     }
     void close() noexcept {
+        worker_.request_stop();
         state_->close();
     }
     [[nodiscard]] pool_stats stats() const {
@@ -429,7 +627,29 @@ template <typename Driver> class connection_pool {
             .checking = state->checking,
             .retiring = state->retiring,
             .waiters = state->waiters,
+            .overdue_leases = overdue_count(*state),
+            .acquires_succeeded = state->acquires_succeeded,
+            .acquires_failed = state->acquires_failed,
+            .acquire_timeouts = state->acquire_timeouts,
+            .connection_failures = state->connection_failures,
+            .health_failures = state->health_failures,
+            .retirements = state->retirements,
+            .diagnostics_dropped = state->diagnostics_dropped,
+            .acquisition_duration = state->acquisition_duration,
         };
+    }
+    [[nodiscard]] std::vector<pool_diagnostic> take_diagnostics() {
+        const auto state = state_;
+        std::lock_guard lock(state->mutex);
+        std::vector<pool_diagnostic> records;
+        // Complete allocation before consuming any record; failure leaves the queue intact.
+        records.reserve(state->diagnostic_count);
+        for (std::size_t index = 0; index < state->diagnostic_count; ++index) {
+            records.push_back(state->diagnostic_queue[(state->diagnostic_head + index) %
+                                                      state->diagnostic_queue.size()]);
+        }
+        state->diagnostic_head = state->diagnostic_count = 0;
+        return records;
     }
     [[nodiscard]] std::optional<db_error> warmup_error() const {
         const auto state = state_;
@@ -438,8 +658,60 @@ template <typename Driver> class connection_pool {
     }
     result<lease_type> acquire() {
         const auto state = state_;
+        acquisition_record record{*state};
+        auto acquired = acquire_impl(state, record.outcome);
+        record.succeeded = acquired.has_value();
+        return acquired;
+    }
+
+  private:
+    enum class acquisition_outcome : std::uint8_t { other, capacity_timeout, connection, health };
+    struct acquisition_record {
+        state_type& state;
+        detail::pool_clock::time_point started{state.now()};
+        acquisition_outcome outcome{acquisition_outcome::other};
+        bool succeeded{};
+        ~acquisition_record() noexcept {
+            const auto elapsed = state.now() - started;
+            constexpr std::array bounds{1, 5, 10, 50, 100, 500, 1000};
+            std::size_t bucket{};
+            while (bucket < bounds.size() && elapsed > std::chrono::milliseconds{bounds[bucket]}) {
+                ++bucket;
+            }
+            std::lock_guard lock(state.mutex);
+            detail::pool_increment(state.acquisition_duration[bucket]);
+            detail::pool_increment(succeeded ? state.acquires_succeeded : state.acquires_failed);
+            if (!succeeded) {
+                switch (outcome) {
+                case acquisition_outcome::capacity_timeout:
+                    detail::pool_increment(state.acquire_timeouts);
+                    break;
+                case acquisition_outcome::connection:
+                    detail::pool_increment(state.connection_failures);
+                    break;
+                case acquisition_outcome::health:
+                    detail::pool_increment(state.health_failures);
+                    break;
+                case acquisition_outcome::other:
+                    break;
+                }
+            }
+        }
+    };
+    static std::size_t overdue_count(const state_type& state) noexcept {
+        const auto sampled = state.now();
+        std::size_t overdue{};
+        for (auto* node = state.leased_head; node; node = node->leased_next) {
+            overdue +=
+                detail::pool_elapsed(node->checked_out_at, sampled, state.config.leak_threshold);
+        }
+        return overdue;
+    }
+    result<lease_type> acquire_impl(const std::shared_ptr<state_type>& state,
+                                    acquisition_outcome& outcome) {
         const auto deadline = detail::pool_wait_deadline(state->config.acquire_timeout);
         for (;;) {
+            outcome = acquisition_outcome::other;
             typename state_type::entry_ptr candidate;
             phase selected{};
             {
@@ -466,6 +738,7 @@ template <typename Driver> class connection_pool {
                         break;
                     }
                     if (std::chrono::steady_clock::now() >= deadline) {
+                        outcome = acquisition_outcome::capacity_timeout;
                         db_error error;
                         error.kind = db_error_kind::timeout;
                         error.message = "Connection pool acquire timeout";
@@ -482,13 +755,15 @@ template <typename Driver> class connection_pool {
                 }
             }
             reservation reserved{state, selected, std::move(candidate)};
+            outcome = acquisition_outcome::connection;
             if (selected == phase::connecting) {
                 auto connected = state->driver.connect(state->config.conninfo);
+                const auto created = state->now();
                 if (!connected) {
                     return std::unexpected(connected.error());
                 }
                 reserved.entry =
-                    std::make_unique<typename state_type::entry>(std::move(*connected));
+                    std::make_unique<typename state_type::entry>(std::move(*connected), created);
                 detail::configure_connection(reserved.entry->connection, state->config);
                 if (!detail::pool_reusable(reserved.entry->connection)) {
                     db_error error;
@@ -496,11 +771,13 @@ template <typename Driver> class connection_pool {
                     error.message = "New pooled connection is not reusable";
                     return std::unexpected(std::move(error));
                 }
-            } else if (!detail::pool_reusable(reserved.entry->connection)) {
+            } else if (state->idle_expired(*reserved.entry, state->now()) ||
+                       !detail::pool_reusable(reserved.entry->connection)) {
                 continue;
             }
             if constexpr (detail::has_pool_ping<connection_type>) {
                 if (state->config.pre_ping) {
+                    outcome = acquisition_outcome::health;
                     auto healthy = reserved.entry->connection.pool_ping(
                         detail::pool_wait_deadline(state->config.pre_ping_timeout));
                     if (!healthy) {
@@ -508,6 +785,7 @@ template <typename Driver> class connection_pool {
                     }
                 }
             }
+            outcome = acquisition_outcome::connection;
             auto configured =
                 detail::configure_statement_timeout(reserved.entry->connection, state->config);
             if (!configured) {
@@ -515,18 +793,26 @@ template <typename Driver> class connection_pool {
             }
             {
                 std::lock_guard lock(state->mutex);
-                if (!state->closed) {
-                    --state->count(selected);
-                    ++state->leased;
-                    reserved.active = false;
-                    return lease_type{state, std::move(reserved.entry)};
+                outcome = acquisition_outcome::other;
+                if (state->closed) {
+                    return std::unexpected(detail::pool_closed_error());
                 }
+                if (state->lifetime_expired(*reserved.entry, state->now())) {
+                    outcome = acquisition_outcome::connection;
+                    db_error error;
+                    error.kind = db_error_kind::connection_failed;
+                    error.message = "Pooled connection expired during checkout setup";
+                    return std::unexpected(std::move(error));
+                }
+                --state->count(selected);
+                ++state->leased;
+                state->checkout(*reserved.entry);
+                reserved.active = false;
+                return lease_type{state, std::move(reserved.entry)};
             }
-            return std::unexpected(detail::pool_closed_error());
         }
     }
 
-  private:
     struct reservation {
         std::shared_ptr<state_type> state;
         phase current;
@@ -539,5 +825,6 @@ template <typename Driver> class connection_pool {
         }
     };
     std::shared_ptr<state_type> state_;
+    std::jthread worker_;
 };
 } // namespace asterorm
