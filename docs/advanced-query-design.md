@@ -1,7 +1,7 @@
 # CTEs, windows and set operations: inventory and implementation contract
 
 Reviewed on 2026-11-08. **Ordinary CTEs, set expressions and the query-root/execution foundation are
-implemented; recursion, windows and extensions remain planned.** The [capture](evidence/advanced-query-inventory/README.md)
+implemented, including constrained recursive CTEs; windows and extensions remain planned.** The [capture](evidence/advanced-query-inventory/README.md)
 compiled the then-current AST probes and executes native SQL on PostgreSQL 16.14, SQLite
 3.54.0 and MySQL 8.4.13. Those observations establish feasibility and constraints,
 not implementation or acceptance of the proposed API below.
@@ -97,7 +97,7 @@ transaction, schema introspection, materialization promise or performance claim.
 ## Planned AST and public surface
 
 The ordinary CTE/root/execution and set-expression subsets below are implemented;
-recursive/window extensions remain proposed. See the [current guide](how-to/common-table-expressions.md).
+constrained recursion is implemented and window/extensions remain proposed. See the [current guide](how-to/common-table-expressions.md).
 
 - Keep `select_ast` as the existing leaf. Add a move-only `query_ast` envelope with
   ordered CTE definitions, one `recursive` flag, and a body variant of `select_ast`
@@ -212,6 +212,10 @@ step has exactly one top-level self table in FROM/INNER JOIN. Step projections a
 predicates use columns/parameters only, with existing logical/NULL comparisons;
 function calls are deferred there. No step aggregates,
 windows, DISTINCT, outer joins, grouping, nested WITH or local order/pagination.
+For portable direct SELECT emission, the anchor and UNION connector also reject
+local order/pagination; use the consumer's tail. Non-self CROSS joins follow normal
+validation, while a self JOIN must be INNER. Step parameter values appear in
+predicates because the existing AST has no parameter-only projection item.
 Ordinary earlier CTEs remain available. SQL self-reference is a relation name, not
 a C++ graph cycle. Users supply terminating data/predicates and server limits;
 the API does not promise to detect data cycles, bound recursion time or reorder work.
@@ -250,14 +254,14 @@ legacy scalar functions retain their existing native resolution behavior.
 | --- | --- |
 | **Implemented: ordinary CTE foundation** | Owned query root/builder, shared context and structural budgets; ordered nonrecursive CTEs with column aliases; explicit mapped-result execution/observation; corrected alias/pagination validation. Golden PG/SQLite/MySQL SQL and bind ordering, zero-lease rejection, codec/NULL/empty results, one event, caller rollback and testing-scope use; native bound CTE results on all three; existing suites and installed consumers |
 | **Implemented: set expressions** | Binary operators/quantifiers, explicit grouping and derived wrappers; arity/labels/profile checks. Duplicate/NULL cases, mixed precedence and branch/final tails; baseline/modern MySQL rejection/admission; native bag/set results |
-| **Next: recursive CTE** | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
-| Windows and typed helpers | OVER/FILTER ownership, types and frame validation; ranking/peer/NULL/navigation/running/full-partition cases; static argument diagnostics and identical runtime/typed lowering |
+| **Implemented: recursive CTE** | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
+| **Next: windows and typed helpers** | OVER/FILTER ownership, types and frame validation; ranking/peer/NULL/navigation/running/full-partition cases; static argument diagnostics and identical runtime/typed lowering |
 | Extensions and combined review | PG DISTINCT ON and PG/SQLite FILTER, including window aggregates; backend rejection and no silent emulation. Public guides, fresh consumers, regression/build/format/lint/standards evidence and explicit layout/version notes |
 
 The first delivery is deliberately ordinary CTEs plus the query-root/execution
 foundation. It does not expose unimplemented operations as successful no-ops:
-window nodes are absent from builders and recursive roots reject locally until
-constrained recursion is delivered. Set expressions are now available. The pre-implementation inventory capture remains historical; do not rerun its
+window nodes are absent from builders; recursive roots admit only the constrained
+form below. Set expressions are now available. The pre-implementation inventory capture remains historical; do not rerun its
 old gap assertions as current feature tests. The ordinary CTE implementation changes
 `compiler` and `compiled_query` layout: rebuild the library and consumers together.
 
@@ -310,7 +314,37 @@ this delivery activates it and adds inline builder methods, without another data
 layout change. The CTE foundation's rebuild and migration notes still apply.
 Older inventory/CTE receipts remain historical.
 
-Next implement the constrained recursive form above: a two-arm UNION ALL CTE,
-checked anchor/step references and a real parent/child traversal. Recursive flags
-still reject in this delivery. Windows, typed helpers, extensions and combined
-advanced-query acceptance follow.
+At set delivery the next task was the constrained recursive form above: a two-arm
+UNION ALL CTE, checked anchor/step references and a real parent/child traversal.
+That follow-up is implemented below. Windows, typed helpers, extensions and
+combined advanced-query acceptance follow.
+
+
+## Recursive CTE implementation follow-up (2026-11-08)
+
+The statement-root recursive flag now admits exactly one self-referencing CTE
+with explicit output columns and direct anchor/step UNION ALL. A bounded shape
+check recognizes only a plain SELECT step, and the normal graph validation shares
+budgets, bindings and CTE visibility across both arms. Self visibility is limited
+to the checked step; nested flags, extra self relations, forward/mutual references
+and step functions/grouping/outer joins reject locally. Ordinary definitions may
+precede/follow the recursive definition, and a compound consumer stays supported.
+
+Recursive arms bypass ordinary derived wrappers so self references remain legal
+on all three backends. The connector and both leaves reject local tails, including
+the anchor: this is the explicit portability refinement of the original step-only
+tail restriction. Consumer tails remain available. No new AST fields or native
+adapter paths are added; the existing named observed materialization path is used.
+
+The [guide](how-to/recursive-common-table-expressions.md) and
+[delivery evidence](evidence/recursive-cte/README.md) record golden SQL, graph/
+shape/no-lease checks, real nullable parent/child traversal, UNION ALL duplicates,
+caller rollback and supported scopes. A PG data-cycle test uses an explicit server
+timeout and rolls back inside its callback before cleanup, preserving the existing
+connection/SQLSTATE behavior. No unbounded cycle executes on SQLite/MySQL. Syntax
+admission of a potentially nonterminating echo step is tested without executing it:
+termination, visited sets and native resource limits are not compiler guarantees.
+
+Next implement inline windows and typed helpers with checked frames and result
+nullability, then FILTER/DISTINCT ON and combined review. The broader advanced-query
+feature remains in progress; earlier captures stay historical.

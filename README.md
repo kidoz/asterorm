@@ -43,6 +43,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
 - [Mapped entity streams](docs/how-to/stream-entities.md) on PostgreSQL with
   single-row or declared-cursor batches, owned hydration, structured late errors
   and one terminal query event.
+- [Constrained recursive CTEs](docs/how-to/recursive-common-table-expressions.md)
+  for parent/child traversal with checked anchor and recursive-step shapes.
 - [Set operations](docs/how-to/set-operations.md), including ALL forms where supported,
   with explicit grouping, branch pagination and backend capability checks.
 - [Ordinary common table expressions](docs/how-to/common-table-expressions.md) with
@@ -82,8 +84,8 @@ The [transactional test harness contract](docs/transactional-test-harness-design
 records the generic scope, Catch2 adapter and worked fixture migration, now
 [locally accepted within the revised v1 contract](docs/transactional-test-harness-acceptance.md).
 The [advanced-query inventory and contract](docs/advanced-query-design.md) defines
-implemented ordinary CTEs and set operations, with recursive CTEs and windows
-still planned.
+implemented ordinary/recursive CTEs and set operations, with windows and
+extensions still planned.
 
 ## Backends
 

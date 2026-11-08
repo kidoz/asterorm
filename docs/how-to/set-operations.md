@@ -101,6 +101,7 @@ codecs retain their normal behavior. MySQL's TEMP-table reopen restriction still
 applies: wrapping a query does not promise CTE materialization or permit repeated
 reads of one TEMP source in a statement.
 
-The [design](../advanced-query-design.md) records the remaining work. Recursive
-CTEs still reject; constrained recursion is next, followed by windows and
-extensions. Existing INSERT SELECT/stream leaf restrictions remain in place.
+[Constrained recursive CTEs](recursive-common-table-expressions.md) now emit direct
+UNION ALL arms; ordinary set operands retain these derived wrappers. The
+[design](../advanced-query-design.md) records the remaining windows/typed helpers
+and extensions. Existing INSERT SELECT/stream leaf restrictions remain in place.

@@ -11,6 +11,7 @@
 #include "asterorm/session.hpp"
 #include "asterorm/sql/typed_query.hpp"
 #include "support/cte_query.hpp"
+#include "support/recursive_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
@@ -309,4 +310,12 @@ TEST_CASE("PG Integration: set query execution", "[pg][set-query]") {
                                     configured ? configured
                                                : "host=127.0.0.1 port=5432 dbname=orm_test "
                                                  "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("PG Integration: recursive query execution", "[pg][recursive-query]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_recursive_query(
+        asterorm::pg::driver{}, configured ? configured
+                                           : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                             "user=orm_test password=orm_test sslmode=disable");
 }

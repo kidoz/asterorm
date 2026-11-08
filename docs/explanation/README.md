@@ -40,7 +40,9 @@ the initial AST/compiler gaps, native CTE/window/set semantics, parameter/contex
 rules and the delivery plan. The [ordinary CTE guide](../how-to/common-table-expressions.md)
 covers the implemented owned root and explicit named execution. The
 [set-operation guide](../how-to/set-operations.md) covers owned grouping and
-portable operand wrappers. Recursion, windows and extensions remain planned.
+portable operand wrappers. The [recursive CTE guide](../how-to/recursive-common-table-expressions.md)
+covers checked anchor/step traversal and native termination limits. Windows and
+extensions remain planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

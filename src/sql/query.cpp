@@ -50,7 +50,7 @@ class query_validator {
             }
             cte_names_.push_back(definition.name);
         }
-        if (!visit(0) || !envelope(root)) {
+        if (!visit(0) || !envelope(root, true)) {
             return std::unexpected(*failure_);
         }
         for (std::size_t index = 0; index < root.ctes.size(); ++index) {
@@ -59,7 +59,17 @@ class query_validator {
             if (!definition.body) {
                 return std::unexpected(error("CTE requires a non-null query body"));
             }
-            auto labels = operand(*definition.body, index, 1);
+            // Only a direct SELECT step can introduce the one admitted self-reference.
+            const auto* compound = std::get_if<compound_ast>(&definition.body->body);
+            const auto* step = compound && compound->right
+                                   ? std::get_if<select_ast>(&compound->right->body)
+                                   : nullptr;
+            if (step && step->joins.size() > max_query_nodes) {
+                return std::unexpected(error("Query exceeds the node limit"));
+            }
+            const bool self_step = root.recursive && step && references(*step, definition.name);
+            auto labels = self_step ? recursive_definition(definition, index)
+                                    : operand(*definition.body, index, 1);
             if (!labels) {
                 return std::unexpected(labels.error());
             }
@@ -73,7 +83,14 @@ class query_validator {
             }
         }
         path_ = "root";
+        if (root.recursive && !recursive_definition_) {
+            return std::unexpected(error("RECURSIVE requires exactly one self-referencing CTE"));
+        }
         return body(root, root.ctes.size(), 1);
+    }
+
+    [[nodiscard]] std::optional<std::size_t> recursive_definition_index() const {
+        return recursive_definition_;
     }
 
   private:
@@ -85,6 +102,9 @@ class query_validator {
     std::optional<db_error> failure_;
     std::vector<std::string> cte_names_;
     std::unordered_set<const func_expr*> active_functions_;
+    std::optional<std::size_t> recursive_definition_;
+    std::optional<std::size_t> allowed_self_;
+    bool recursive_step_{};
 
     [[nodiscard]] db_error error(std::string message) const {
         db_error diagnostic;
@@ -101,14 +121,95 @@ class query_validator {
         return (depth <= max_query_depth && ++visited_ <= max_query_nodes) ||
                fail("Query exceeds the depth/node limit");
     }
-    bool envelope(const query_ast& query) {
-        if (query.recursive) {
-            return fail("Recursive queries are not supported yet");
+    bool envelope(const query_ast& query, bool statement_root = false) {
+        if (query.recursive && !statement_root) {
+            return fail("RECURSIVE is only allowed at the statement root");
         }
         if (query.body.valueless_by_exception()) {
             return fail("Query requires a valid body variant");
         }
         return true;
+    }
+    static bool same_relation(std::string_view table, std::string_view name) {
+        return !table.contains('.') && folded(table) == folded(name);
+    }
+    static bool references(const select_ast& leaf, std::string_view name) {
+        return same_relation(leaf.table, name) ||
+               std::ranges::any_of(
+                   leaf.joins, [&](const auto& join) { return same_relation(join.table, name); });
+    }
+    static bool has_tail(const select_ast& leaf) {
+        return !leaf.order_bys.empty() || leaf.limit_val || leaf.offset_val;
+    }
+    result<std::vector<std::string>> recursive_definition(const cte_ast& definition,
+                                                          std::size_t index) {
+        if (recursive_definition_) {
+            return std::unexpected(error("Only one self-referencing CTE is supported"));
+        }
+        if (definition.columns.empty()) {
+            return std::unexpected(error("A recursive CTE requires explicit output columns"));
+        }
+        const auto& query = *definition.body;
+        if (!visit(1) || !envelope(query)) {
+            return std::unexpected(*failure_);
+        }
+        if (!query.ctes.empty()) {
+            return std::unexpected(error("Nested WITH is not supported"));
+        }
+        if (!visit(2)) {
+            return std::unexpected(*failure_);
+        }
+        const auto& compound = std::get<compound_ast>(query.body);
+        if (compound.operation != set_operator::union_ ||
+            compound.quantifier != set_quantifier::all || !compound.left || !compound.right ||
+            !compound.order_bys.empty() || compound.limit_val || compound.offset_val) {
+            return std::unexpected(
+                error("A recursive CTE requires a two-arm UNION ALL without local tails"));
+        }
+        const auto* anchor = std::get_if<select_ast>(&compound.left->body);
+        const auto* step = std::get_if<select_ast>(&compound.right->body);
+        if (!anchor || !step || has_tail(*anchor) || has_tail(*step) || !step->group_bys.empty() ||
+            step->having_clause) {
+            return std::unexpected(error("Recursive arms require plain SELECTs without local "
+                                         "tails; step grouping is unsupported"));
+        }
+        std::size_t self_count = same_relation(step->table, definition.name) ? 1 : 0;
+        for (const auto& join : step->joins) {
+            if (join.kind != join_kind::inner && join.kind != join_kind::cross) {
+                return std::unexpected(error("Recursive steps do not support outer/invalid JOINs"));
+            }
+            if (same_relation(join.table, definition.name)) {
+                if (join.kind != join_kind::inner) {
+                    return std::unexpected(error("A recursive self JOIN must be INNER"));
+                }
+                ++self_count;
+            }
+        }
+        if (self_count != 1) {
+            return std::unexpected(
+                error("A recursive step requires exactly one top-level self relation"));
+        }
+        const auto parent_path = path_;
+        path_ = parent_path + ".anchor";
+        auto anchor_labels = operand(*compound.left, index, 3);
+        if (!anchor_labels) {
+            return std::unexpected(anchor_labels.error());
+        }
+        path_ = parent_path + ".step";
+        allowed_self_ = index;
+        recursive_step_ = true;
+        auto step_labels = operand(*compound.right, index, 3);
+        allowed_self_.reset();
+        recursive_step_ = false;
+        if (!step_labels) {
+            return std::unexpected(step_labels.error());
+        }
+        path_ = parent_path;
+        if (anchor_labels->size() != step_labels->size()) {
+            return std::unexpected(error("Recursive anchor/step projection arity mismatch"));
+        }
+        recursive_definition_ = index;
+        return anchor_labels;
     }
     result<std::vector<std::string>> operand(const query_ast& query, std::size_t visible,
                                              std::size_t depth) {
@@ -208,8 +309,8 @@ class query_validator {
             if (name != cte_names_[index]) {
                 return fail("CTE reference spelling must match its declaration");
             }
-            if (index >= visible) {
-                return fail("Self/forward CTE references require unsupported recursion");
+            if (index >= visible && allowed_self_ != index) {
+                return fail("Self/forward CTE reference is outside the admitted recursive step");
             }
         }
         return true;
@@ -239,6 +340,9 @@ class query_validator {
             return !parameter->encoded_value.value ||
                    !parameter->encoded_value.value->contains('\0') ||
                    fail("SQL parameter contains a NUL byte");
+        }
+        if (recursive_step_) {
+            return fail("Recursive steps support only column/parameter expressions");
         }
         const auto* function = std::get_if<std::shared_ptr<func_expr>>(&operand);
         if (!function || !*function) {
@@ -455,7 +559,8 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
         diagnostic.message = "Unsupported advanced-query dialect/profile";
         return std::unexpected(diagnostic);
     }
-    auto labels = query_validator{*this, dialect_, query_options_}.validate(ast);
+    query_validator validator{*this, dialect_, query_options_};
+    auto labels = validator.validate(ast);
     if (!labels) {
         return std::unexpected(labels.error());
     }
@@ -463,7 +568,7 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
     query.result_columns = std::move(*labels);
     std::size_t next_alias = 0;
     if (!ast.ctes.empty()) {
-        query.sql = "WITH ";
+        query.sql = ast.recursive ? "WITH RECURSIVE " : "WITH ";
         for (std::size_t index = 0; index < ast.ctes.size(); ++index) {
             const auto& definition = ast.ctes[index];
             if (index != 0) {
@@ -481,7 +586,25 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
                 }
                 query.sql += ')';
             }
-            auto body = compile_query_body(*definition.body, query.params, next_alias);
+            result<std::string> body;
+            if (validator.recursive_definition_index() == index) {
+                // A recursive reference must remain in the direct SELECT step.
+                // Ordinary set wrappers would hide it inside a derived query.
+                const auto& compound = std::get<compound_ast>(definition.body->body);
+                auto anchor =
+                    compile_select(std::get<select_ast>(compound.left->body), query.params);
+                if (!anchor) {
+                    return std::unexpected(anchor.error());
+                }
+                auto step =
+                    compile_select(std::get<select_ast>(compound.right->body), query.params);
+                if (!step) {
+                    return std::unexpected(step.error());
+                }
+                body = *anchor + " UNION ALL " + *step;
+            } else {
+                body = compile_query_body(*definition.body, query.params, next_alias);
+            }
             if (!body) {
                 return std::unexpected(body.error());
             }

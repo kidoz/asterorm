@@ -6,6 +6,11 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Constrained recursive CTEs through the existing root `.recursive()` flag: one
+  self-referencing definition, explicit outputs and direct anchor/step UNION ALL.
+  Validation checks references, expressions and shared budgets before leasing.
+  Data termination and native recursion limits remain the caller/server's concern.
+
 - Owned UNION/INTERSECT/EXCEPT trees with ALL factories, explicit grouping and
   branch/final pagination through the existing mapped query executor. MySQL
   INTERSECT/EXCEPT requires the explicit 8.0.31+ profile; SQLite rejects their ALL
@@ -18,7 +23,8 @@ All notable changes to AsterORM will be documented in this file.
 
 - CTE/window/set-operation inventory and v1 design contract, with configured AST
   probes and native PostgreSQL/SQLite/MySQL semantics. Ordinary CTEs and set
-  operations are implemented; recursion, windows and extensions remain planned.
+  operations and constrained recursion are implemented; windows and extensions
+  remain planned.
 
 - Source-bound local transactional harness acceptance review, combining generic
   scopes, optional Catch2 integration and worked reference fixtures. Fresh native

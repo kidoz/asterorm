@@ -660,3 +660,48 @@ TEST_CASE("Set execution: invalid shapes reject before leasing and valid trees o
     REQUIRE(state.calls == 1);
     REQUIRE(pool.stats().in_use == 0);
 }
+
+TEST_CASE(
+    "Recursive execution: invalid definitions reject before leasing and valid roots observe once",
+    "[recursive-query][observer]") {
+    auto anchor =
+        sql::query(
+            sql::select({"id", "note"}).from("roots").where(sql::col("id") == sql::val(1)).build())
+            .build();
+    auto step =
+        sql::query(
+            sql::select({"id", "note"}).from("walk").where(sql::col("id") < sql::val(5)).build())
+            .build();
+    auto query =
+        sql::query(
+            sql::select({"id", "note"}).from("walk").where(sql::col("id") > sql::val(0)).build())
+            .with_cte("walk", sql::union_all(std::move(anchor), std::move(step)).build(),
+                      {"id", "note"})
+            .recursive()
+            .build();
+    execution_state state;
+    asterorm::pool_config config;
+    config.min_size = 0;
+    config.max_size = 1;
+    asterorm::connection_pool<query_driver> pool{query_driver{&state}, config};
+    asterorm::session db{pool};
+    int events{};
+    db.set_observer([&](const asterorm::query_event& event) {
+        ++events;
+        REQUIRE(event.param_count == 3);
+    });
+    query.ctes[0].columns.clear();
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(db, query));
+    REQUIRE(state.connections == 0);
+    REQUIRE(state.calls == 0);
+    REQUIRE(events == 0);
+    query.ctes[0].columns = {"id", "note"};
+    auto rows = sql::query_as<cte_unit_row>(db, query);
+    REQUIRE(rows);
+    REQUIRE(rows->size() == 1);
+    REQUIRE(rows->front().id == 7);
+    REQUIRE(state.params == asterorm::query_parameters{"1", "5", "0"});
+    REQUIRE(state.calls == 1);
+    REQUIRE(events == 1);
+    REQUIRE(pool.stats().in_use == 0);
+}

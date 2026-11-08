@@ -42,8 +42,8 @@ for names, budgets, mapping/alias rules and migration notes.
 
 PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
 MySQL profile options offer baseline 8.0.19 and modern 8.0.31, with no hidden
-version query. `compound_ast` is implemented; recursive roots still reject.
-Recursion, windows and extensions remain planned. There is no implicit
+version query. `compound_ast` and the constrained recursive form are implemented.
+Windows and extensions remain planned. There is no implicit
 conversion to narrow INSERT SELECT/stream leaves.
 
 ## Set expressions
@@ -62,6 +62,22 @@ budgets; nested WITH, unsupported profiles and malformed operands reject before
 leasing. Root WITH definitions may contain compounds. See the
 [set-operation guide](../how-to/set-operations.md) for grouping, NULL/duplicate
 semantics, paging and a complete installed-consumer example.
+
+## Constrained recursive CTEs
+
+Set `query_builder::recursive()` on the statement root and provide exactly one
+self-referencing definition with explicit output columns. Its body is a two-leaf
+UNION ALL: the anchor has no self-reference, and the step has exactly one self
+relation in FROM/INNER JOIN. Functions/grouping/HAVING and outer/self-CROSS joins
+reject in the step. Both arms and their connector reject local tails. Direct arms
+keep the self-reference visible to PG/SQLite/MySQL; other sets retain wrappers.
+
+All existing validation, binding, named execution and session scopes apply. Earlier
+ordinary definitions may be used, later ordinary definitions may consume the result,
+and forward/mutual references remain rejected. The library does not detect data
+cycles, prove termination or impose native iteration/time/result limits. See the
+[recursive guide](../how-to/recursive-common-table-expressions.md) for the precise
+subset, nullable parent/child example and timeout recovery notes.
 
 ## INSERT-from-SELECT
 

@@ -11,6 +11,7 @@
 #include "asterorm/sql/typed_query.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
+#include "support/recursive_query.hpp"
 #include "support/select_locking.hpp"
 #include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
@@ -490,4 +491,8 @@ TEST_CASE("MySQL Integration: ordinary CTE execution", "[mysql][cte]") {
 
 TEST_CASE("MySQL Integration: set query execution", "[mysql][set-query]") {
     asterorm::test::check_set_query(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: recursive query execution", "[mysql][recursive-query]") {
+    asterorm::test::check_recursive_query(asterorm::mysql::driver{}, conninfo());
 }
