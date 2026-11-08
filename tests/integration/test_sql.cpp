@@ -12,6 +12,7 @@
 #include "asterorm/sql/typed_query.hpp"
 #include "support/cte_query.hpp"
 #include "support/select_locking.hpp"
+#include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
 
 TEST_CASE("PG Integration: SELECT locking", "[pg][select-locking]") {
@@ -297,6 +298,14 @@ TEST_CASE("PG Integration: Native SQL", "[pg][sql]") {
 TEST_CASE("PG Integration: ordinary CTE execution", "[pg][cte]") {
     const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
     asterorm::test::check_cte_query(asterorm::pg::driver{},
+                                    configured ? configured
+                                               : "host=127.0.0.1 port=5432 dbname=orm_test "
+                                                 "user=orm_test password=orm_test sslmode=disable");
+}
+
+TEST_CASE("PG Integration: set query execution", "[pg][set-query]") {
+    const auto* configured = std::getenv("ASTERORM_TEST_CONNINFO");
+    asterorm::test::check_set_query(asterorm::pg::driver{},
                                     configured ? configured
                                                : "host=127.0.0.1 port=5432 dbname=orm_test "
                                                  "user=orm_test password=orm_test sslmode=disable");

@@ -36,7 +36,8 @@ bool simple_name(std::string_view name) {
 // valid, but every emitted occurrence consumes budget and binds its arguments.
 class query_validator {
   public:
-    explicit query_validator(const compiler& renderer) : renderer_(renderer) {}
+    query_validator(const compiler& renderer, dialect target, query_compile_options options)
+        : renderer_(renderer), target_(target), options_(options) {}
 
     result<std::vector<std::string>> validate(const query_ast& root) {
         if (root.ctes.size() > max_query_ctes) {
@@ -58,13 +59,7 @@ class query_validator {
             if (!definition.body) {
                 return std::unexpected(error("CTE requires a non-null query body"));
             }
-            if (!definition.body->ctes.empty()) {
-                return std::unexpected(error("Nested WITH is not supported"));
-            }
-            if (!visit(1) || !envelope(*definition.body)) {
-                return std::unexpected(*failure_);
-            }
-            auto labels = select(std::get<select_ast>(definition.body->body), index, 2);
+            auto labels = operand(*definition.body, index, 1);
             if (!labels) {
                 return std::unexpected(labels.error());
             }
@@ -78,11 +73,13 @@ class query_validator {
             }
         }
         path_ = "root";
-        return select(std::get<select_ast>(root.body), root.ctes.size(), 1);
+        return body(root, root.ctes.size(), 1);
     }
 
   private:
     const compiler& renderer_;
+    dialect target_;
+    query_compile_options options_;
     std::size_t visited_{};
     std::string path_{"root"};
     std::optional<db_error> failure_;
@@ -108,10 +105,80 @@ class query_validator {
         if (query.recursive) {
             return fail("Recursive queries are not supported yet");
         }
-        if (!std::holds_alternative<select_ast>(query.body)) {
-            return fail("Set expressions are not supported yet");
+        if (query.body.valueless_by_exception()) {
+            return fail("Query requires a valid body variant");
         }
         return true;
+    }
+    result<std::vector<std::string>> operand(const query_ast& query, std::size_t visible,
+                                             std::size_t depth) {
+        if (!visit(depth) || !envelope(query)) {
+            return std::unexpected(*failure_);
+        }
+        if (!query.ctes.empty()) {
+            return std::unexpected(error("Nested WITH is not supported"));
+        }
+        return body(query, visible, depth + 1);
+    }
+    result<std::vector<std::string>> body(const query_ast& query, std::size_t visible,
+                                          std::size_t depth) {
+        if (const auto* leaf = std::get_if<select_ast>(&query.body)) {
+            return select(*leaf, visible, depth);
+        }
+        if (!visit(depth)) {
+            return std::unexpected(*failure_);
+        }
+        const auto& compound = std::get<compound_ast>(query.body);
+        if (!compound.left || !compound.right) {
+            return std::unexpected(error("Set expressions require two non-null operands"));
+        }
+        switch (compound.operation) {
+        case set_operator::union_:
+        case set_operator::intersect_:
+        case set_operator::except_:
+            break;
+        default:
+            return std::unexpected(error("Invalid set operator"));
+        }
+        if (compound.quantifier != set_quantifier::distinct &&
+            compound.quantifier != set_quantifier::all) {
+            return std::unexpected(error("Invalid set quantifier"));
+        }
+        if (compound.operation != set_operator::union_) {
+            if (target_ == dialect::mysql &&
+                options_.mysql_profile != mysql_query_profile::set_operations_8_0_31) {
+                return std::unexpected(
+                    error("MySQL INTERSECT/EXCEPT requires the 8.0.31+ profile"));
+            }
+            if (target_ == dialect::sqlite && compound.quantifier == set_quantifier::all) {
+                return std::unexpected(error("SQLite does not support INTERSECT ALL/EXCEPT ALL"));
+            }
+        }
+        const auto parent_path = path_;
+        path_ = parent_path + ".left";
+        auto left = operand(*compound.left, visible, depth + 1);
+        if (!left) {
+            return std::unexpected(left.error());
+        }
+        path_ = parent_path + ".right";
+        auto right = operand(*compound.right, visible, depth + 1);
+        if (!right) {
+            return std::unexpected(right.error());
+        }
+        path_ = parent_path;
+        if (left->empty() || left->size() != right->size()) {
+            return std::unexpected(error("Set operands require equal nonzero projection arity"));
+        }
+        for (const auto& order : compound.order_bys) {
+            if (!visit(depth + 1)) {
+                return std::unexpected(*failure_);
+            }
+            if (!simple_name(order.column) ||
+                std::ranges::find(*left, order.column) == left->end()) {
+                return std::unexpected(error("Compound ORDER BY requires a left output label"));
+            }
+        }
+        return left;
     }
     bool identifier(std::string_view name, bool qualified = true) {
         auto quoted =
@@ -320,6 +387,64 @@ class query_validator {
 };
 } // namespace
 
+result<std::string> compiler::compile_query_body(const query_ast& ast, query_parameters& params,
+                                                 std::size_t& next_alias) {
+    if (const auto* leaf = std::get_if<select_ast>(&ast.body)) {
+        return compile_select(*leaf, params);
+    }
+    const auto& compound = std::get<compound_ast>(ast.body);
+    auto arm = [&](const query_ast& child) -> result<std::string> {
+        // Each alias is local to its wrapper, outside the child's name scope.
+        auto alias = quote_ident("asterorm_set_" + std::to_string(next_alias++));
+        auto rendered = compile_query_body(child, params, next_alias);
+        if (!rendered) {
+            return std::unexpected(rendered.error());
+        }
+        return "SELECT * FROM (" + *rendered + ") AS " + *alias;
+    };
+    auto left = arm(*compound.left);
+    if (!left) {
+        return std::unexpected(left.error());
+    }
+    auto right = arm(*compound.right);
+    if (!right) {
+        return std::unexpected(right.error());
+    }
+    std::string operation;
+    switch (compound.operation) {
+    case set_operator::union_:
+        operation = " UNION";
+        break;
+    case set_operator::intersect_:
+        operation = " INTERSECT";
+        break;
+    case set_operator::except_:
+        operation = " EXCEPT";
+        break;
+    }
+    if (compound.quantifier == set_quantifier::all) {
+        operation += " ALL";
+    }
+    std::string rendered = *left + operation + ' ' + *right;
+    for (std::size_t index = 0; index < compound.order_bys.size(); ++index) {
+        const auto& order = compound.order_bys[index];
+        rendered += index == 0 ? " ORDER BY " : ", ";
+        rendered += *quote_ident(order.column);
+        rendered += order.ascending ? " ASC" : " DESC";
+    }
+    if (compound.limit_val) {
+        rendered += " LIMIT " + std::to_string(*compound.limit_val);
+    } else if (compound.offset_val && dialect_ == dialect::sqlite) {
+        rendered += " LIMIT -1";
+    } else if (compound.offset_val && dialect_ == dialect::mysql) {
+        rendered += " LIMIT 18446744073709551615";
+    }
+    if (compound.offset_val) {
+        rendered += " OFFSET " + std::to_string(*compound.offset_val);
+    }
+    return rendered;
+}
+
 result<compiled_query> compiler::compile(const query_ast& ast) {
     if ((dialect_ != dialect::postgres && dialect_ != dialect::sqlite &&
          dialect_ != dialect::mysql) ||
@@ -330,12 +455,13 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
         diagnostic.message = "Unsupported advanced-query dialect/profile";
         return std::unexpected(diagnostic);
     }
-    auto labels = query_validator{*this}.validate(ast);
+    auto labels = query_validator{*this, dialect_, query_options_}.validate(ast);
     if (!labels) {
         return std::unexpected(labels.error());
     }
     compiled_query query;
     query.result_columns = std::move(*labels);
+    std::size_t next_alias = 0;
     if (!ast.ctes.empty()) {
         query.sql = "WITH ";
         for (std::size_t index = 0; index < ast.ctes.size(); ++index) {
@@ -355,7 +481,7 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
                 }
                 query.sql += ')';
             }
-            auto body = compile_select(std::get<select_ast>(definition.body->body), query.params);
+            auto body = compile_query_body(*definition.body, query.params, next_alias);
             if (!body) {
                 return std::unexpected(body.error());
             }
@@ -363,7 +489,7 @@ result<compiled_query> compiler::compile(const query_ast& ast) {
         }
         query.sql += ' ';
     }
-    auto body = compile_select(std::get<select_ast>(ast.body), query.params);
+    auto body = compile_query_body(ast, query.params, next_alias);
     if (!body) {
         return std::unexpected(body.error());
     }

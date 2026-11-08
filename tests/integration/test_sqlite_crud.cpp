@@ -11,6 +11,7 @@
 #include "asterorm/sqlite/driver.hpp"
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
+#include "support/set_query.hpp"
 #include "support/transactional_session.hpp"
 #include "support/typed_query_observer.hpp"
 
@@ -696,4 +697,8 @@ TEST_CASE("SQLite test scope detects native automatic rollback before another st
 
 TEST_CASE("SQLite Integration: ordinary CTE execution", "[sqlite][cte]") {
     asterorm::test::check_cte_query(asterorm::sqlite::driver{}, ":memory:");
+}
+
+TEST_CASE("SQLite Integration: set query execution", "[sqlite][set-query]") {
+    asterorm::test::check_set_query(asterorm::sqlite::driver{}, ":memory:");
 }

@@ -6,14 +6,19 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- Owned UNION/INTERSECT/EXCEPT trees with ALL factories, explicit grouping and
+  branch/final pagination through the existing mapped query executor. MySQL
+  INTERSECT/EXCEPT requires the explicit 8.0.31+ profile; SQLite rejects their ALL
+  forms. Both operands validate before leasing, and output labels come from the left.
+
 - Ordinary CTE query roots, ordered owned definitions, shared parameter bindings
   and query-wide graph validation on PostgreSQL, SQLite and MySQL. The separate
   `sql::query_as<Row>` API maps named trait columns through observed execution.
   Compiler/result layouts changed; rebuild library and consumers together.
 
 - CTE/window/set-operation inventory and v1 design contract, with configured AST
-  probes and native PostgreSQL/SQLite/MySQL semantics. The ordinary CTE/query foundation is implemented; sets, recursion, windows
-  and extensions remain planned.
+  probes and native PostgreSQL/SQLite/MySQL semantics. Ordinary CTEs and set
+  operations are implemented; recursion, windows and extensions remain planned.
 
 - Source-bound local transactional harness acceptance review, combining generic
   scopes, optional Catch2 integration and worked reference fixtures. Fresh native

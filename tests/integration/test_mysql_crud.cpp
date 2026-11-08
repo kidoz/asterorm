@@ -12,6 +12,7 @@
 #include "support/bulk_predicate.hpp"
 #include "support/cte_query.hpp"
 #include "support/select_locking.hpp"
+#include "support/set_query.hpp"
 #include "support/typed_query_observer.hpp"
 
 struct MysqlUser {
@@ -485,4 +486,8 @@ TEST_CASE("mysql Integration: bulk predicate mutations", "[mysql][bulk-dml]") {
 
 TEST_CASE("MySQL Integration: ordinary CTE execution", "[mysql][cte]") {
     asterorm::test::check_cte_query(asterorm::mysql::driver{}, conninfo());
+}
+
+TEST_CASE("MySQL Integration: set query execution", "[mysql][set-query]") {
+    asterorm::test::check_set_query(asterorm::mysql::driver{}, conninfo());
 }

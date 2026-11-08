@@ -38,8 +38,9 @@ validation, immutable reference IDs and failure without replacement connections.
 The [advanced-query inventory and contract](../advanced-query-design.md) records
 the initial AST/compiler gaps, native CTE/window/set semantics, parameter/context
 rules and the delivery plan. The [ordinary CTE guide](../how-to/common-table-expressions.md)
-covers the implemented owned root and explicit named execution. Sets, recursion,
-windows and extensions remain planned.
+covers the implemented owned root and explicit named execution. The
+[set-operation guide](../how-to/set-operations.md) covers owned grouping and
+portable operand wrappers. Recursion, windows and extensions remain planned.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

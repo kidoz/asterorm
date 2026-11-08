@@ -1,7 +1,7 @@
 # CTEs, windows and set operations: inventory and implementation contract
 
-Reviewed on 2026-11-08. **Ordinary CTEs and the query-root/execution foundation are implemented;
-sets, recursion, windows and extensions remain planned.** The [capture](evidence/advanced-query-inventory/README.md)
+Reviewed on 2026-11-08. **Ordinary CTEs, set expressions and the query-root/execution foundation are
+implemented; recursion, windows and extensions remain planned.** The [capture](evidence/advanced-query-inventory/README.md)
 compiled the then-current AST probes and executes native SQL on PostgreSQL 16.14, SQLite
 3.54.0 and MySQL 8.4.13. Those observations establish feasibility and constraints,
 not implementation or acceptance of the proposed API below.
@@ -47,7 +47,7 @@ operator grouping and dialect rejection. All changes use connection-local TEMP d
 | ClickHouse/unknown advanced execution | Not executed | Reject before leasing in v1 |
 
 MySQL [set operations](https://dev.mysql.com/doc/refman/8.0/en/set-operations.html)
-added INTERSECT/EXCEPT at 8.0.31. Planned `query_compile_options` therefore has an
+added INTERSECT/EXCEPT at 8.0.31. `query_compile_options` therefore has an
 explicit MySQL profile: baseline `8.0.19` permits CTE/windows/UNION, while a caller
 asserting `8.0.31+` enables all set operators. Default remains baseline; invalid
 profile values reject. Compiler/executor performs no hidden version query or lease
@@ -96,8 +96,8 @@ transaction, schema introspection, materialization promise or performance claim.
 
 ## Planned AST and public surface
 
-The ordinary CTE/root/execution subset below is implemented; set/window extensions
-remain proposed. See the [current guide](how-to/common-table-expressions.md).
+The ordinary CTE/root/execution and set-expression subsets below are implemented;
+recursive/window extensions remain proposed. See the [current guide](how-to/common-table-expressions.md).
 
 - Keep `select_ast` as the existing leaf. Add a move-only `query_ast` envelope with
   ordered CTE definitions, one `recursive` flag, and a body variant of `select_ast`
@@ -249,15 +249,15 @@ legacy scalar functions retain their existing native resolution behavior.
 | Delivery | Required evidence before completion |
 | --- | --- |
 | **Implemented: ordinary CTE foundation** | Owned query root/builder, shared context and structural budgets; ordered nonrecursive CTEs with column aliases; explicit mapped-result execution/observation; corrected alias/pagination validation. Golden PG/SQLite/MySQL SQL and bind ordering, zero-lease rejection, codec/NULL/empty results, one event, caller rollback and testing-scope use; native bound CTE results on all three; existing suites and installed consumers |
-| **Next: set expressions** | Binary operators/quantifiers, explicit grouping and derived wrappers; arity/labels/profile checks. Duplicate/NULL cases, mixed precedence and branch/final tails; baseline/modern MySQL rejection/admission; native bag/set results |
-| Recursive CTE | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
+| **Implemented: set expressions** | Binary operators/quantifiers, explicit grouping and derived wrappers; arity/labels/profile checks. Duplicate/NULL cases, mixed precedence and branch/final tails; baseline/modern MySQL rejection/admission; native bag/set results |
+| **Next: recursive CTE** | Anchor/step validation, SQL self-reference separated from AST cycles; live parent/child traversal and bound predicates; malformed/forward/mutual/nonterminating cases handled within the stated syntactic/native boundaries |
 | Windows and typed helpers | OVER/FILTER ownership, types and frame validation; ranking/peer/NULL/navigation/running/full-partition cases; static argument diagnostics and identical runtime/typed lowering |
 | Extensions and combined review | PG DISTINCT ON and PG/SQLite FILTER, including window aggregates; backend rejection and no silent emulation. Public guides, fresh consumers, regression/build/format/lint/standards evidence and explicit layout/version notes |
 
 The first delivery is deliberately ordinary CTEs plus the query-root/execution
 foundation. It does not expose unimplemented operations as successful no-ops:
-future compound/window nodes either are absent from builders or reject locally
-until delivered. Recursive syntax waits for set expressions. The pre-implementation inventory capture remains historical; do not rerun its
+window nodes are absent from builders and recursive roots reject locally until
+constrained recursion is delivered. Set expressions are now available. The pre-implementation inventory capture remains historical; do not rerun its
 old gap assertions as current feature tests. The ordinary CTE implementation changes
 `compiler` and `compiled_query` layout: rebuild the library and consumers together.
 
@@ -268,8 +268,8 @@ old gap assertions as current feature tests. The ordinary CTE implementation cha
 owned envelopes, ordered nonrecursive definitions and explicit named materialization.
 All SELECT leaves render through one shared parameter vector. Query validation
 counts occurrences across every definition/main leaf, checks active-path function
-cycles and validates before dispatch. Compound bodies and recursive envelopes
-reject locally. Narrow INSERT SELECT/stream interfaces remain unchanged.
+cycles and validates before dispatch. At this delivery, compound bodies and
+recursive envelopes rejected locally; compound bodies are enabled by the follow-up below. Narrow INSERT SELECT/stream interfaces remain unchanged.
 
 The [guide](how-to/common-table-expressions.md) states the delivered contract.
 Advanced session facades require a compatible observer helper; there is no direct
@@ -280,7 +280,37 @@ The SELECT alias, encoded-parameter and SQLite pagination corrections described
 above are implemented, including legacy SELECT callers.
 
 The [delivery evidence](evidence/ordinary-cte/README.md) records local checks.
-The next delivery is explicit set-expression trees and portable derived wrappers,
-with arity/label checks and MySQL profile admission. Recursive CTEs depend on that
-work; windows/typed helpers and extensions follow. This foundation does not mark
+At foundation delivery the next task was explicit set-expression trees and
+portable derived wrappers, with arity/label checks and MySQL profile admission.
+That follow-up is now implemented; recursive CTEs are next, then windows/typed
+helpers and extensions. This foundation does not mark
 the entire advanced-query plan accepted.
+
+
+## Set-expression implementation follow-up (2026-11-08)
+
+The six owned set factories and query-builder tails are implemented. Validation
+walks every operand using the same occurrence/depth/CTE visibility context, checks
+non-null branches, operator/quantifier values, equal nonzero arity and exact left
+output ordering labels, and enforces MySQL/SQLite capabilities before dispatch.
+Projection labels propagate from the left. Server types, coercions and collation
+remain native, and no casts or multiset emulation are inserted.
+
+Each operand renders as a derived SELECT with an alias scoped outside its child.
+This preserves the construction tree and local tails even on SQLite. CTE bodies
+may contain compounds, but WITH remains statement-level. All CTE and main operands
+share parameters in emitted left-to-right order; generated aliases also use a
+statement-local counter. Native fixtures use separate TEMP sources and verify
+bag/NULL results, opposing groupings, local/final tails and empty-result metadata.
+
+The [guide](how-to/set-operations.md) and
+[delivery evidence](evidence/set-operations/README.md) cover mapped execution,
+backend profiles and local verification. The AST had reserved compound storage;
+this delivery activates it and adds inline builder methods, without another data
+layout change. The CTE foundation's rebuild and migration notes still apply.
+Older inventory/CTE receipts remain historical.
+
+Next implement the constrained recursive form above: a two-arm UNION ALL CTE,
+checked anchor/step references and a real parent/child traversal. Recursive flags
+still reject in this delivery. Windows, typed helpers, extensions and combined
+advanced-query acceptance follow.

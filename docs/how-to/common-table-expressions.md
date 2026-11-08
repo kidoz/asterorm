@@ -88,11 +88,11 @@ errors retain diagnostics, and observer exceptions propagate once. Custom sessio
 facades must declare an explicit `connection_type::sql_dialect` and a compatible
 `observed_execute` helper. Unknown dialects and ClickHouse reject before leasing.
 
-The ordinary CTE foundation is implemented. Compound/recursive nodes are reserved
-and reject locally; set operators, recursive CTEs, windows, FILTER and DISTINCT ON
-remain planned in the [design](../advanced-query-design.md). MySQL compile options
-reserve baseline 8.0.19 and set-operation 8.0.31 profiles; neither enables future
-features today. There is no server-version discovery query. INSERT SELECT and
+Ordinary CTEs and [set operations](set-operations.md) are implemented. Recursive
+roots still reject; windows, FILTER and DISTINCT ON remain planned in the
+[design](../advanced-query-design.md). MySQL defaults to the baseline 8.0.19 profile;
+INTERSECT/EXCEPT requires an explicit set-operation 8.0.31 profile. There is no
+server-version discovery query. INSERT SELECT and
 streams continue to accept their existing restricted `select_ast` shapes.
 
 Rebuild the library and consumers together: `compiler` and `compiled_query` layouts

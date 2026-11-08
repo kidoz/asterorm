@@ -41,10 +41,27 @@ even when no rows are returned. See the [CTE guide](../how-to/common-table-expre
 for names, budgets, mapping/alias rules and migration notes.
 
 PostgreSQL, SQLite and MySQL are admitted; ClickHouse/unknown dialects reject.
-MySQL profile options reserve baseline 8.0.19 and modern 8.0.31, with no hidden
-version query. Reserved `compound_ast` and recursive roots reject until later
-work. Sets, recursion, windows and extensions remain planned. There is no implicit
+MySQL profile options offer baseline 8.0.19 and modern 8.0.31, with no hidden
+version query. `compound_ast` is implemented; recursive roots still reject.
+Recursion, windows and extensions remain planned. There is no implicit
 conversion to narrow INSERT SELECT/stream leaves.
+
+## Set expressions
+
+`union_`, `union_all`, `intersect_`, `intersect_all`, `except_` and `except_all`
+take two owned `query_ast` values and return `query_builder`. Binary construction
+preserves grouping. Operand-local tails are wrapped; builder `order_by`, `limit`
+and `offset` affect the current body. Compound ORDER BY uses exact unqualified
+left output labels. Operands require equal nonzero arity; types/coercions remain
+native. Output labels come from the left and named execution remains `query_as`.
+
+MySQL's default profile admits both UNION forms. INTERSECT/EXCEPT, including ALL,
+require `mysql_query_profile::set_operations_8_0_31`. SQLite rejects their ALL
+forms without emulation. All new graph nodes/order keys share the query-wide
+budgets; nested WITH, unsupported profiles and malformed operands reject before
+leasing. Root WITH definitions may contain compounds. See the
+[set-operation guide](../how-to/set-operations.md) for grouping, NULL/duplicate
+semantics, paging and a complete installed-consumer example.
 
 ## INSERT-from-SELECT
 

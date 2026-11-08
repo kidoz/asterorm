@@ -68,6 +68,8 @@ class compiler {
                   std::optional<std::string_view> version_column = std::nullopt) const;
 
   private:
+    [[nodiscard]] result<std::string>
+    compile_query_body(const query_ast& ast, query_parameters& params, std::size_t& next_alias);
     dialect dialect_;
     query_compile_options query_options_;
     [[nodiscard]] asterorm::result<std::string> compile_select(const select_ast& ast,

@@ -21,7 +21,7 @@ struct cte_ast {
 };
 enum class set_operator { union_, intersect_, except_ };
 enum class set_quantifier { distinct, all };
-// Representation reserved for the next delivery; compilation currently rejects it.
+// Owned binary grouping; tails belong to this full compound expression.
 struct compound_ast {
     set_operator operation{set_operator::union_};
     set_quantifier quantifier{set_quantifier::distinct};
@@ -41,6 +41,25 @@ class query_builder {
   public:
     explicit query_builder(select_ast leaf) {
         ast_.body = std::move(leaf);
+    }
+    explicit query_builder(compound_ast compound) {
+        ast_.body = std::move(compound);
+    }
+    query_builder& order_by(std::string column, bool ascending = true) {
+        std::visit(
+            [&](auto& body) {
+                body.order_bys.push_back({.column = std::move(column), .ascending = ascending});
+            },
+            ast_.body);
+        return *this;
+    }
+    query_builder& limit(std::size_t count) {
+        std::visit([&](auto& body) { body.limit_val = count; }, ast_.body);
+        return *this;
+    }
+    query_builder& offset(std::size_t count) {
+        std::visit([&](auto& body) { body.offset_val = count; }, ast_.body);
+        return *this;
     }
     query_builder& with_cte(std::string name, query_ast body,
                             std::vector<std::string> columns = {}) {
@@ -62,5 +81,44 @@ class query_builder {
 };
 inline query_builder query(select_ast leaf) {
     return query_builder{std::move(leaf)};
+}
+namespace query_ast_detail {
+inline query_builder combine(query_ast left, query_ast right, set_operator operation,
+                             set_quantifier quantifier) {
+    return query_builder{compound_ast{
+        .operation = operation,
+        .quantifier = quantifier,
+        .left = std::make_unique<query_ast>(std::move(left)),
+        .right = std::make_unique<query_ast>(std::move(right)),
+        .order_bys = {},
+        .limit_val = std::nullopt,
+        .offset_val = std::nullopt,
+    }};
+}
+} // namespace query_ast_detail
+
+inline query_builder union_(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::union_,
+                                     set_quantifier::distinct);
+}
+inline query_builder union_all(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::union_,
+                                     set_quantifier::all);
+}
+inline query_builder intersect_(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::intersect_,
+                                     set_quantifier::distinct);
+}
+inline query_builder intersect_all(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::intersect_,
+                                     set_quantifier::all);
+}
+inline query_builder except_(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::except_,
+                                     set_quantifier::distinct);
+}
+inline query_builder except_all(query_ast left, query_ast right) {
+    return query_ast_detail::combine(std::move(left), std::move(right), set_operator::except_,
+                                     set_quantifier::all);
 }
 } // namespace asterorm::sql

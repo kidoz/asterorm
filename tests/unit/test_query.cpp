@@ -604,3 +604,59 @@ TEST_CASE("CTE: definition and main occurrences share the node budget", "[cte]")
     main.group_bys.emplace_back("id");
     rejected(query);
 }
+
+TEST_CASE("Set execution: invalid shapes reject before leasing and valid trees observe once",
+          "[set-query][observer]") {
+    execution_state state;
+    asterorm::pool_config config;
+    config.max_size = 1;
+    config.min_size = 0;
+    asterorm::connection_pool<query_driver> pool{query_driver{&state}, config};
+    asterorm::session db{pool};
+    int events{};
+    db.set_observer([&](const asterorm::query_event& event) {
+        ++events;
+        REQUIRE(event.param_count == 4);
+    });
+    auto query = sql::union_(bound_query(), leaf()).build(); // An operand WITH is never hoisted.
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(db, query));
+    REQUIRE(state.connections == 0);
+    REQUIRE(events == 0);
+    auto right = leaf();
+    std::get<sql::select_ast>(right.body).columns.pop_back();
+    query = sql::union_(leaf(), std::move(right)).build();
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(db, query));
+    REQUIRE(state.connections == 0);
+    REQUIRE(events == 0);
+    unsupported_session<sql::dialect::mysql> mysql;
+    query = sql::intersect_(leaf(), leaf()).build();
+    REQUIRE_FALSE(sql::query_as<cte_unit_row>(mysql, query));
+    REQUIRE(mysql.acquisitions == 0);
+    REQUIRE(mysql.events == 0);
+    auto first =
+        sql::select({"id", "note"}).from("eligible").where(sql::col("id") > sql::val(3)).build();
+    query =
+        sql::union_all(sql::query(std::move(first)).build(), leaf())
+            .with_cte("eligible", sql::union_(sql::query(sql::select({"id", "note"})
+                                                             .from("source")
+                                                             .where(sql::col("id") > sql::val(1))
+                                                             .build())
+                                                  .build(),
+                                              sql::query(sql::select({"id", "note"})
+                                                             .from("other")
+                                                             .where(sql::col("id") > sql::val(2))
+                                                             .build())
+                                                  .build())
+                                      .build())
+            .build();
+    std::get<sql::select_ast>(std::get<sql::compound_ast>(query.body).right->body).where_clause =
+        sql::col("id") < sql::val(4);
+    auto rows = sql::query_as<cte_unit_row>(db, query);
+    REQUIRE(rows);
+    REQUIRE(rows->size() == 1);
+    REQUIRE(rows->front().id == 7);
+    REQUIRE(state.params == asterorm::query_parameters{"1", "2", "3", "4"});
+    REQUIRE(events == 1);
+    REQUIRE(state.calls == 1);
+    REQUIRE(pool.stats().in_use == 0);
+}
