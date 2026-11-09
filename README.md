@@ -78,6 +78,8 @@ see the [string-to-typed query migration guide](docs/typed-query-migration.md).
   and SQLite, with checked TEMP baselines and no automatic replacement connection.
 - PostgreSQL codecs for JSONB, arrays, UUID, bytea, date/time, exact numeric values,
   and enum labels, plus raw and structured COPY helpers.
+  [Interval, inet/cidr and MAC codecs](docs/how-to/postgresql-value-codecs.md)
+  preserve native components and validate text boundaries.
 
 Relationship loading is explicit. Async APIs, automatic
 lazy/eager loading, an identity map, and compile-time checking of raw SQL are
@@ -104,8 +106,9 @@ Cache/profile policy is implemented, with scoped local PgBouncer 1.24.1
 transaction-mode checks. The complete production-pool v1 subset is
 [locally accepted within the revised contract](docs/production-pool-acceptance.md).
 The [PostgreSQL type inventory and v1 contract](docs/postgresql-type-design.md)
-are complete; implementation remains planned, starting with value/text-codec
-foundations.
+are complete. Value/text-codec foundations are implemented; ranges and flat-array
+composition are next. hstore/composites, checked JSONB helpers and combined type
+acceptance remain planned.
 
 ## Backends
 

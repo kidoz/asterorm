@@ -27,6 +27,7 @@ Each addresses a specific task.
 - [Check pool health and discard dirty returns](pool-health-and-reuse.md)
 - [Retire aged connections and poll diagnostics](pool-aging-and-diagnostics.md)
 - [Choose cache policy and a transaction-pool profile](pool-cache-and-profiles.md)
+- [Map PostgreSQL interval and address values](postgresql-value-codecs.md)
 - [Run the test suites](testing.md)
 
 [Documentation home](../README.md)

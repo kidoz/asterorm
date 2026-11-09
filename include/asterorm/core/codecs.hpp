@@ -11,6 +11,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "asterorm/core/detail/text_codecs.hpp"
 #include "asterorm/core/error.hpp"
 #include "asterorm/core/parameter.hpp"
 #include "asterorm/core/result.hpp"
@@ -62,6 +63,10 @@ inline constexpr bool is_string_array_element_v = std::is_convertible_v<T, std::
 template <typename T>
 inline constexpr bool is_string_array_element_v<std::optional<T>> =
     std::is_convertible_v<T, std::string_view>;
+
+template <typename T> inline constexpr bool is_nested_array_v = is_vector_v<T>;
+template <typename T>
+inline constexpr bool is_nested_array_v<std::optional<T>> = is_nested_array_v<T>;
 
 template <std::size_t Size>
 std::optional<std::string> formatted_string(const char (&buffer)[Size], int length) {
@@ -163,158 +168,6 @@ inline result<void> decode_uuid(std::string_view s, uuid& out) {
     return {};
 }
 
-inline std::optional<std::string> encode_timestamp(std::chrono::system_clock::time_point tp) {
-    using namespace std::chrono;
-    const auto secs = time_point_cast<seconds>(tp);
-    const auto us = duration_cast<microseconds>(tp - secs).count();
-    const std::time_t t = system_clock::to_time_t(secs);
-    std::tm tm{};
-#if defined(_WIN32)
-    if (gmtime_s(&tm, &t) != 0)
-        return std::nullopt;
-#else
-    if (gmtime_r(&t, &tm) == nullptr)
-        return std::nullopt;
-#endif
-    char buf[64];
-    int n = std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%06lld+00:00",
-                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
-                          tm.tm_sec, static_cast<long long>(us));
-    return formatted_string(buf, n);
-}
-
-inline result<void> decode_timestamp(std::string_view s,
-                                     std::chrono::system_clock::time_point& out) {
-    // Accepts "YYYY-MM-DD HH:MM:SS[.ffffff][+HH[:MM]|Z]" (PG timestamptz text).
-    auto err = [](std::string msg) {
-        db_error e;
-        e.kind = db_error_kind::parse_failed;
-        e.message = std::move(msg);
-        return e;
-    };
-    int y{}, mo{}, d{}, h{}, mi{}, se{};
-    long long us = 0;
-    int tz_h = 0, tz_m = 0;
-    char tz_sign = '+';
-    // Fast parse with sscanf — sufficient for libpq text output.
-    char rest[32] = {};
-    int consumed = 0;
-    int fields = std::sscanf(std::string(s).c_str(), "%d-%d-%d %d:%d:%d%31s%n", &y, &mo, &d, &h,
-                             &mi, &se, rest, &consumed);
-    if (fields < 6)
-        return std::unexpected(err("malformed timestamp"));
-    std::string_view tail{rest};
-    if (!tail.empty() && tail.front() == '.') {
-        std::size_t i = 1;
-        long long frac = 0;
-        int digits = 0;
-        while (i < tail.size() && tail[i] >= '0' && tail[i] <= '9' && digits < 6) {
-            frac = frac * 10 + (tail[i] - '0');
-            ++i;
-            ++digits;
-        }
-        while (digits < 6) {
-            frac *= 10;
-            ++digits;
-        }
-        us = frac;
-        tail = tail.substr(i);
-    }
-    if (!tail.empty() && (tail.front() == '+' || tail.front() == '-')) {
-        tz_sign = tail.front();
-        tail = tail.substr(1);
-        int parsed = std::sscanf(std::string(tail).c_str(), "%d:%d", &tz_h, &tz_m);
-        if (parsed < 1)
-            return std::unexpected(err("malformed timezone"));
-    }
-    std::tm tm{};
-    tm.tm_year = y - 1900;
-    tm.tm_mon = mo - 1;
-    tm.tm_mday = d;
-    tm.tm_hour = h;
-    tm.tm_min = mi;
-    tm.tm_sec = se;
-    // timegm is POSIX; use _mkgmtime on Windows.
-#if defined(_WIN32)
-    std::time_t tt = _mkgmtime(&tm);
-#else
-    std::time_t tt = timegm(&tm);
-#endif
-    if (tt == -1)
-        return std::unexpected(err("invalid calendar date"));
-    auto tp = std::chrono::system_clock::from_time_t(tt);
-    tp += std::chrono::microseconds{us};
-    int offset_seconds = (tz_h * 3600 + tz_m * 60) * (tz_sign == '-' ? -1 : 1);
-    tp -= std::chrono::seconds{offset_seconds};
-    out = tp;
-    return {};
-}
-
-inline bool is_valid_numeric(std::string_view s) {
-    if (s.empty())
-        return false;
-
-    std::size_t i = 0;
-    if (s[i] == '+' || s[i] == '-')
-        ++i;
-
-    bool saw_digit = false;
-    while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
-        saw_digit = true;
-        ++i;
-    }
-
-    if (i < s.size() && s[i] == '.') {
-        ++i;
-        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
-            saw_digit = true;
-            ++i;
-        }
-    }
-
-    if (!saw_digit)
-        return false;
-
-    if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
-        ++i;
-        if (i < s.size() && (s[i] == '+' || s[i] == '-'))
-            ++i;
-        bool saw_exponent_digit = false;
-        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
-            saw_exponent_digit = true;
-            ++i;
-        }
-        if (!saw_exponent_digit)
-            return false;
-    }
-
-    return i == s.size();
-}
-
-inline result<void> decode_date(std::string_view s, date& out) {
-    auto err = [](std::string msg) {
-        db_error e;
-        e.kind = db_error_kind::parse_failed;
-        e.message = std::move(msg);
-        return e;
-    };
-
-    int y = 0;
-    unsigned mo = 0;
-    unsigned d = 0;
-    char tail = '\0';
-    if (std::sscanf(std::string(s).c_str(), "%d-%u-%u%c", &y, &mo, &d, &tail) != 3)
-        return std::unexpected(err("malformed date"));
-
-    using namespace std::chrono;
-    year_month_day ymd{year{y}, month{mo}, day{d}};
-    if (!ymd.ok())
-        return std::unexpected(err("invalid calendar date"));
-
-    out = date{.year = y, .month = mo, .day = d};
-    return {};
-}
-
 inline result<void> decode_time(std::string_view s, time_of_day& out) {
     auto err = [](std::string msg) {
         db_error e;
@@ -407,7 +260,7 @@ template <typename T> std::optional<std::string> encode(const T& val) {
         return detail::encode_uuid(val);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::date>) {
         using namespace std::chrono;
-        if (val.year < static_cast<int>(year::min()) || val.year > static_cast<int>(year::max()))
+        if (val.year < 1 || val.year > static_cast<int>(year::max()))
             return std::nullopt;
         if (val.month < 1 || val.month > 12 || val.day < 1 || val.day > 31)
             return std::nullopt;
@@ -424,44 +277,69 @@ template <typename T> std::optional<std::string> encode(const T& val) {
         int n = std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u.%06u", val.hour, val.minute,
                               val.second, val.microsecond);
         return detail::formatted_string(buf, n);
+    } else if constexpr (std::is_same_v<DecayedT, asterorm::interval>) {
+        return detail::encode_interval(val);
+    } else if constexpr (std::is_same_v<DecayedT, asterorm::network>) {
+        return detail::encode_network(val);
+    } else if constexpr (std::is_same_v<DecayedT, asterorm::cidr>) {
+        if (!detail::has_zero_host_bits(val.value))
+            return std::nullopt;
+        return detail::encode_network(val.value);
+    } else if constexpr (std::is_same_v<DecayedT, asterorm::macaddr>) {
+        return detail::encode_macaddr(val);
     } else if constexpr (std::is_same_v<DecayedT, asterorm::numeric>) {
+        if (!detail::is_valid_numeric(val.value))
+            return std::nullopt;
         return val.value;
     } else if constexpr (std::is_same_v<DecayedT, std::chrono::system_clock::time_point>) {
         return detail::encode_timestamp(val);
     } else if constexpr (is_vector_v<DecayedT>) {
-        std::string res = "{";
-        for (size_t i = 0; i < val.size(); ++i) {
-            auto enc = encode(val[i]);
-            using ElemT = typename DecayedT::value_type;
-            if (!enc) {
-                bool encoding_failed = true;
-                if constexpr (is_optional_v<ElemT>)
-                    encoding_failed = val[i].has_value();
-                if (encoding_failed)
-                    return std::nullopt;
-            }
-            if (enc) {
-                if constexpr (detail::is_string_array_element_v<ElemT>) {
-                    std::string escaped = "\"";
-                    for (char c : *enc) {
-                        if (c == '"' || c == '\\')
-                            escaped += '\\';
-                        escaped += c;
-                    }
-                    escaped += "\"";
-                    res += escaped;
+        using Element = typename DecayedT::value_type;
+        if constexpr (detail::is_nested_array_v<Element>) {
+            return std::nullopt; // Multidimensional arrays are explicitly unsupported.
+        } else {
+            std::string text = "{";
+            for (std::size_t index = 0; index < val.size(); ++index) {
+                if (index != 0)
+                    text += ',';
+                // vector<bool> returns a proxy rather than a bool reference.
+                const auto encoded = [&] {
+                    if constexpr (std::is_same_v<Element, bool>)
+                        return encode(static_cast<bool>(val[index]));
+                    else
+                        return encode(val[index]);
+                }();
+                if (!encoded) {
+                    bool is_null = false;
+                    if constexpr (is_optional_v<Element>)
+                        is_null = !val[index].has_value();
+                    if (!is_null)
+                        return std::nullopt;
+                    text += "NULL";
                 } else {
-                    res += *enc;
+                    if (encoded->find('\0') != std::string::npos)
+                        return std::nullopt;
+                    const bool quote =
+                        detail::is_string_array_element_v<Element> || encoded->empty() ||
+                        (encoded->size() == 4 && ((*encoded)[0] == 'N' || (*encoded)[0] == 'n') &&
+                         ((*encoded)[1] == 'U' || (*encoded)[1] == 'u') &&
+                         ((*encoded)[2] == 'L' || (*encoded)[2] == 'l') &&
+                         ((*encoded)[3] == 'L' || (*encoded)[3] == 'l')) ||
+                        encoded->find_first_of(",{}\"\\ \t\r\n\f\v") != std::string::npos;
+                    if (quote)
+                        text += '"';
+                    for (char character : *encoded) {
+                        if (character == '"' || character == '\\')
+                            text += '\\';
+                        text += character;
+                    }
+                    if (quote)
+                        text += '"';
                 }
-            } else {
-                res += "NULL";
             }
-            if (i < val.size() - 1) {
-                res += ",";
-            }
+            text += '}';
+            return text;
         }
-        res += "}";
-        return res;
     } else {
         static_assert(sizeof(T) == 0, "Unsupported type for encoding");
     }
@@ -538,13 +416,15 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
             val = (*str)[0];
             return {};
         } else if constexpr (std::is_integral_v<T>) {
-            auto [ptr, ec] = std::from_chars(str->data(), str->data() + str->size(), val);
+            T decoded{};
+            auto [ptr, ec] = std::from_chars(str->data(), str->data() + str->size(), decoded);
             if (ec != std::errc{} || ptr != str->data() + str->size()) {
                 db_error err;
                 err.kind = db_error_kind::parse_failed;
                 err.message = "Failed to parse numeric value";
                 return std::unexpected(err);
             }
+            val = decoded;
             return {};
         } else if constexpr (std::is_floating_point_v<T>) {
             // libc++ lacks std::from_chars for float/double; fall back to strtod.
@@ -571,84 +451,48 @@ template <typename T> asterorm::result<void> decode(const std::optional<std::str
             return detail::decode_date(*str, val);
         } else if constexpr (std::is_same_v<T, asterorm::time_of_day>) {
             return detail::decode_time(*str, val);
+        } else if constexpr (std::is_same_v<T, asterorm::interval>) {
+            return detail::decode_interval(*str, val);
+        } else if constexpr (std::is_same_v<T, asterorm::network>) {
+            return detail::decode_network(*str, val);
+        } else if constexpr (std::is_same_v<T, asterorm::cidr>) {
+            network decoded;
+            auto status = detail::decode_network(*str, decoded);
+            if (!status)
+                return status;
+            if (!detail::has_zero_host_bits(decoded))
+                return std::unexpected(db_error{.kind = db_error_kind::parse_failed,
+                                                .message = "CIDR contains host bits"});
+            val.value = decoded;
+            return {};
+        } else if constexpr (std::is_same_v<T, asterorm::macaddr>) {
+            return detail::decode_macaddr(*str, val);
         } else if constexpr (std::is_same_v<T, asterorm::numeric>) {
             return detail::decode_numeric(*str, val);
         } else if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
             return detail::decode_timestamp(*str, val);
         } else if constexpr (is_vector_v<T>) {
-            val.clear();
-            const std::string& s = *str;
-            if (s.size() < 2 || s.front() != '{' || s.back() != '}') {
-                db_error err;
-                err.kind = db_error_kind::parse_failed;
-                err.message = "Invalid array format";
-                return std::unexpected(err);
-            }
-
-            if (s.size() == 2) {
+            using Element = typename T::value_type;
+            if constexpr (detail::is_nested_array_v<Element>) {
+                return std::unexpected(
+                    db_error{.kind = db_error_kind::parse_failed,
+                             .message = "Multidimensional arrays are unsupported"});
+            } else {
+                auto elements = detail::parse_flat_array(*str);
+                if (!elements)
+                    return std::unexpected(elements.error());
+                T decoded{val.get_allocator()};
+                decoded.reserve(elements->size());
+                for (const auto& element : *elements) {
+                    Element item{};
+                    auto status = decode(element, item);
+                    if (!status)
+                        return status;
+                    decoded.push_back(std::move(item));
+                }
+                val = std::move(decoded);
                 return {};
-            } // empty array "{}"
-
-            using ElemT = typename T::value_type;
-            std::string current;
-            bool in_quotes = false;
-            bool escaped = false;
-            bool item_was_quoted = false;
-            bool item_was_escaped = false;
-
-            auto push_item = [&]() -> asterorm::result<void> {
-                ElemT item{};
-                std::optional<std::string> item_str;
-                if (!item_was_quoted && !item_was_escaped && current == "NULL") {
-                    item_str = std::nullopt;
-                } else {
-                    item_str = current;
-                }
-                auto res = decode(item_str, item);
-                if (!res) {
-                    return res;
-                }
-                val.push_back(std::move(item));
-                current.clear();
-                item_was_quoted = false;
-                item_was_escaped = false;
-                return {};
-            };
-
-            for (size_t i = 1; i < s.size() - 1; ++i) {
-                char c = s[i];
-                if (escaped) {
-                    current += c;
-                    escaped = false;
-                } else if (c == '\\') {
-                    escaped = true;
-                    item_was_escaped = true;
-                } else if (c == '"') {
-                    in_quotes = !in_quotes;
-                    item_was_quoted = true;
-                } else if (c == ',' && !in_quotes) {
-                    auto res = push_item();
-                    if (!res) {
-                        return res;
-                    }
-                } else {
-                    current += c;
-                }
             }
-
-            if (in_quotes || escaped) {
-                db_error err;
-                err.kind = db_error_kind::parse_failed;
-                err.message = "Invalid array quoting or escaping";
-                return std::unexpected(err);
-            }
-
-            auto res = push_item();
-            if (!res) {
-                return res;
-            }
-
-            return {};
         } else {
             static_assert(sizeof(T) == 0, "Unsupported type for decoding");
         }

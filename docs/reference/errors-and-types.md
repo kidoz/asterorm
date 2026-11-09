@@ -50,7 +50,11 @@ Declarations: [codecs.hpp](../../include/asterorm/core/codecs.hpp) and
 | `std::chrono::system_clock::time_point` | Timestamp codec |
 | `asterorm::date` | Year, month, day |
 | `asterorm::time_of_day` | Hour, minute, second, microsecond |
-| `asterorm::numeric` | Exact decimal text in `.value` |
+| `asterorm::numeric` | Exact decimal text and canonical NaN/Infinity/-Infinity in `.value` |
+| `asterorm::interval` | Signed months, days and microseconds; all four PG16 output styles |
+| `asterorm::network` | Numeric IPv4/IPv6 inet address and prefix; preserves host bits |
+| `asterorm::cidr` | Network in `.value`; rejects host bits |
+| `asterorm::macaddr` | Six `.bytes`; canonical colon-separated hex |
 
 Codec availability does not imply a native database type on every backend.
 Arrays, JSONB, and bytea are PostgreSQL-specific representations; see
@@ -65,11 +69,12 @@ Encoded parameters distinguish an encoding error from a valid SQL NULL. Result
 objects own their returned rows; views obtained from a backend result must not
 outlive that result.
 
-## Planned PostgreSQL type expansion
+## PostgreSQL type expansion
 
-The [inventory and v1 contract](../postgresql-type-design.md) record missing range,
-interval, network/cidr, MAC, hstore and explicit composite codecs, checked JSONB
-expressions and current array/temporal/numeric boundaries. These APIs remain
-planned. The existing codec<T> hook and the table above describe current support.
-First implement value/text-codec foundations; multidimensional arrays are
-explicitly outside the proposed v1 surface.
+[Value/text-codec foundations](../how-to/postgresql-value-codecs.md) are implemented.
+Date/timestamp/numeric validation is strict, new decoders and flat arrays preserve
+output on failure, and multidimensional/dimension-prefixed arrays explicitly reject.
+Rebuild core and consumers for compiled parsing helpers. The
+[inventory and v1 contract](../postgresql-type-design.md) retain the remaining
+range, hstore/composite and checked JSONB work; range and flat-array composition
+are next. Existing custom `codec<T>` priority is preserved.

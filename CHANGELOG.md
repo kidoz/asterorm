@@ -6,11 +6,19 @@ All notable changes to AsterORM will be documented in this file.
 
 ### Added
 
+- PostgreSQL interval, inet/network, strict cidr and six-byte MAC value/text codecs;
+  all four native interval output styles preserve signed components. Strict ISO
+  date/timestamp parsing checks calendar, offsets and clock representability;
+  numeric supports exact special values and rejects malformed encoding locally.
+  Flat array parsing is atomic, quotes scalar payloads, and explicitly rejects
+  multidimensional/dimension-prefixed arrays. Rebuild core and consumers for the
+  compiled parsing helpers. Ranges, hstore/composites and JSONB helpers remain planned.
+
 - PostgreSQL type coverage inventory and proposed v1 contract, with current-API
   compile controls and rollback-scoped native probes for ranges, interval styles,
   network/MAC, hstore/composites, JSONB/path semantics and index families. Recorded
-  existing codec gaps and explicit multidimensional-array limits. Type/query
-  implementation remains planned; no production API or ABI change is introduced.
+  existing codec gaps and explicit multidimensional-array limits. That inventory
+  introduced no production API or ABI change.
 
 - Combined production-pool local acceptance review and composed health/age/profile/
   shutdown, native transaction/stream and forced proxy-backend-switch checks.

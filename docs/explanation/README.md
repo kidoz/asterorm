@@ -60,8 +60,8 @@ add idle retirement, acquisition metrics and structured long-held-lease warnings
 off/per-connection caching and restricted PG transaction-pool admission, with a
 pinned PgBouncer fixture. The [combined review](../production-pool-acceptance.md)
 now closes scoped local v1 acceptance; the [PostgreSQL type inventory/contract](../postgresql-type-design.md) now records
-codec/query gaps and the planned implementation order. Value/text-codec foundations
-are next.
+codec/query gaps and the implementation order. [Value/text-codec foundations](../how-to/postgresql-value-codecs.md)
+are implemented; ranges and flat-array composition are next.
 
 For executable lessons, start with [tutorials](../tutorials/README.md).
 

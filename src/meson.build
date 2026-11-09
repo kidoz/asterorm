@@ -5,6 +5,7 @@ asterorm_core = library(
   'asterorm_core',
   [
     'core/error.cpp',
+    'core/text_codecs.cpp',
     'core/result.cpp',
     'core/session.cpp',
     'pool/connection_pool.cpp',

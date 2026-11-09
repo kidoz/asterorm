@@ -64,6 +64,40 @@ struct numeric {
     }
 };
 
+// PostgreSQL calendar interval; equality compares components, not SQL duration order.
+struct interval {
+    std::int32_t months{};
+    std::int32_t days{};
+    std::int64_t microseconds{};
+
+    bool operator==(const interval&) const = default;
+};
+
+enum class address_family { ipv4, ipv6 };
+
+// IPv4 uses bytes [0,4); remaining bytes must be zero. IPv6 uses all 16 bytes.
+// Default construction is the IPv4 host 0.0.0.0/32.
+struct network {
+    address_family family{address_family::ipv4};
+    std::array<std::uint8_t, 16> address{};
+    unsigned prefix_length{32};
+
+    bool operator==(const network&) const = default;
+};
+
+// Strict network intent: nonzero bits after prefix_length are rejected.
+struct cidr {
+    network value;
+
+    bool operator==(const cidr&) const = default;
+};
+
+struct macaddr {
+    std::array<std::uint8_t, 6> bytes{};
+
+    bool operator==(const macaddr&) const = default;
+};
+
 // Optional enum-label mapping hook:
 //
 // template <> struct asterorm::enum_traits<MyEnum> {

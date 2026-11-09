@@ -1,12 +1,19 @@
 # PostgreSQL type coverage: inventory and v1 contract
 
-Reviewed on 2026-11-09. **Inventory and v1 contract complete; implementation remains
-planned.** The [source-bound capture](evidence/postgres-type-inventory/README.md)
-records current APIs and PostgreSQL 16.14 behavior. This document defines the next
+Reviewed on 2026-11-09. **Inventory and v1 contract complete; value/text-codec foundations implemented.** The [source-bound capture](evidence/postgres-type-inventory/README.md)
+records the inventory baseline APIs and PostgreSQL 16.14 behavior. This document defines the next
 work after [production-pool acceptance](production-pool-acceptance.md); it does not
-claim that the proposed types/helpers exist or close type-expansion acceptance.
+claim that the remaining proposed types/helpers exist or close type-expansion acceptance.
 
-## Current implementation and gaps
+[Foundation delivery](how-to/postgresql-value-codecs.md) adds interval/network/cidr/MAC
+values, strict numeric/date/timestamp parsing, atomic flat arrays and explicit
+nested-array rejection. [Verification](evidence/postgres-type-foundations/README.md)
+records the local scope. Ranges/array composition, hstore/composites, JSONB nodes
+and combined acceptance remain planned. Rebuild core and consumers for the compiled
+text helpers. The inventory table and initial capture below describe the prior
+baseline; their gap probes are historical and are not current acceptance tests.
+
+## Inventory baseline and gaps
 
 | Area | Observed implementation | Required consequence |
 | --- | --- | --- |
@@ -59,7 +66,8 @@ The representation/API decisions below are this project's contract choices.
 
 ## Value and codec contract
 
-Names below are proposed v1 spellings, not available APIs. Keep models in the
+Interval/network/cidr/MAC names below are implemented. Range/hstore/composite and
+JSONB names remain proposed v1 spellings. Keep models in the
 existing public core types/codecs surface, with private parsing helpers as needed.
 Shared headers must not require libpq or platform networking headers. Transport,
 native OIDs and protocol state remain in adapters. C++23 and text-format binding
@@ -261,8 +269,8 @@ confirm extension/schema state is restored. Never drop/recreate a caller type.
 
 | Delivery | Exit requirements |
 | --- | --- |
-| **Next: value/text-codec foundations** | Interval/network/cidr/MAC models and strict codecs; numeric/timestamp prerequisites; reusable bounded grammar/error handling and explicit nested-array rejection. No unsupported type is advertised as implemented. No-server boundary/NULL/overflow/unchanged-output checks plus native scalar/style round-trips and both-backend regression. |
-| Ranges and flat array composition | All five range families, tagged endpoints and new scalar array quoting; native canonicalization/infinity/NaN/representability cases and malformed/partial-output prevention. |
+| **Implemented: value/text-codec foundations** | Interval/network/cidr/MAC models and strict codecs; numeric/timestamp prerequisites; reusable bounded grammar/error handling and explicit nested-array rejection. No unsupported type is advertised as implemented. No-server boundary/NULL/overflow/unchanged-output checks plus native scalar/style round-trips and both-backend regression. |
+| **Next: ranges and flat array composition** | All five range families, tagged endpoints and new scalar array quoting; native canonicalization/infinity/NaN/representability cases and malformed/partial-output prevention. |
 | hstore and composite mappings | Exact map alias, explicit wrapper/recursive traits, extension-safe fixtures, one/two levels and NULL/empty/escape/schema-drift controls; writes, reads and supported streams. |
 | JSONB runtime/typed nodes | Owned nodes/casts, all listed operators and both path functions with the SRF restrictions above; compile-time affinity/type controls, nested graph budgets, binds, labels and pre-lease rejection on other backends. |
 | Combined type acceptance | Fresh full regression, SQLite/MySQL parity/rejections, PG-native indexed query results, sanitizers where applicable, formatting/lint/standards comparison, installed CMake/shared pkg-config consumers, public guides/migration notes and source-bound review. |
@@ -272,5 +280,5 @@ not inferred merely because some syntax exists there. Keep supported existing
 features working on PG/SQLite/MySQL. No runtime capability-discovery query, hidden
 extension setup, session GUC mutation, automatic schema generation or binary
 transport is part of this contract. Public AST/value/parameter/header changes must
-state consumer rebuild requirements when introduced. This inventory adds no
-production API or ABI change.
+state consumer rebuild requirements when introduced. The original inventory added no production API or ABI change; foundation delivery
+adds value APIs and compiled core helpers and requires rebuilding consumers.
